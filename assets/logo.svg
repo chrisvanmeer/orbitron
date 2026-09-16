@@ -1,0 +1,78 @@
+<svg viewBox="0 0 800 250"
+  xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090A0F" />
+      <stop offset="100%" stop-color="#151A2C" />
+    </linearGradient>
+
+    <!-- Orbit Gradients -->
+    <linearGradient id="orbit1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="100%" stop-color="#5773FF" />
+    </linearGradient>
+    <linearGradient id="orbit2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5773FF" />
+      <stop offset="100%" stop-color="#FF007A" />
+    </linearGradient>
+    <linearGradient id="orbit3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF007A" />
+      <stop offset="100%" stop-color="#00F0FF" />
+    </linearGradient>
+
+    <!-- Text Gradient -->
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#A5B4FC" />
+    </linearGradient>
+
+    <!-- Outer Glow for Nodes -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="800" height="250" rx="24" fill="url(#bgGrad)" />
+
+  <!-- Background Galaxy Stars -->
+  <circle cx="80" cy="50" r="1.5" fill="#FFFFFF" opacity="0.3" />
+  <circle cx="250" cy="40" r="1" fill="#FFFFFF" opacity="0.5" />
+  <circle cx="100" cy="200" r="2" fill="#FFFFFF" opacity="0.2" />
+  <circle cx="280" cy="220" r="1.5" fill="#FFFFFF" opacity="0.4" />
+  <circle cx="40" cy="150" r="1" fill="#FFFFFF" opacity="0.6" />
+  <circle cx="450" cy="70" r="1.5" fill="#FFFFFF" opacity="0.3" />
+  <circle cx="650" cy="190" r="2" fill="#FFFFFF" opacity="0.2" />
+  <circle cx="750" cy="60" r="1" fill="#FFFFFF" opacity="0.5" />
+
+  <!-- Logo Icon Group (Left Side) -->
+  <g transform="translate(150, 125)">
+    <!-- Orbits -->
+    <ellipse cx="0" cy="0" rx="80" ry="30" fill="none" stroke="url(#orbit1)" stroke-width="4" transform="rotate(-30)" opacity="0.8" />
+    <ellipse cx="0" cy="0" rx="80" ry="30" fill="none" stroke="url(#orbit2)" stroke-width="4" transform="rotate(30)" opacity="0.8" />
+    <ellipse cx="0" cy="0" rx="80" ry="30" fill="none" stroke="url(#orbit3)" stroke-width="4" transform="rotate(90)" opacity="0.8" />
+
+    <!-- Orbital Nodes (Ansible Data Points) -->
+    <circle cx="69" cy="-40" r="6" fill="#00F0FF" filter="url(#glow)" />
+    <circle cx="69" cy="40" r="6" fill="#FF007A" filter="url(#glow)" />
+    <circle cx="0" cy="80" r="6" fill="#5773FF" filter="url(#glow)" />
+    <circle cx="-69" cy="40" r="4" fill="#00F0FF" opacity="0.6" />
+    <circle cx="-69" cy="-40" r="4" fill="#FF007A" opacity="0.6" />
+    <circle cx="0" cy="-80" r="4" fill="#5773FF" opacity="0.6" />
+
+    <!-- Core Server Node -->
+    <circle cx="0" cy="0" r="14" fill="#FFFFFF" filter="url(#glow)" />
+    <circle cx="0" cy="0" r="6" fill="#090A0F" />
+  </g>
+
+  <!-- Typography Group (Right Side) -->
+  <g transform="translate(310, 135)">
+    <text x="0" y="0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="68" font-weight="900" fill="url(#textGrad)" letter-spacing="6">ORBITRON</text>
+    <text x="5" y="45" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#8B949E" letter-spacing="1">Ansible Galaxy &amp; Git Mirror Daemon</text>
+  </g>
+</svg>
