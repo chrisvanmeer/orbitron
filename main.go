@@ -4,119 +4,128 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"orbitron/auth"
-	"orbitron/config"
-	"orbitron/installer"
-	"orbitron/logger"
-	"orbitron/logo"
-	"orbitron/pruner"
-	"orbitron/server"
+	"orbitron/internal/auth"
+	"orbitron/internal/config"
+	"orbitron/internal/installer"
+	"orbitron/internal/logger"
+	"orbitron/internal/logo"
+	"orbitron/internal/pruner"
+	"orbitron/internal/server"
 )
 
 func main() {
-	logo.PrintBanner()
+	configPath := flag.String("config", "/etc/orbitron/config.yml", "Path to configuration file")
+	doInstall := flag.Bool("install", false, "Install Orbitron service, user, and logrotate")
+	doUninstall := flag.Bool("uninstall", false, "Uninstall Orbitron service, user, and data")
+	genToken := flag.Bool("generate-token", false, "Generate an administrative Bearer token")
+	revokeToken := flag.String("revoke-token", "", "Revoke a Bearer token")
+	doPrune := flag.Bool("prune", false, "Clean up unreferenced roles and collections")
 
-	installFlag := flag.Bool("install", false, "Install Orbitron to systemd and create system paths")
-	uninstallFlag := flag.Bool("uninstall", false, "Uninstall Orbitron and remove system configurations")
-	pruneFlag := flag.Bool("prune", false, "Remove older/unreferenced role and collection versions")
-	genTokenFlag := flag.Bool("generate-token", false, "Generate a new authentication token")
-	revokeTokenFlag := flag.String("revoke-token", "", "Revoke a specific authentication token")
-	configFlag := flag.String("config", "/etc/orbitron/config.yml", "Path to config file")
+	quiet := flag.Bool("quiet", false, "Output raw token only")
+	flag.BoolVar(quiet, "q", false, "Output raw token only (shorthand)")
 
 	flag.Parse()
 
-	if *installFlag {
+	if *doInstall {
 		if err := installer.RunInstall(); err != nil {
-			fmt.Printf("Error during installation: %v\n", err)
+			logger.Error("Installation failed: %v", err)
 			os.Exit(1)
 		}
-		return
+		os.Exit(0)
 	}
 
-	if *uninstallFlag {
+	if *doUninstall {
 		if err := installer.RunUninstall(); err != nil {
-			fmt.Printf("Error during uninstallation: %v\n", err)
+			logger.Error("Uninstallation failed: %v", err)
 			os.Exit(1)
 		}
-		return
+		os.Exit(0)
 	}
 
-	if *pruneFlag {
-		cfg, err := config.LoadConfig(*configFlag)
+	if *genToken {
+		cfg, err := config.LoadConfig(*configPath)
 		if err != nil {
-			fmt.Printf("Error loading configuration: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 			os.Exit(1)
 		}
+
+		token, err := auth.GenerateToken(cfg.TokensFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to generate token: %v\n", err)
+			os.Exit(1)
+		}
+
+		if *quiet {
+			fmt.Print(token)
+		} else {
+			fmt.Printf("Generated new administrative Bearer Token: %s\n", token)
+		}
+		os.Exit(0)
+	}
+
+	if *revokeToken != "" {
+		cfg, err := config.LoadConfig(*configPath)
+		if err != nil {
+			logger.Error("Failed to load config: %v", err)
+			os.Exit(1)
+		}
+
+		if err := auth.RevokeToken(cfg.TokensFile, *revokeToken); err != nil {
+			logger.Error("Failed to revoke token: %v", err)
+			os.Exit(1)
+		}
+		logger.Info("Token revoked successfully")
+		os.Exit(0)
+	}
+
+	if *doPrune {
+		cfg, err := config.LoadConfig(*configPath)
+		if err != nil {
+			logger.Error("Failed to load config: %v", err)
+			os.Exit(1)
+		}
+
 		p := pruner.NewPruner(cfg.StoragePath)
 		if err := p.RunPrune(); err != nil {
-			fmt.Printf("Error during prune operation: %v\n", err)
+			logger.Error("Pruning failed: %v", err)
 			os.Exit(1)
 		}
-		return
+		os.Exit(0)
 	}
 
-	if *genTokenFlag {
-		token, err := auth.IssueToken(auth.TokensFilePath)
-		if err != nil {
-			fmt.Printf("Error generating token: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("New Auth Token generated successfully:\n\n  %s\n\nSave this token in your Ansible Vault.\n", token)
-		return
-	}
+	logo.PrintBanner()
 
-	if *revokeTokenFlag != "" {
-		if err := auth.RevokeToken(auth.TokensFilePath, *revokeTokenFlag); err != nil {
-			fmt.Printf("Error revoking token: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Token revoked successfully.")
-		return
-	}
-
-	// Daemon Mode
-	cfg, err := config.LoadConfig(*configFlag)
+	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load configuration file (%s): %v", *configFlag, err)
+		logger.Error("Failed to load config from %s: %v", *configPath, err)
+		os.Exit(1)
 	}
-
-	logFile, err := logger.Setup(cfg.LogPath)
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-	if logFile != nil {
-		defer logFile.Close()
-	}
-
-	logger.Info("Orbitron daemon initializing...")
-	cfg.SetupProxy()
 
 	srv := server.NewServer(cfg)
 
-	stopChan := make(chan os.Signal, 1)
-	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		if err := srv.Start(); err != nil {
-			logger.Fatal("Server error: %v", err)
+			logger.Error("Server error: %v", err)
+			os.Exit(1)
 		}
 	}()
 
-	sig := <-stopChan
-	logger.Info("Received signal '%v'. Shutting down Orbitron daemon gracefully...", sig)
+	<-stop
+	logger.Info("Shutting down Orbitron daemon...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("Error during server shutdown: %v", err)
+		logger.Error("Error shutting down server: %v", err)
 	}
-
-	logger.Info("Orbitron daemon stopped cleanly.")
+	logger.Info("Orbitron stopped gracefully")
 }

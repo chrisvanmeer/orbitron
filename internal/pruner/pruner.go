@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"orbitron/fetcher"
+	"orbitron/internal/fetcher"
 )
 
 type Pruner struct {

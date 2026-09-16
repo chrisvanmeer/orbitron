@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 
-	"orbitron/logger"
+	"orbitron/internal/logger"
 )
 
 type CollectionItem struct {
@@ -79,8 +79,31 @@ func NewFetcher(storagePath string) *Fetcher {
 	}
 }
 
+// ParseRequirements parses YAML byte streams into RequirementsYML struct,
+// supporting both wrapped maps (roles:/collections:) and bare YAML lists.
 func ParseRequirements(data []byte) (*RequirementsYML, error) {
 	var reqs RequirementsYML
+
+	// 1. Try standard map format {roles: [...], collections: [...]}
+	if err := yaml.Unmarshal(data, &reqs); err == nil && (len(reqs.Roles) > 0 || len(reqs.Collections) > 0) {
+		return &reqs, nil
+	}
+
+	// 2. Fallback: Try bare list format for roles
+	var roleList []RoleItem
+	if err := yaml.Unmarshal(data, &roleList); err == nil && len(roleList) > 0 {
+		reqs.Roles = roleList
+		return &reqs, nil
+	}
+
+	// 3. Fallback: Try bare list format for collections
+	var colList []CollectionItem
+	if err := yaml.Unmarshal(data, &colList); err == nil && len(colList) > 0 {
+		reqs.Collections = colList
+		return &reqs, nil
+	}
+
+	// 4. Return standard unmarshal error if all parsing attempts failed
 	err := yaml.Unmarshal(data, &reqs)
 	return &reqs, err
 }
@@ -282,11 +305,38 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 }
 
 func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
-	if version == "" {
-		version = "latest"
+	var downloadURL string
+
+	if version == "" || version == "latest" {
+		// Fetch highest available version info from Galaxy V3 API
+		apiURL := fmt.Sprintf("https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/index/%s/%s/versions/?is_highest=true", namespace, name)
+		resp, err := f.httpClient.Get(apiURL)
+		if err != nil {
+			return fmt.Errorf("failed to query galaxy collection v3 api: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("galaxy collection v3 api returned status %s", resp.Status)
+		}
+
+		var result struct {
+			Results []struct {
+				Version     string `json:"version"`
+				DownloadURL string `json:"download_url"`
+			} `json:"results"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Results) == 0 {
+			return fmt.Errorf("failed to resolve latest version for %s.%s", namespace, name)
+		}
+
+		version = result.Results[0].Version
+		downloadURL = result.Results[0].DownloadURL
+	} else {
+		// Galaxy V3 direct artifact URL scheme: artifacts/namespace-name-version.tar.gz
+		downloadURL = fmt.Sprintf("https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/%s-%s-%s.tar.gz", namespace, name, version)
 	}
 
-	downloadURL := fmt.Sprintf("https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/index/%s/%s/versions/%s/file/", namespace, name, version)
 	targetDir := filepath.Join(f.storagePath, "collections", namespace)
 	targetFile := filepath.Join(targetDir, fmt.Sprintf("%s-%s-%s.tar.gz", namespace, name, version))
 

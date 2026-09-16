@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"orbitron/config"
+	"orbitron/internal/config"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"orbitron/config"
+	"orbitron/internal/config"
 )
 
 // RunUninstall stops services, parses config to discover custom paths,
