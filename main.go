@@ -106,6 +106,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := logger.Init(cfg.LogPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize log file %s: %v\n", cfg.LogPath, err)
+	}
+	defer logger.Close()
+
 	srv := server.NewServer(cfg)
 
 	stop := make(chan os.Signal, 1)

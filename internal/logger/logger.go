@@ -8,42 +8,64 @@ import (
 	"path/filepath"
 )
 
-// Setup initializes logging to both stdout (systemd) and the specified log file
-func Setup(logPath string) (*os.File, error) {
-	log.SetFlags(log.Ldate | log.Ltime)
+var (
+	infoLog *log.Logger
+	warnLog *log.Logger
+	errLog  *log.Logger
+	logFile *os.File
+)
 
+func init() {
+	SetOutput(os.Stdout)
+}
+
+func Init(logPath string) error {
 	if logPath == "" {
-		return nil, nil
+		return nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create log directory: %w", err)
+		return err
 	}
 
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open log file (%s): %w", logPath, err)
+		return fmt.Errorf("failed to open log file %s: %w", logPath, err)
 	}
 
-	// Output logs simultaneously to stdout (journalctl) and log file
-	multiWriter := io.MultiWriter(os.Stdout, logFile)
-	log.SetOutput(multiWriter)
+	logFile = f
+	multi := io.MultiWriter(os.Stdout, f)
+	SetOutput(multi)
 
-	return logFile, nil
+	return nil
 }
 
-func Info(format string, v ...any) {
-	log.Printf("[INFO] "+format, v...)
+func SetOutput(w io.Writer) {
+	infoLog = log.New(w, "[INFO] ", log.LstdFlags)
+	warnLog = log.New(w, "[WARN] ", log.LstdFlags)
+	errLog = log.New(w, "[ERROR] ", log.LstdFlags)
 }
 
-func Warn(format string, v ...any) {
-	log.Printf("[WARN] "+format, v...)
+func Info(format string, v ...interface{}) {
+	if infoLog != nil {
+		infoLog.Printf(format, v...)
+	}
 }
 
-func Error(format string, v ...any) {
-	log.Printf("[ERROR] "+format, v...)
+func Warn(format string, v ...interface{}) {
+	if warnLog != nil {
+		warnLog.Printf(format, v...)
+	}
 }
 
-func Fatal(format string, v ...any) {
-	log.Fatalf("[FATAL] "+format, v...)
+func Error(format string, v ...interface{}) {
+	if errLog != nil {
+		errLog.Printf(format, v...)
+	}
+}
+
+func Close() {
+	if logFile != nil {
+		_ = logFile.Close()
+	}
 }
