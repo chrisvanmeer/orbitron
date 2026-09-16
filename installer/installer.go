@@ -1,0 +1,201 @@
+package installer
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
+	"strconv"
+
+	"orbitron/config"
+)
+
+const (
+	BinPath       = "/usr/local/bin/orbitron"
+	ConfigDir     = "/etc/orbitron"
+	ConfigFile    = "/etc/orbitron/config.yml"
+	LogDir        = "/var/log/orbitron"
+	StorageDir    = "/var/lib/orbitron/storage"
+	ManifestsDir  = "/var/lib/orbitron/manifests"
+	SystemdFile   = "/etc/systemd/system/orbitron.service"
+	LogrotateDir  = "/etc/logrotate.d"
+	LogrotateFile = "/etc/logrotate.d/orbitron"
+)
+
+// RunInstall handles user creation, binary self-installation, service setup, config, and logrotate configuration
+func RunInstall() error {
+	euid := os.Geteuid()
+	if euid != 0 {
+		return fmt.Errorf("installation requires root permissions (current EUID: %d, run with sudo)", euid)
+	}
+
+	fmt.Println("🚀 Installing Orbitron...")
+
+	// 1. Create system group and user
+	uid, gid, err := ensureSystemUserAndGroup()
+	if err != nil {
+		return fmt.Errorf("failed to setup system user: %w", err)
+	}
+	fmt.Println("  ✔ System user & group 'orbitron' configured")
+
+	// 2. Check for Git dependency
+	if _, err := exec.LookPath("git"); err != nil {
+		fmt.Println("  ⚠️  Warning: 'git' binary not found in PATH. Install git to support Git-based roles/collections.")
+	} else {
+		fmt.Println("  ✔ Dependency 'git' detected")
+	}
+
+	// 3. Copy binary to /usr/local/bin
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	if err := copyFile(execPath, BinPath, 0755); err != nil {
+		return fmt.Errorf("failed to copy binary to %s: %w", BinPath, err)
+	}
+	_ = os.Chown(BinPath, uid, gid)
+	fmt.Printf("  ✔ Installed binary to %s (owned by orbitron:orbitron)\n", BinPath)
+
+	// 4. Create directories
+	dirs := []string{ConfigDir, LogDir, StorageDir, ManifestsDir}
+	for _, dir := range dirs {
+		if err := config.EnsureDirExists(dir); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+		if err := chownRecursive(dir, uid, gid); err != nil {
+			return fmt.Errorf("failed to chown directory %s: %w", dir, err)
+		}
+	}
+	fmt.Println("  ✔ Configured application directories (/etc/orbitron, /var/log/orbitron, /var/lib/orbitron)")
+
+	// 5. Create example config.yml if missing
+	if _, err := os.Stat(ConfigFile); os.IsNotExist(err) {
+		if err := os.WriteFile(ConfigFile, []byte(config.GetDefaultConfigYML()), 0644); err != nil {
+			return fmt.Errorf("failed to write config file: %w", err)
+		}
+		_ = os.Chown(ConfigFile, uid, gid)
+		fmt.Printf("  ✔ Created configuration file at %s\n", ConfigFile)
+	} else {
+		fmt.Printf("  ℹ Configuration file already exists at %s (skipping)\n", ConfigFile)
+	}
+
+	// 6. Create Systemd Service File
+	systemdContent := `[Unit]
+Description=Orbitron Ansible Galaxy Mirror Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=orbitron
+Group=orbitron
+ExecStart=/usr/local/bin/orbitron --config /etc/orbitron/config.yml
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+`
+	if err := os.WriteFile(SystemdFile, []byte(systemdContent), 0644); err != nil {
+		return fmt.Errorf("failed to write systemd unit: %w", err)
+	}
+	fmt.Printf("  ✔ Created systemd service at %s (User=orbitron)\n", SystemdFile)
+
+	// 7. Configure Logrotate if directory exists
+	if _, err := os.Stat(LogrotateDir); !os.IsNotExist(err) {
+		logrotateContent := `/var/log/orbitron/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 orbitron orbitron
+    postrotate
+        systemctl reload orbitron > /dev/null 2>&1 || true
+    endscript
+}
+`
+		if err := os.WriteFile(LogrotateFile, []byte(logrotateContent), 0644); err != nil {
+			return fmt.Errorf("failed to write logrotate file: %w", err)
+		}
+		fmt.Printf("  ✔ Configured logrotate rules at %s\n", LogrotateFile)
+	}
+
+	// 8. Reload systemd, enable and start service
+	_ = exec.Command("systemctl", "daemon-reload").Run()
+
+	if err := exec.Command("systemctl", "enable", "orbitron").Run(); err != nil {
+		return fmt.Errorf("failed to enable systemd service: %w", err)
+	}
+	fmt.Println("  ✔ Enabled systemd service (starts on boot)")
+
+	if err := exec.Command("systemctl", "start", "orbitron").Run(); err != nil {
+		return fmt.Errorf("failed to start systemd service: %w", err)
+	}
+	fmt.Println("  ✔ Started systemd service")
+
+	fmt.Println("\n✨ Orbitron installation completed successfully!")
+	return nil
+}
+
+func ensureSystemUserAndGroup() (int, int, error) {
+	if err := exec.Command("getent", "group", "orbitron").Run(); err != nil {
+		cmd := exec.Command("groupadd", "--system", "orbitron")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return 0, 0, fmt.Errorf("failed to create group orbitron (%v): %s", err, string(out))
+		}
+	}
+
+	if err := exec.Command("id", "-u", "orbitron").Run(); err != nil {
+		cmd := exec.Command("useradd", "--system", "--gid", "orbitron", "--home-dir", "/var/lib/orbitron", "--shell", "/bin/false", "orbitron")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return 0, 0, fmt.Errorf("failed to create user orbitron (%v): %s", err, string(out))
+		}
+	}
+
+	u, err := user.Lookup("orbitron")
+	if err != nil {
+		return 0, 0, err
+	}
+
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	gid, err := strconv.Atoi(u.Gid)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return uid, gid, nil
+}
+
+func chownRecursive(path string, uid, gid int) error {
+	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chown(name, uid, gid)
+	})
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}

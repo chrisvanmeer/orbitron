@@ -1,0 +1,38 @@
+# Orbitron Binaries
+bin/
+orbitron
+*.exe
+*.exe?
+*.dll
+*.so
+*.dylib
+
+# Go Build & Test Artifacts
+*.test
+*.out
+go.work
+vendor/
+
+# Local Runtime Data & Secrets
+tokens.json
+config.yml
+config.local.yml
+storage/
+logs/
+*.log
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE / Editor Settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
