@@ -13,7 +13,7 @@ enterprise environments to cache, store, and serve Ansible roles and collections
 
 ## Key Features
 
-* **Galaxy V1 & V3 API Support**: Complete compatibility with `ansible-galaxy role install` and`ansible-galaxy collection install`.
+* **Galaxy V1 & V3 API Support**: Complete compatibility with `ansible-galaxy role install` and `ansible-galaxy collection install`.
 * **On-the-Fly Archiving**: Packages unpacked Git-based roles into `.tar.gz` streams on-the-fly during download.
 * **Parallel Background Sync**: Concurrent fetching of roles, collections, and shallow Git clones (`--depth 1`).
 * **Flexible Authentication**: Unauthenticated pulls by default with an optional `require_auth_pull: true` toggle supporting Bearer tokens and HTTP Basic Auth.
@@ -64,6 +64,9 @@ sudo ./bin/orbitron --uninstall
 # Generate an administrative Bearer token
 sudo orbitron --generate-token
 
+# Generate raw token output (quiet mode for script exports)
+export ORBITRON_TOKEN=$(sudo orbitron --generate-token -q)
+
 # Revoke a token
 sudo orbitron --revoke-token <TOKEN>
 
@@ -73,6 +76,13 @@ sudo orbitron --prune
 # Start daemon with custom config
 orbitron --config /etc/orbitron/config.yml
 ```
+
+| Flag               | Shorthand | Description                                                             |
+| :----------------- | :-------- | :---------------------------------------------------------------------- |
+| `--generate-token` |           | Generates a new administrative Bearer token.                            |
+| `--quiet`          | `-q`      | Suppresses verbose log formatting and prints the raw token string only. |
+| `--revoke-token`   |           | Revokes an existing Bearer token by string value.                       |
+| `--prune`          |           | Interactively deletes unused roles and collection archives.             |
 
 ---
 
@@ -152,7 +162,7 @@ curl -X POST http://127.0.0.1:8080/api/v1/sync \
 ### Automated Ingestion via Ansible Playbook
 
 You can also automate feeding Orbitron or triggering a re-sync directly within your Ansible playbooks using
-the`ansible.builtin.uri` module.
+the `ansible.builtin.uri` module.
 
 **Playbook Example (`feed_orbitron.yml`):**
 
@@ -197,7 +207,7 @@ the`ansible.builtin.uri` module.
 **Run the Automation Playbook:**
 
 ```bash
-export ORBITRON_TOKEN="your-token-here"
+export ORBITRON_TOKEN=$(sudo orbitron --generate-token -q)
 ansible-playbook feed_orbitron.yml
 ```
 
