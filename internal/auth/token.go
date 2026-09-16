@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"os/user"
+	"strconv"
 )
 
 type TokenStore struct {
@@ -31,7 +33,20 @@ func SaveTokens(tokensFile string, store *TokenStore) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(tokensFile, data, 0600)
+
+	// Set permissions to 0640 so group members (orbitron) can read the file
+	if err := os.WriteFile(tokensFile, data, 0640); err != nil {
+		return err
+	}
+
+	// Ensure ownership is transferred to the orbitron system user/group when run via sudo
+	if u, err := user.Lookup("orbitron"); err == nil {
+		uid, _ := strconv.Atoi(u.Uid)
+		gid, _ := strconv.Atoi(u.Gid)
+		_ = os.Chown(tokensFile, uid, gid)
+	}
+
+	return nil
 }
 
 func GenerateToken(tokensFile string) (string, error) {
