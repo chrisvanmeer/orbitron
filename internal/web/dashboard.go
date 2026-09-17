@@ -137,7 +137,7 @@ func (d *Dashboard) renderLogin(w http.ResponseWriter, hasError bool) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	html := strings.Replace(loginTemplate, "{{DISPLAY}}", display, 1)
-	w.Write([]byte(html))
+	_, _ = w.Write([]byte(html))
 }
 
 // --- HTML Templates ---
@@ -372,13 +372,13 @@ const htmlTemplate = `
 
 func (d *Dashboard) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(htmlTemplate))
+	_, _ = w.Write([]byte(htmlTemplate))
 }
 
 func (d *Dashboard) handleHtmx(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
-	w.Write(HtmxJS)
+	_, _ = w.Write(HtmxJS)
 }
 
 func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
@@ -426,7 +426,7 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 				verInManifest == "master" ||
 				verInManifest == "HEAD")
 
-			verHTML := ver
+			var verHTML string
 			if isActive {
 				verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, ver)
 			} else {
@@ -498,7 +498,7 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 					verInManifest == "master" ||
 					verInManifest == "HEAD")
 
-				verHTML := ver
+				var verHTML string
 				if isActive {
 					verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, ver)
 				} else {
@@ -516,7 +516,7 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 
 	html.WriteString("</table>")
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(html.String()))
+	_, _ = w.Write([]byte(html.String()))
 }
 
 func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
@@ -576,7 +576,7 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 	`, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime)
 
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(html))
+	_, _ = w.Write([]byte(html))
 }
 
 func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -588,7 +588,7 @@ func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	for _, line := range content {
-		w.Write(fmt.Appendf(nil, "%s<br>", line))
+		_, _ = w.Write(fmt.Appendf(nil, "%s<br>", line))
 	}
 }
 
@@ -613,7 +613,7 @@ func getManifestStats(storagePath string) (map[string]string, time.Time) {
 	active := make(map[string]string)
 	var lastSync time.Time
 
-	filepath.Walk(storagePath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(storagePath, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() && strings.HasSuffix(info.Name(), "_requirements.yml") {
 			if info.ModTime().After(lastSync) {
 				lastSync = info.ModTime()
@@ -736,7 +736,7 @@ func getSystemBootTime() string {
 
 func dirSize(path string) int64 {
 	var size int64
-	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err == nil {
 			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 				size += stat.Blocks * 512
@@ -779,10 +779,13 @@ func tailFile(fileName string, lines int) ([]string, error) {
 		chunk = size
 	}
 	buf := make([]byte, chunk)
-	var output []string
 
-	file.Seek(-chunk, 2)
-	file.Read(buf)
+	if _, err := file.Seek(-chunk, 2); err != nil {
+		return nil, err
+	}
+	if _, err := file.Read(buf); err != nil {
+		return nil, err
+	}
 
 	linesArr := strings.Split(string(buf), "\n")
 
@@ -790,6 +793,7 @@ func tailFile(fileName string, lines int) ([]string, error) {
 		linesArr = linesArr[:len(linesArr)-1]
 	}
 
+	var output []string
 	if len(linesArr) > lines {
 		output = linesArr[len(linesArr)-lines:]
 	} else {
