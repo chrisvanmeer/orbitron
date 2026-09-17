@@ -20,6 +20,7 @@ import (
 	"orbitron/internal/fetcher"
 	"orbitron/internal/logger"
 	"orbitron/internal/telemetry"
+	"orbitron/internal/web"
 )
 
 type Server struct {
@@ -62,6 +63,14 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 		return false
 	}
 
+	// 1. Check Cookie (For Browser/UI sessions leaking into API)
+	if cookie, err := r.Cookie("orbitron_token"); err == nil {
+		if _, ok := store.Tokens[cookie.Value]; ok {
+			return true
+		}
+	}
+
+	// 2. Check Bearer Token
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
@@ -70,6 +79,7 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 		}
 	}
 
+	// 3. Check Basic Auth
 	user, pass, ok := r.BasicAuth()
 	if ok {
 		if _, ok := store.Tokens[pass]; ok {
@@ -85,7 +95,10 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 
 func (s *Server) LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Info("HTTP %s %s (from %s)", r.Method, r.URL.RequestURI(), r.RemoteAddr)
+		// Suppress routine UI polling requests from log output
+		if !strings.HasPrefix(r.URL.Path, "/ui") {
+			logger.Info("HTTP %s %s (from %s)", r.Method, r.URL.RequestURI(), r.RemoteAddr)
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -522,9 +535,13 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// Prometheus Telemetry Endpoint (Beveiligd met token auth via AuthMiddleware)
+	// Prometheus Telemetry Endpoint (Protected with token auth via AuthMiddleware)
 	metrics := telemetry.NewMetrics()
 	mux.HandleFunc("/metrics", s.AuthMiddleware(metrics.Handler(s.cfg)))
+
+	// Web UI Cyberpunk Dashboard & HTMX Assets (Uses its own cookie auth)
+	dashboard := web.NewDashboard(s.cfg)
+	dashboard.Register(mux)
 
 	mux.HandleFunc("/api/v1/requirements/collections", s.AuthMiddleware(s.HandleRequirementsCollections))
 	mux.HandleFunc("/api/v1/requirements/roles", s.AuthMiddleware(s.HandleRequirementsRoles))

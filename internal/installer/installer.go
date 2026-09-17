@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"orbitron/internal/config"
+	"orbitron/internal/web"
 )
 
 const (
@@ -18,6 +19,7 @@ const (
 	ConfigFile    = "/etc/orbitron/config.yml"
 	LogDir        = "/var/log/orbitron"
 	StorageDir    = "/var/lib/orbitron/storage"
+	WebDir        = "/var/lib/orbitron/web"
 	SystemdFile   = "/etc/systemd/system/orbitron.service"
 	LogrotateDir  = "/etc/logrotate.d"
 	LogrotateFile = "/etc/logrotate.d/orbitron"
@@ -60,7 +62,7 @@ func RunInstall() error {
 
 	// 4. Create directories with strict 0750 permissions
 	baseDirs := []string{"/var/lib/orbitron"}
-	dirs := []string{ConfigDir, LogDir, StorageDir}
+	dirs := []string{ConfigDir, LogDir, StorageDir, WebDir}
 
 	for _, dir := range append(baseDirs, dirs...) {
 		if err := os.MkdirAll(dir, 0750); err != nil {
@@ -75,7 +77,15 @@ func RunInstall() error {
 	}
 	fmt.Println("  ✔ Configured application directories (/etc/orbitron, /var/log/orbitron, /var/lib/orbitron) with 0750 permissions")
 
-	// 5. Create example config.yml if missing with 0640 permissions
+	// 5. Extract embedded Web UI assets (HTMX 4.0.0)
+	htmxPath := filepath.Join(WebDir, "htmx.min.js")
+	if err := os.WriteFile(htmxPath, web.HtmxJS, 0640); err != nil {
+		return fmt.Errorf("failed to write embedded htmx.js: %w", err)
+	}
+	_ = os.Chown(htmxPath, uid, gid)
+	fmt.Println("  ✔ Extracted embedded Web UI assets (HTMX 4.0.0)")
+
+	// 6. Create example config.yml if missing with 0640 permissions
 	if _, err := os.Stat(ConfigFile); os.IsNotExist(err) {
 		if err := os.WriteFile(ConfigFile, []byte(config.GetDefaultConfigYML()), 0640); err != nil {
 			return fmt.Errorf("failed to write config file: %w", err)
@@ -86,7 +96,7 @@ func RunInstall() error {
 		fmt.Printf("  ℹ Configuration file already exists at %s (skipping)\n", ConfigFile)
 	}
 
-	// 6. Create Systemd Service File
+	// 7. Create Systemd Service File
 	systemdContent := `[Unit]
 Description=Orbitron Ansible Galaxy Mirror Daemon
 After=network.target
@@ -107,7 +117,7 @@ WantedBy=multi-user.target
 	}
 	fmt.Printf("  ✔ Created systemd service at %s (User=orbitron)\n", SystemdFile)
 
-	// 7. Configure Logrotate if directory exists
+	// 8. Configure Logrotate if directory exists
 	if _, err := os.Stat(LogrotateDir); !os.IsNotExist(err) {
 		logrotateContent := `/var/log/orbitron/*.log {
     daily
@@ -128,7 +138,7 @@ WantedBy=multi-user.target
 		fmt.Printf("  ✔ Configured logrotate rules at %s\n", LogrotateFile)
 	}
 
-	// 8. Reload systemd, enable and start service
+	// 9. Reload systemd, enable and start service
 	_ = exec.Command("systemctl", "daemon-reload").Run()
 
 	if err := exec.Command("systemctl", "enable", "orbitron").Run(); err != nil {
