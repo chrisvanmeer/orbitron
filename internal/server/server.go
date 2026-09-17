@@ -65,14 +65,17 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if store.Tokens[token] {
+		if _, ok := store.Tokens[token]; ok {
 			return true
 		}
 	}
 
 	user, pass, ok := r.BasicAuth()
 	if ok {
-		if store.Tokens[pass] || store.Tokens[user] {
+		if _, ok := store.Tokens[pass]; ok {
+			return true
+		}
+		if _, ok := store.Tokens[user]; ok {
 			return true
 		}
 	}

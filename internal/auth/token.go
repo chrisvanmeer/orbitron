@@ -7,14 +7,15 @@ import (
 	"os"
 	"os/user"
 	"strconv"
+	"time"
 )
 
 type TokenStore struct {
-	Tokens map[string]bool `json:"tokens"`
+	Tokens map[string]int64 `json:"tokens"`
 }
 
 func LoadTokens(tokensFile string) (*TokenStore, error) {
-	store := &TokenStore{Tokens: make(map[string]bool)}
+	store := &TokenStore{Tokens: make(map[string]int64)}
 	data, err := os.ReadFile(tokensFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -34,12 +35,10 @@ func SaveTokens(tokensFile string, store *TokenStore) error {
 		return err
 	}
 
-	// Set permissions to 0640 so group members (orbitron) can read the file
 	if err := os.WriteFile(tokensFile, data, 0640); err != nil {
 		return err
 	}
 
-	// Ensure ownership is transferred to the orbitron system user/group when run via sudo
 	if u, err := user.Lookup("orbitron"); err == nil {
 		uid, _ := strconv.Atoi(u.Uid)
 		gid, _ := strconv.Atoi(u.Gid)
@@ -61,7 +60,7 @@ func GenerateToken(tokensFile string) (string, error) {
 		return "", err
 	}
 
-	store.Tokens[token] = true
+	store.Tokens[token] = time.Now().Unix()
 	if err := SaveTokens(tokensFile, store); err != nil {
 		return "", err
 	}
