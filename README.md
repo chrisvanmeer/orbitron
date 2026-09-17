@@ -15,6 +15,8 @@ enterprise environments to cache, store, and serve Ansible roles and collections
 
 * **Galaxy V1 & V3 API Support**: Complete compatibility with `ansible-galaxy role install` and
   `ansible-galaxy collection install`.
+* **Cyberpunk Web Dashboard (`/ui`)**: Full-screen, zero-dependency terminal UI featuring cookie-backed session auth,
+  live log streaming, and system telemetry.
 * **On-the-Fly Archiving**: Packages unpacked Git-based roles into `.tar.gz` streams on-the-fly during download.
 * **Parallel Background Sync**: Concurrent fetching of roles, collections, and shallow Git clones (`--depth 1`).
 * **Flexible Authentication**: Unauthenticated pulls by default with an optional `require_auth_pull: true` toggle
@@ -23,6 +25,30 @@ enterprise environments to cache, store, and serve Ansible roles and collections
   systemd service registration, logrotate configuration, and full uninstallation cleanup.
 * **Storage Pruner**: Built-in CLI flag (`--prune`) to scan manifests, detect orphaned versions, and clean up
   disk usage.
+
+---
+
+## 🖥️ Cyberpunk Web Dashboard (`/ui`)
+
+Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real-time monitoring and storage inspection.
+
+<div align="center">
+  <img src="assets/ui.png" alt="Orbitron Cyberpunk Web UI" width="100%">
+</div>
+
+### Dashboard Features
+
+* **Local Cache Matrix**: Fullscreen view of all cached roles and collections. Actively declared versions from
+  ingested manifests are highlighted with an `[ACTIVE]` tag alongside precise physical block-level disk usage.
+* **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only 8-hour cookie session using any
+  valid administrative token.
+* **Collapsible Log Drawer**: Bottom sliding drawer (`▲ LOG STREAM`) providing a live feed of
+  `/var/log/orbitron/orbitron.log` (automatically filtered to suppress HTTP polling noise).
+* **Collapsible System Metrics Drawer**: Right sliding sidebar (`◄ SYS METRICS`) displaying uplink sync status,
+  last manifest ingest timestamp, cache disk usage, mount free space, normalized OS distribution/version,
+  system architecture (e.g., `AMD64`, `ARM64`), and last boot time.
+* **Air-Gapped / Island-Mode Ready**: Embedded HTMX 4.0.0 served directly from memory, eliminating external
+  CDN calls or outbound network dependencies.
 
 ---
 
@@ -260,7 +286,7 @@ If you are mirroring private Git repositories using Personal Access Tokens (PATs
 (e.g., `https://oauth2:<TOKEN>@github.com/...`), these tokens could be exposed in transit.
 
 It is highly recommended to run Orbitron behind a reverse proxy like **Nginx** configured with TLS/SSL.
-This ensures all API calls, token transmissions, and Git credentials remain securely encrypted.
+This ensures all API calls, token transmissions, Web UI logins, and Git credentials remain securely encrypted.
 
 ### Nginx Example Configuration
 
@@ -281,8 +307,8 @@ server {
     server_name orbitron.example.com;
 
     # SSL Certificates (e.g., Let's Encrypt)
-    ssl_certificate /etc/letsencrypt/live/orbitron.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/orbitron.example.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/https://orbitron.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/https://orbitron.example.com/privkey.pem;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
