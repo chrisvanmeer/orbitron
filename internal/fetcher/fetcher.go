@@ -1,11 +1,13 @@
 package fetcher
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"orbitron/internal/logger"
+	ver "orbitron/internal/version"
 )
 
 type CollectionItem struct {
@@ -40,12 +43,13 @@ type RequirementsYML struct {
 }
 
 type Fetcher struct {
-	storagePath  string
-	manifestPath string
-	httpClient   *http.Client
+	storagePath    string
+	manifestPath   string
+	httpClient     *http.Client
+	maxConcurrency int
 }
 
-func NewFetcher(storagePath string) *Fetcher {
+func NewFetcher(storagePath string, maxConcurrency int) *Fetcher {
 	manifestPath := filepath.Join(storagePath, "manifests")
 	collectionsPath := filepath.Join(storagePath, "collections")
 	rolesPath := filepath.Join(storagePath, "roles")
@@ -55,6 +59,10 @@ func NewFetcher(storagePath string) *Fetcher {
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			logger.Error("Failed to initialize storage directory (%s): %v", dir, err)
 		}
+	}
+
+	if maxConcurrency <= 0 {
+		maxConcurrency = 4
 	}
 
 	dialer := &net.Dialer{
@@ -70,8 +78,9 @@ func NewFetcher(storagePath string) *Fetcher {
 	}
 
 	return &Fetcher{
-		storagePath:  storagePath,
-		manifestPath: manifestPath,
+		storagePath:    storagePath,
+		manifestPath:   manifestPath,
+		maxConcurrency: maxConcurrency,
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   30 * time.Second,
@@ -108,11 +117,142 @@ func ParseRequirements(data []byte) (*RequirementsYML, error) {
 	return &reqs, err
 }
 
-func (f *Fetcher) SaveManifest(filename string, data []byte) error {
+func (f *Fetcher) SaveManifest(manifestType string, data []byte) error {
 	if err := os.MkdirAll(f.manifestPath, 0750); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(f.manifestPath, filename), data, 0640)
+	// Store manifests under a content hash so multiple distinct manifests
+	// can coexist (and re-sync) without re-appending identical ones.
+	sum := sha256.Sum256(data)
+	name := fmt.Sprintf("%s_%x_requirements.yml", manifestType, sum[:6])
+	return os.WriteFile(filepath.Join(f.manifestPath, name), data, 0640)
+}
+
+// SaveManifestReplacing stores a requirements manifest, first removing any
+// previously stored manifest of the same type that declares an overlapping
+// role or collection name, so only the newest declaration for each name
+// governs (mirrors the ACTIVE badge's per-name identity).
+func (f *Fetcher) SaveManifestReplacing(manifestType string, data []byte) error {
+	declared := fetcherDeclaredNames(manifestType, data)
+
+	entries, err := os.ReadDir(f.manifestPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, entry := range entries {
+		p := filepath.Join(f.manifestPath, entry.Name())
+		existing, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		for name := range fetcherDeclaredNames(manifestType, existing) {
+			if declared[name] {
+				_ = os.Remove(p)
+				break
+			}
+		}
+	}
+	return f.SaveManifest(manifestType, data)
+}
+
+// fetcherDeclaredNames returns the identity names declared by a requirements
+// manifest, using the same normalization as the dashboard's ACTIVE badge.
+func fetcherDeclaredNames(manifestType string, data []byte) map[string]bool {
+	names := make(map[string]bool)
+	reqs, err := ParseRequirements(data)
+	if err != nil {
+		return names
+	}
+	if manifestType == "roles" {
+		for _, r := range reqs.Roles {
+			if n := extractFetcherRoleName(r); n != "" {
+				names[n] = true
+			}
+		}
+	} else {
+		for _, c := range reqs.Collections {
+			if n := strings.Trim(strings.TrimSpace(c.Name), "\"'"); n != "" {
+				names[n] = true
+			}
+		}
+	}
+	return names
+}
+
+// extractFetcherRoleName mirrors dashboard extractRoleName (name or src, drop
+// .git, keep trailing path segment, trim quotes).
+func extractFetcherRoleName(r RoleItem) string {
+	target := strings.TrimSpace(r.Name)
+	if target == "" {
+		target = strings.TrimSpace(r.Src)
+	}
+	if target == "" {
+		return ""
+	}
+	target = strings.TrimSuffix(target, ".git")
+	if idx := strings.LastIndexAny(target, "/:"); idx != -1 {
+		target = target[idx+1:]
+	}
+	return strings.Trim(target, "\"'")
+}
+
+// runConcurrently executes the given jobs with at most f.maxConcurrency workers.
+func (f *Fetcher) runConcurrently(jobs []func()) {
+	if len(jobs) == 0 {
+		return
+	}
+
+	workers := f.maxConcurrency
+	if workers <= 0 {
+		workers = 1
+	}
+	if len(jobs) < workers {
+		workers = len(jobs)
+	}
+
+	jobCh := make(chan func())
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobCh {
+				job()
+			}
+		}()
+	}
+
+	for _, job := range jobs {
+		jobCh <- job
+	}
+	close(jobCh)
+	wg.Wait()
+}
+
+func (f *Fetcher) ProcessRoles(items []RoleItem) {
+	jobs := make([]func(), 0, len(items))
+	for _, item := range items {
+		jobs = append(jobs, func() {
+			if err := f.ProcessRole(item); err != nil {
+				logger.Error("Error processing role (%s): %v", item.Name, err)
+			}
+		})
+	}
+	f.runConcurrently(jobs)
+	logger.Info("Role requirements sync completed.")
+}
+
+func (f *Fetcher) ProcessCollections(items []CollectionItem) {
+	jobs := make([]func(), 0, len(items))
+	for _, item := range items {
+		jobs = append(jobs, func() {
+			if err := f.ProcessCollection(item); err != nil {
+				logger.Error("Error processing collection (%s): %v", item.Name, err)
+			}
+		})
+	}
+	f.runConcurrently(jobs)
+	logger.Info("Collection requirements sync completed.")
 }
 
 func (f *Fetcher) SyncAll() {
@@ -124,7 +264,8 @@ func (f *Fetcher) SyncAll() {
 		return
 	}
 
-	var wg sync.WaitGroup
+	var roles []RoleItem
+	var collections []CollectionItem
 
 	for _, file := range files {
 		if file.IsDir() {
@@ -144,28 +285,22 @@ func (f *Fetcher) SyncAll() {
 			continue
 		}
 
-		for _, col := range reqs.Collections {
-			wg.Add(1)
-			go func(c CollectionItem) {
-				defer wg.Done()
-				if err := f.ProcessCollection(c); err != nil {
-					logger.Error("SyncAll collection error (%s): %v", c.Name, err)
-				}
-			}(col)
-		}
-
-		for _, role := range reqs.Roles {
-			wg.Add(1)
-			go func(r RoleItem) {
-				defer wg.Done()
-				if err := f.ProcessRole(r); err != nil {
-					logger.Error("SyncAll role error (%s): %v", r.Name, err)
-				}
-			}(role)
-		}
+		roles = append(roles, reqs.Roles...)
+		collections = append(collections, reqs.Collections...)
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		f.ProcessCollections(collections)
+	}()
+	go func() {
+		defer wg.Done()
+		f.ProcessRoles(roles)
+	}()
 	wg.Wait()
+
 	logger.Info("Full sync job completed.")
 }
 
@@ -185,7 +320,9 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 		cmdFetch.Env = os.Environ()
 		if err := cmdFetch.Run(); err != nil {
 			logger.Warn("Git fetch failed (%v), re-cloning...", err)
-			os.RemoveAll(targetDir)
+			if rmErr := os.RemoveAll(targetDir); rmErr != nil {
+				logger.Warn("Failed to remove stale repo at %s: %v", targetDir, rmErr)
+			}
 		} else {
 			if version != "" {
 				cmdCheckout := exec.Command("git", "-C", targetDir, "checkout", version)
@@ -236,6 +373,129 @@ func (f *Fetcher) ProcessCollection(item CollectionItem) error {
 	return fmt.Errorf("invalid galaxy collection name format: %s", item.Name)
 }
 
+// DelRoleVersion removes the cached version directory for a galaxy role and,
+// when that version was pinned exactly in a stored requirements manifest,
+// removes the pin so a later sync does not silently re-fetch it. Constraint
+// or "latest" declarations are left untouched because they are not bound to
+// the concrete on-disk version.
+func (f *Fetcher) DelRoleVersion(namespace, name, version string) error {
+	roleDir := namespace + "." + name
+	target := filepath.Join(f.storagePath, "roles", roleDir, filepath.Base(version))
+	if err := os.RemoveAll(target); err != nil {
+		return fmt.Errorf("failed to delete cached role version: %w", err)
+	}
+	return f.stripRolePins(namespace, name, version)
+}
+
+// stripRolePins rewrites every stored manifest, removing role entries that
+// were pinned exactly to namespace.name @ version.
+func (f *Fetcher) stripRolePins(namespace, name, version string) error {
+	manifestFiles, err := os.ReadDir(f.manifestPath)
+	if err != nil {
+		return nil
+	}
+
+	for _, mf := range manifestFiles {
+		if mf.IsDir() {
+			continue
+		}
+		path := filepath.Join(f.manifestPath, mf.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		reqs, err := ParseRequirements(data)
+		if err != nil {
+			continue
+		}
+
+		kept := reqs.Roles[:0]
+		removed := false
+		for _, r := range reqs.Roles {
+			if r.Name == namespace+"."+name && !ver.IsLatest(r.Version) && !ver.IsConstraint(r.Version) && strings.TrimSpace(strings.TrimPrefix(r.Version, "v")) == strings.TrimPrefix(version, "v") {
+				removed = true
+				continue
+			}
+			kept = append(kept, r)
+		}
+		if !removed {
+			continue
+		}
+		reqs.Roles = kept
+		if err := saveRequirements(path, reqs); err != nil {
+			logger.Warn("Failed to update manifest %s after role deletion: %v", mf.Name(), err)
+		}
+	}
+	return nil
+}
+
+// DelCollectionVersion removes a single cached collection artifact and, when
+// it was pinned exactly in a stored requirements manifest, removes the pin.
+func (f *Fetcher) DelCollectionVersion(namespace, name, version string) error {
+	target := filepath.Join(f.storagePath, "collections", namespace, fmt.Sprintf("%s-%s-%s.tar.gz", namespace, name, filepath.Base(version)))
+	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete cached collection version: %w", err)
+	}
+	return f.stripCollectionPins(namespace, name, version)
+}
+
+// stripCollectionPins rewrites every stored manifest, removing collection
+// entries pinned exactly to namespace.name @ version.
+func (f *Fetcher) stripCollectionPins(namespace, name, version string) error {
+	manifestFiles, err := os.ReadDir(f.manifestPath)
+	if err != nil {
+		return nil
+	}
+
+	for _, mf := range manifestFiles {
+		if mf.IsDir() {
+			continue
+		}
+		path := filepath.Join(f.manifestPath, mf.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		reqs, err := ParseRequirements(data)
+		if err != nil {
+			continue
+		}
+
+		kept := reqs.Collections[:0]
+		removed := false
+		for _, c := range reqs.Collections {
+			if c.Name == namespace+"."+name && !ver.IsLatest(c.Version) && !ver.IsConstraint(c.Version) && strings.TrimSpace(strings.TrimPrefix(c.Version, "v")) == strings.TrimPrefix(version, "v") {
+				removed = true
+				continue
+			}
+			kept = append(kept, c)
+		}
+		if !removed {
+			continue
+		}
+		reqs.Collections = kept
+		if err := saveRequirements(path, reqs); err != nil {
+			logger.Warn("Failed to update manifest %s after collection deletion: %v", mf.Name(), err)
+		}
+	}
+	return nil
+}
+
+func saveRequirements(path string, reqs *RequirementsYML) error {
+	if len(reqs.Roles) == 0 && len(reqs.Collections) == 0 {
+		_ = os.Remove(path)
+		return nil
+	}
+	data, err := yaml.Marshal(reqs)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0640)
+}
+
+// ProcessRole syncs a single required role, dispatching to Git whenever the
+// item carries an SCM of git or an explicit git source URL, and otherwise to
+// the Galaxy V1 role API.
 func (f *Fetcher) ProcessRole(item RoleItem) error {
 	gitURL := item.Src
 	if gitURL == "" && (strings.HasPrefix(item.Name, "http://") || strings.HasPrefix(item.Name, "https://") || strings.HasPrefix(item.Name, "git@")) {
@@ -266,6 +526,147 @@ func (f *Fetcher) ProcessRole(item RoleItem) error {
 	return fmt.Errorf("invalid galaxy role name format: %s", item.Name)
 }
 
+// fetchRoleVersions returns the published version tags for a Galaxy V1 role.
+func (f *Fetcher) fetchRoleVersions(roleID int) ([]string, error) {
+	galaxyBase := "https://galaxy.ansible.com"
+	base, err := url.Parse(galaxyBase)
+	if err != nil {
+		return nil, err
+	}
+
+	var versions []string
+	var nextURL string
+	for page := 0; page < 100; page++ {
+		if page == 0 {
+			nextURL = fmt.Sprintf("%s/api/v1/roles/%d/versions/", galaxyBase, roleID)
+		}
+		if nextURL == "" {
+			break
+		}
+
+		resp, err := f.httpClient.Get(nextURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query role versions api: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("role versions api returned status %s", resp.Status)
+		}
+
+		var pageData struct {
+			Results []struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"results"`
+			Next     string `json:"next"`
+			NextLink string `json:"next_link"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&pageData)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode role versions response: %w", decodeErr)
+		}
+
+		for _, result := range pageData.Results {
+			v := result.Version
+			if v == "" {
+				v = result.Name
+			}
+			if v != "" {
+				versions = append(versions, v)
+			}
+		}
+
+		nextURL = pageData.Next
+		if nextURL == "" && pageData.NextLink != "" {
+			ref, err := url.Parse(pageData.NextLink)
+			if err != nil {
+				break
+			}
+			nextURL = base.ResolveReference(ref).String()
+		}
+	}
+
+	return versions, nil
+}
+
+// fetchCollectionVersions returns the published versions for a Galaxy V3
+// collection, following the links.next pagination of the versions index.
+func (f *Fetcher) fetchCollectionVersions(namespace, name string) ([]string, error) {
+	galaxyBase := "https://galaxy.ansible.com"
+	base, err := url.Parse(galaxyBase)
+	if err != nil {
+		return nil, err
+	}
+
+	var versions []string
+	nextURL := fmt.Sprintf("%s/api/v3/plugin/ansible/content/published/collections/index/%s/%s/versions/", galaxyBase, namespace, name)
+
+	for page := 0; page < 200 && nextURL != ""; page++ {
+		resp, err := f.httpClient.Get(nextURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query collection versions api: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("collection versions api returned status %s", resp.Status)
+		}
+
+		var pageData struct {
+			Links struct {
+				Next string `json:"next"`
+			} `json:"links"`
+			Data []struct {
+				Version string `json:"version"`
+			} `json:"data"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&pageData)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode collection versions response: %w", decodeErr)
+		}
+
+		for _, item := range pageData.Data {
+			if item.Version != "" {
+				versions = append(versions, item.Version)
+			}
+		}
+
+		if pageData.Links.Next == "" {
+			break
+		}
+		ref, err := url.Parse(pageData.Links.Next)
+		if err != nil {
+			break
+		}
+		nextURL = base.ResolveReference(ref).String()
+	}
+
+	return versions, nil
+}
+
+// resolveGalaxyVersion resolves a declared requirement (a concrete version,
+// "latest", or a specifier set) against the published versions of a role or
+// collection. An empty return with a nil error means "no parseable published
+// versions", in which case callers fall back to the default branch.
+func resolveGalaxyVersion(versions []string, declared string) (string, error) {
+	if !ver.IsConstraint(declared) {
+		if ver.IsLatest(declared) {
+			picked, err := ver.Highest(versions)
+			if err != nil {
+				return "", nil
+			}
+			return picked, nil
+		}
+		return strings.TrimSpace(declared), nil
+	}
+	picked, err := ver.Pick(versions, declared)
+	if err != nil {
+		return "", err
+	}
+	return picked, nil
+}
+
 func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 	apiURL := fmt.Sprintf("https://galaxy.ansible.com/api/v1/roles/?owner__username=%s&name=%s", namespace, name)
 
@@ -273,7 +674,7 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 	if err != nil {
 		return fmt.Errorf("failed to query galaxy v1 api: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("galaxy v1 api returned status %s", resp.Status)
@@ -281,6 +682,7 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 
 	var result struct {
 		Results []struct {
+			ID         int    `json:"id"`
 			GitHubUser string `json:"github_user"`
 			GitHubRepo string `json:"github_repo"`
 		} `json:"results"`
@@ -294,48 +696,56 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 		return fmt.Errorf("galaxy role %s.%s not found", namespace, name)
 	}
 
-	ghUser := result.Results[0].GitHubUser
-	ghRepo := result.Results[0].GitHubRepo
+	first := result.Results[0]
+	ghUser := first.GitHubUser
+	ghRepo := first.GitHubRepo
 
 	gitURL := fmt.Sprintf("https://github.com/%s/%s.git", ghUser, ghRepo)
-	targetDir := filepath.Join(f.storagePath, "roles", fmt.Sprintf("%s.%s", namespace, name), version)
+	roleDir := fmt.Sprintf("%s.%s", namespace, name)
 
+	if ver.IsLatest(version) || ver.IsConstraint(version) {
+		published, err := f.fetchRoleVersions(first.ID)
+		if err != nil {
+			return fmt.Errorf("failed to resolve versions for galaxy role %s.%s: %w", namespace, name, err)
+		}
+
+		resolved, err := resolveGalaxyVersion(published, version)
+		if err != nil {
+			return fmt.Errorf("cannot satisfy version %q for galaxy role %s.%s: %w", version, namespace, name, err)
+		}
+		if resolved == "" {
+			// No published tags: fall back to the default branch.
+			logger.Info("Galaxy role %s.%s has no published versions; cloning default branch", namespace, name)
+			targetDir := filepath.Join(f.storagePath, "roles", roleDir, "latest")
+			return f.SyncGitRepo(gitURL, "", targetDir)
+		}
+
+		targetDir := filepath.Join(f.storagePath, "roles", roleDir, resolved)
+		logger.Info("Resolved Galaxy role %s.%s to %s (version: %s)", namespace, name, gitURL, resolved)
+		return f.SyncGitRepo(gitURL, resolved, targetDir)
+	}
+
+	targetDir := filepath.Join(f.storagePath, "roles", roleDir, version)
 	logger.Info("Resolved Galaxy role %s.%s to Git repo %s (version: %s)", namespace, name, gitURL, version)
 	return f.SyncGitRepo(gitURL, version, targetDir)
 }
 
 func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
-	var downloadURL string
-
-	if version == "" || version == "latest" {
-		// Fetch highest available version info from Galaxy V3 API
-		apiURL := fmt.Sprintf("https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/index/%s/%s/versions/?is_highest=true", namespace, name)
-		resp, err := f.httpClient.Get(apiURL)
+	if version == "" || ver.IsLatest(version) || ver.IsConstraint(version) {
+		published, err := f.fetchCollectionVersions(namespace, name)
 		if err != nil {
-			return fmt.Errorf("failed to query galaxy collection v3 api: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("galaxy collection v3 api returned status %s", resp.Status)
+			return fmt.Errorf("failed to resolve versions for galaxy collection %s.%s: %w", namespace, name, err)
 		}
 
-		var result struct {
-			Results []struct {
-				Version     string `json:"version"`
-				DownloadURL string `json:"download_url"`
-			} `json:"results"`
+		resolved, err := ver.Pick(published, version)
+		if err != nil {
+			return fmt.Errorf("cannot satisfy version %q for galaxy collection %s.%s: %w", version, namespace, name, err)
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Results) == 0 {
-			return fmt.Errorf("failed to resolve latest version for %s.%s", namespace, name)
-		}
-
-		version = result.Results[0].Version
-		downloadURL = result.Results[0].DownloadURL
-	} else {
-		// Galaxy V3 direct artifact URL scheme: artifacts/namespace-name-version.tar.gz
-		downloadURL = fmt.Sprintf("https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/%s-%s-%s.tar.gz", namespace, name, version)
+		version = resolved
 	}
+
+	// Galaxy V3 direct artifact URL scheme: artifacts/namespace-name-version.tar.gz
+	downloadURL := fmt.Sprintf("https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/%s-%s-%s.tar.gz", namespace, name, version)
 
 	targetDir := filepath.Join(f.storagePath, "collections", namespace)
 	targetFile := filepath.Join(targetDir, fmt.Sprintf("%s-%s-%s.tar.gz", namespace, name, version))
@@ -349,7 +759,7 @@ func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch collection from galaxy: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("galaxy returned status code: %s", resp.Status)
@@ -359,7 +769,7 @@ func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {

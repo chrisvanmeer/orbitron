@@ -38,25 +38,25 @@ func (m *Metrics) Handler(cfg *config.Config) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 
-		fmt.Fprintf(w, "# HELP orbitron_uptime_seconds Total daemon uptime in seconds.\n")
-		fmt.Fprintf(w, "# TYPE orbitron_uptime_seconds counter\n")
-		fmt.Fprintf(w, "orbitron_uptime_seconds %.2f\n\n", uptime)
+		_, _ = fmt.Fprintf(w, "# HELP orbitron_uptime_seconds Total daemon uptime in seconds.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE orbitron_uptime_seconds counter\n")
+		_, _ = fmt.Fprintf(w, "orbitron_uptime_seconds %.2f\n\n", uptime)
 
-		fmt.Fprintf(w, "# HELP orbitron_roles_total Total number of stored Ansible role directories.\n")
-		fmt.Fprintf(w, "# TYPE orbitron_roles_total gauge\n")
-		fmt.Fprintf(w, "orbitron_roles_total %d\n\n", rolesCount)
+		_, _ = fmt.Fprintf(w, "# HELP orbitron_roles_total Total number of stored Ansible role directories.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE orbitron_roles_total gauge\n")
+		_, _ = fmt.Fprintf(w, "orbitron_roles_total %d\n\n", rolesCount)
 
-		fmt.Fprintf(w, "# HELP orbitron_collections_total Total number of stored Ansible collection archives.\n")
-		fmt.Fprintf(w, "# TYPE orbitron_collections_total gauge\n")
-		fmt.Fprintf(w, "orbitron_collections_total %d\n\n", collectionsCount)
+		_, _ = fmt.Fprintf(w, "# HELP orbitron_collections_total Total number of stored Ansible collection archives.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE orbitron_collections_total gauge\n")
+		_, _ = fmt.Fprintf(w, "orbitron_collections_total %d\n\n", collectionsCount)
 
-		fmt.Fprintf(w, "# HELP orbitron_manifests_total Total number of stored requirement manifests.\n")
-		fmt.Fprintf(w, "# TYPE orbitron_manifests_total gauge\n")
-		fmt.Fprintf(w, "orbitron_manifests_total %d\n\n", manifestsCount)
+		_, _ = fmt.Fprintf(w, "# HELP orbitron_manifests_total Total number of stored requirement manifests.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE orbitron_manifests_total gauge\n")
+		_, _ = fmt.Fprintf(w, "orbitron_manifests_total %d\n\n", manifestsCount)
 
-		fmt.Fprintf(w, "# HELP orbitron_active_tokens_total Total number of registered Bearer tokens.\n")
-		fmt.Fprintf(w, "# TYPE orbitron_active_tokens_total gauge\n")
-		fmt.Fprintf(w, "orbitron_active_tokens_total %d\n", activeTokensCount)
+		_, _ = fmt.Fprintf(w, "# HELP orbitron_active_tokens_total Total number of registered Bearer tokens.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE orbitron_active_tokens_total gauge\n")
+		_, _ = fmt.Fprintf(w, "orbitron_active_tokens_total %d\n", activeTokensCount)
 	}
 }
 

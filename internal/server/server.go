@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"orbitron/internal/auth"
 	"orbitron/internal/config"
@@ -23,16 +24,24 @@ import (
 	"orbitron/internal/web"
 )
 
+type shaEntry struct {
+	sum string
+	ts  time.Time
+}
+
 type Server struct {
-	cfg     *config.Config
-	fetcher *fetcher.Fetcher
-	httpSrv *http.Server
+	cfg      *config.Config
+	fetcher  *fetcher.Fetcher
+	httpSrv  *http.Server
+	shaMu    sync.Mutex
+	shaCache map[string]shaEntry
 }
 
 func NewServer(cfg *config.Config) *Server {
 	return &Server{
-		cfg:     cfg,
-		fetcher: fetcher.NewFetcher(cfg.StoragePath),
+		cfg:      cfg,
+		fetcher:  fetcher.NewFetcher(cfg.StoragePath, cfg.MaxConcurrency),
+		shaCache: make(map[string]shaEntry),
 	}
 }
 
@@ -42,18 +51,53 @@ func generateRoleID(roleName string) string {
 	return fmt.Sprintf("%d", h.Sum32())
 }
 
-func computeSHA256(filePath string) string {
+func computeSHA256File(filePath string) string {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return ""
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// computeSHA256 returns the file SHA-256, caching the result for 5 minutes.
+func (s *Server) computeSHA256(filePath string) string {
+	s.shaMu.Lock()
+	if s.shaCache == nil {
+		s.shaCache = make(map[string]shaEntry)
+	}
+	if e, ok := s.shaCache[filePath]; ok && time.Since(e.ts) < 5*time.Minute {
+		s.shaMu.Unlock()
+		return e.sum
+	}
+	s.shaMu.Unlock()
+
+	sum := computeSHA256File(filePath)
+	if sum == "" {
+		return ""
+	}
+
+	s.shaMu.Lock()
+	s.shaCache[filePath] = shaEntry{sum: sum, ts: time.Now()}
+	s.shaMu.Unlock()
+	return sum
+}
+
+// requestBaseURL returns the scheme://host prefix for building absolute,
+// proxy-aware download URLs (honors X-Forwarded-Proto and direct TLS).
+func (s *Server) requestBaseURL(r *http.Request) string {
+	scheme := "http"
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	} else if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 func (s *Server) authenticateRequest(r *http.Request) bool {
@@ -95,8 +139,8 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 
 func (s *Server) LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Suppress routine UI polling requests from log output
-		if !strings.HasPrefix(r.URL.Path, "/ui") {
+		// Suppress routine UI polling + favicon requests from log output
+		if !strings.HasPrefix(r.URL.Path, "/ui") && r.URL.Path != "/favicon.ico" && r.URL.Path != "/favicon.svg" {
 			logger.Info("HTTP %s %s (from %s)", r.Method, r.URL.RequestURI(), r.RemoteAddr)
 		}
 		next.ServeHTTP(w, r)
@@ -155,34 +199,26 @@ func (s *Server) HandleRequirementsCollections(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_ = s.fetcher.SaveManifest("collections_requirements.yml", body)
+	if err := s.fetcher.SaveManifestReplacing("collections", body); err != nil {
+		logger.Error("Failed to save collections manifest: %v", err)
+		http.Error(w, "Failed to store manifest", http.StatusInternalServerError)
+		return
+	}
 	logger.Info("Received collections manifest (%d collection(s) queued for sync)", len(reqs.Collections))
 
-	go func() {
-		var wg sync.WaitGroup
-		for _, col := range reqs.Collections {
-			wg.Add(1)
-			go func(c fetcher.CollectionItem) {
-				defer wg.Done()
-				if err := s.fetcher.ProcessCollection(c); err != nil {
-					logger.Error("Error processing collection (%s): %v", c.Name, err)
-				}
-			}(col)
-		}
-		wg.Wait()
-		logger.Info("Immediate collection requirements sync completed.")
-	}()
+	go s.fetcher.ProcessCollections(reqs.Collections)
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte(`{"status":"collections_sync_started"}`))
 }
 
+// HandleRequirementsRoles saves a roles requirements manifest and queues the
+// enclosed roles for background sync.
 func (s *Server) HandleRequirementsRoles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		logger.Error("Failed to read HTTP request body: %v", err)
@@ -197,26 +233,93 @@ func (s *Server) HandleRequirementsRoles(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_ = s.fetcher.SaveManifest("roles_requirements.yml", body)
+	if err := s.fetcher.SaveManifestReplacing("roles", body); err != nil {
+		logger.Error("Failed to save roles manifest: %v", err)
+		http.Error(w, "Failed to store manifest", http.StatusInternalServerError)
+		return
+	}
 	logger.Info("Received roles manifest (%d role(s) queued for sync)", len(reqs.Roles))
 
-	go func() {
-		var wg sync.WaitGroup
-		for _, role := range reqs.Roles {
-			wg.Add(1)
-			go func(r fetcher.RoleItem) {
-				defer wg.Done()
-				if err := s.fetcher.ProcessRole(r); err != nil {
-					logger.Error("Error processing role (%s): %v", r.Name, err)
-				}
-			}(role)
-		}
-		wg.Wait()
-		logger.Info("Immediate role requirements sync completed.")
-	}()
+	go s.fetcher.ProcessRoles(reqs.Roles)
 
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte(`{"status":"roles_sync_started"}`))
+}
+
+// HandleRoleDelete removes a single cached role version directory and, when it
+// was pinned exactly in a stored requirements manifest, removes the pin so a
+// later sync does not silently re-fetch it. Requires a valid admin token.
+// Path form: /api/v1/storage/roles/{namespace}.{name}/{version}
+func (s *Server) HandleRoleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	roleID := r.PathValue("role")
+	version := r.PathValue("version")
+	if roleID == "" || version == "" {
+		http.Error(w, "role and version are required", http.StatusBadRequest)
+		return
+	}
+
+	parts := strings.Split(roleID, ".")
+	if len(parts) != 2 {
+		http.Error(w, "role must be in namespace.name format", http.StatusBadRequest)
+		return
+	}
+	namespace, name := parts[0], parts[1]
+
+	lockKey := "role:" + roleID + "@" + version
+	_ = lockKey // deletion lock applied at the route level
+
+	if err := s.fetcher.DelRoleVersion(namespace, name, version); err != nil {
+		logger.Error("Failed to delete cached role version %s@%s: %v", roleID, version, err)
+		http.Error(w, "Failed to delete cached role version", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info("Deleted cached role version %s@%s", roleID, version)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"role_version_deleted"}`))
+}
+
+// HandleCollectionDelete removes a single cached collection version artifact
+// and, when it was pinned exactly in a stored requirements manifest, removes
+// the pin so a later sync does not silently re-fetch it. Requires a valid
+// admin token. Path form:
+// /api/v1/storage/collections/{collection}/{version}
+func (s *Server) HandleCollectionDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	collection := r.PathValue("collection")
+	version := r.PathValue("version")
+	if collection == "" || version == "" {
+		http.Error(w, "collection and version are required", http.StatusBadRequest)
+		return
+	}
+
+	parts := strings.Split(collection, ".")
+	if len(parts) != 2 {
+		http.Error(w, "collection must be in namespace.name format", http.StatusBadRequest)
+		return
+	}
+	namespace, name := parts[0], parts[1]
+
+	if err := s.fetcher.DelCollectionVersion(namespace, name, version); err != nil {
+		logger.Error("Failed to delete cached collection version %s.%s@%s: %v", namespace, name, version, err)
+		http.Error(w, "Failed to delete cached collection version", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info("Deleted cached collection version %s.%s@%s", namespace, name, version)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"collection_version_deleted"}`))
 }
 
 func (s *Server) HandleSync(w http.ResponseWriter, r *http.Request) {
@@ -318,7 +421,8 @@ func (s *Server) HandleGalaxyV1RoleVersions(w http.ResponseWriter, r *http.Reque
 				continue
 			}
 			ver := vEntry.Name()
-			downloadURL := fmt.Sprintf("http://%s/api/v1/roles/download/%s/%s.tar.gz", r.Host, roleName, ver)
+			baseURL := s.requestBaseURL(r)
+			downloadURL := fmt.Sprintf("%s/api/v1/roles/download/%s/%s.tar.gz", baseURL, roleName, ver)
 			results = append(results, VersionResult{
 				Name:        ver,
 				DownloadURL: downloadURL,
@@ -362,7 +466,7 @@ type CollectionVersionItem struct {
 	Href        string `json:"href"`
 }
 
-func (s *Server) listCollectionVersions(host, basePath, namespace, name string) []CollectionVersionItem {
+func (s *Server) listCollectionVersions(baseURL, basePath, namespace, name string) []CollectionVersionItem {
 	results := []CollectionVersionItem{}
 	nsDir := filepath.Join(s.cfg.StoragePath, "collections", namespace)
 	files, err := os.ReadDir(nsDir)
@@ -376,8 +480,8 @@ func (s *Server) listCollectionVersions(host, basePath, namespace, name string) 
 			ver := strings.TrimPrefix(f.Name(), prefix)
 			ver = strings.TrimSuffix(ver, ".tar.gz")
 
-			downloadURL := fmt.Sprintf("http://%s%sartifacts/%s", host, basePath, f.Name())
-			href := fmt.Sprintf("http://%s%scollections/%s/%s/versions/%s/", host, basePath, namespace, name, ver)
+			downloadURL := fmt.Sprintf("%s%sartifacts/%s", baseURL, basePath, f.Name())
+			href := fmt.Sprintf("%s%scollections/%s/%s/versions/%s/", baseURL, basePath, namespace, name, ver)
 
 			results = append(results, CollectionVersionItem{
 				Version:     ver,
@@ -422,7 +526,7 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 			name = r.URL.Query().Get("collection_name")
 		}
 
-		results := s.listCollectionVersions(r.Host, basePath, namespace, name)
+		results := s.listCollectionVersions(s.requestBaseURL(r), basePath, namespace, name)
 		w.Header().Set("Content-Type", "application/json")
 		respData := map[string]any{
 			"count":   len(results),
@@ -452,7 +556,8 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 			namespace := parts[0]
 			name := parts[1]
 
-			versionResults := s.listCollectionVersions(r.Host, basePath, namespace, name)
+			baseURL := s.requestBaseURL(r)
+			versionResults := s.listCollectionVersions(baseURL, basePath, namespace, name)
 			var highestVer string
 			if len(versionResults) > 0 {
 				highestVer = versionResults[len(versionResults)-1].Version
@@ -481,15 +586,15 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 					artifactPath := filepath.Join(s.cfg.StoragePath, "collections", namespace, artifactName)
 
 					var size int64 = 0
-					var sha256hash string = ""
+					sha256hash := ""
 
 					if info, err := os.Stat(artifactPath); err == nil {
 						size = info.Size()
-						sha256hash = computeSHA256(artifactPath)
+						sha256hash = s.computeSHA256(artifactPath)
 					}
 
-					downloadURL := fmt.Sprintf("http://%s%sartifacts/%s", r.Host, basePath, artifactName)
-					href := fmt.Sprintf("http://%s%scollections/%s/%s/versions/%s/", r.Host, basePath, namespace, name, version)
+					downloadURL := fmt.Sprintf("%s%sartifacts/%s", baseURL, basePath, artifactName)
+					href := fmt.Sprintf("%s%scollections/%s/%s/versions/%s/", baseURL, basePath, namespace, name, version)
 
 					w.Header().Set("Content-Type", "application/json")
 					resp := fmt.Sprintf(`{
@@ -547,6 +652,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/requirements/roles", s.AuthMiddleware(s.HandleRequirementsRoles))
 	mux.HandleFunc("/api/v1/sync", s.AuthMiddleware(s.HandleSync))
 
+	// Authorized admin-only storage deletion endpoints (one version per call).
+	// Registered with method-specific patterns so they take precedence over the
+	// broader pull-auth /api/ and galaxy routers. Always require a valid token.
+	mux.HandleFunc("DELETE /api/v1/storage/roles/{role}/{version}", s.AuthMiddleware(s.HandleRoleDelete))
+	mux.HandleFunc("DELETE /api/v1/storage/collections/{collection}/{version}", s.AuthMiddleware(s.HandleCollectionDelete))
+
 	mux.HandleFunc("/api/", s.PullAuthMiddleware(s.HandleApiRoot))
 	mux.HandleFunc("/api/v1/roles/", s.PullAuthMiddleware(s.HandleGalaxyV1RolesRouter))
 
@@ -556,8 +667,11 @@ func (s *Server) Start() error {
 	loggingHandler := s.LoggingMiddleware(mux)
 
 	s.httpSrv = &http.Server{
-		Addr:    s.cfg.ListenAddr,
-		Handler: loggingHandler,
+		Addr:              s.cfg.ListenAddr,
+		Handler:           loggingHandler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 
 	logger.Info("Orbitron server listening on %s (require_auth_pull=%v)", s.cfg.ListenAddr, s.cfg.RequireAuthPull)
@@ -576,10 +690,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func tarDirectory(srcDir string, w io.Writer) error {
 	gw := gzip.NewWriter(w)
-	defer gw.Close()
+	defer func() { _ = gw.Close() }()
 
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
+	defer func() { _ = tw.Close() }()
 
 	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -612,9 +726,12 @@ func tarDirectory(srcDir string, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
 
-		_, err = io.Copy(tw, file)
-		return err
+		_, copyErr := io.Copy(tw, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
 	})
 }

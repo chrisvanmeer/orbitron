@@ -12,6 +12,7 @@ type Config struct {
 	LogPath         string `yaml:"log_path"`
 	TokensFile      string `yaml:"tokens_file"`
 	RequireAuthPull bool   `yaml:"require_auth_pull"`
+	MaxConcurrency  int    `yaml:"max_concurrency"`
 }
 
 func GetDefaultConfigYML() string {
@@ -23,6 +24,9 @@ tokens_file: "/etc/orbitron/tokens.json"
 # Set to true to require authentication for pulling/downloading roles and collections
 # Supports Bearer tokens and Basic Auth (e.g., https://token:<TOKEN>@orbitron.local)
 require_auth_pull: false
+
+# Maximum number of concurrent download/clone workers spawned during syncs
+max_concurrency: 4
 `
 }
 
@@ -33,6 +37,7 @@ func LoadConfig(path string) (*Config, error) {
 		LogPath:         "/var/log/orbitron/orbitron.log",
 		TokensFile:      "/etc/orbitron/tokens.json",
 		RequireAuthPull: false,
+		MaxConcurrency:  4,
 	}
 
 	data, err := os.ReadFile(path)
@@ -42,12 +47,4 @@ func LoadConfig(path string) (*Config, error) {
 
 	err = yaml.Unmarshal(data, cfg)
 	return cfg, err
-}
-
-func (c *Config) SetupProxy() {
-	// Respects HTTP_PROXY, HTTPS_PROXY, and NO_PROXY environment variables
-}
-
-func EnsureDirExists(path string) error {
-	return os.MkdirAll(path, 0750)
 }

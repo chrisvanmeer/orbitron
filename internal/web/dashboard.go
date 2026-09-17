@@ -3,12 +3,14 @@ package web
 import (
 	"bufio"
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,20 +18,32 @@ import (
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
 	"orbitron/internal/logger"
+	ver "orbitron/internal/version"
 )
 
+type sizeEntry struct {
+	size int64
+	ts   time.Time
+}
+
 type Dashboard struct {
-	cfg *config.Config
+	cfg       *config.Config
+	sizeMu    sync.Mutex
+	sizeCache map[string]sizeEntry
 }
 
 func NewDashboard(cfg *config.Config) *Dashboard {
-	return &Dashboard{cfg: cfg}
+	return &Dashboard{cfg: cfg, sizeCache: make(map[string]sizeEntry)}
 }
 
 // Register attaches all UI endpoints to the mux (without global API auth wrapper)
 func (d *Dashboard) Register(mux *http.ServeMux) {
 	// Serve embedded HTMX 4.0.0 directly from memory
 	mux.HandleFunc("/ui/htmx.min.js", d.handleHtmx)
+
+	// Public favicon (no auth — browsers request it before any token exists)
+	mux.HandleFunc("/favicon.ico", d.handleFavicon)
+	mux.HandleFunc("/favicon.svg", d.handleFavicon)
 
 	// Auth routes
 	mux.HandleFunc("/ui/login", d.handleLogin)
@@ -149,6 +163,7 @@ const loginTemplate = `
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ORBITRON // AUTHENTICATION</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <style>
         :root {
             --bg-color: #050505;
@@ -215,6 +230,7 @@ const htmlTemplate = `
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ORBITRON // TERMINAL</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <!-- 100% Offline / Island-mode HTMX 4.0.0 -->
     <script src="/ui/htmx.min.js"></script>
     <style>
@@ -340,7 +356,7 @@ const htmlTemplate = `
         <button class="drawer-btn btn-bottom-toggle" onclick="toggleBottomDrawer()">▲ LOG STREAM</button>
         <div id="bottom-drawer">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0; color:var(--neon-pink);">SYSTEM LOGS // /var/log/orbitron/orbitron.log</h3>
+                <h3 style="margin:0; color:var(--neon-pink);">SYSTEM LOGS // {{LOG_PATH}}</h3>
                 <span style="color:var(--text-dim); font-size:0.8em; cursor:pointer; font-weight:bold;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
             </div>
             <div class="log-viewer" hx-get="/ui/logs" hx-trigger="load, every 5s" id="log-container">
@@ -371,14 +387,30 @@ const htmlTemplate = `
 `
 
 func (d *Dashboard) handleIndex(w http.ResponseWriter, r *http.Request) {
+	logPath := strings.Replace(htmlTemplate, "{{LOG_PATH}}", d.logLabel(), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(htmlTemplate))
+	_, _ = w.Write([]byte(logPath))
+}
+
+func (d *Dashboard) logLabel() string {
+	if d.cfg.LogPath != "" {
+		return d.cfg.LogPath
+	}
+	return "/var/log/orbitron/orbitron.log"
 }
 
 func (d *Dashboard) handleHtmx(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
 	_, _ = w.Write(HtmxJS)
+}
+
+func (d *Dashboard) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	// Serve the neon favicon (SVG) from memory; used as /favicon.ico as well
+	// as /favicon.svg. See internal/web/assets.go.
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(FaviconSVG)
 }
 
 func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
@@ -410,30 +442,30 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 
 		sort.Sort(sort.Reverse(sort.StringSlice(versions)))
 
-		for _, ver := range versions {
+		for _, version := range versions {
 			hasEntries = true
-			verPath := filepath.Join(versionsDir, ver)
-			size := dirSize(verPath)
+			verPath := filepath.Join(versionsDir, version)
+			size := d.dirSize(verPath)
 
 			verInManifest, declared := activeVersions[roleName]
 			normVerInManifest := strings.TrimPrefix(verInManifest, "v")
-			normVerOnDisk := strings.TrimPrefix(ver, "v")
+			normVerOnDisk := strings.TrimPrefix(version, "v")
 
-			isActive := declared && (verInManifest == ver ||
-				normVerInManifest == normVerOnDisk ||
-				verInManifest == "" ||
-				verInManifest == "main" ||
+			legacyActive := verInManifest == "main" ||
 				verInManifest == "master" ||
-				verInManifest == "HEAD")
+				verInManifest == "HEAD"
+			isActive := declared && (ver.ShouldKeep(verInManifest, versions, version) ||
+				legacyActive ||
+				(normVerInManifest != "" && normVerInManifest == normVerOnDisk))
 
 			var verHTML string
 			if isActive {
-				verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, ver)
+				verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, version)
 			} else {
-				verHTML = fmt.Sprintf(`<span style="color:var(--text-dim);">%s</span>`, ver)
+				verHTML = fmt.Sprintf(`<span style="color:var(--text-dim);">%s</span>`, version)
 			}
 
-			html.WriteString(fmt.Sprintf("<tr><td><span style='color:var(--neon-pink);'>ROLE</span></td><td>%s</td><td>%s</td><td>%s</td></tr>", roleName, verHTML, formatSize(size)))
+			fmt.Fprintf(&html, "<tr><td><span style='color:var(--neon-pink);'>ROLE</span></td><td>%s</td><td>%s</td><td>%s</td></tr>", roleName, verHTML, formatSize(size))
 		}
 	}
 
@@ -470,7 +502,7 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 
 						colMap[fullName] = append(colMap[fullName], colVer)
 
-						var fSize int64 = info.Size()
+						fSize := info.Size()
 						if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 							fSize = stat.Blocks * 512
 						}
@@ -483,29 +515,29 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 		for fullName, versions := range colMap {
 			sort.Sort(sort.Reverse(sort.StringSlice(versions)))
 
-			for _, ver := range versions {
+			for _, version := range versions {
 				hasEntries = true
-				size := sizeMap[fullName+"@"+ver]
+				size := sizeMap[fullName+"@"+version]
 
 				verInManifest, declared := activeVersions[fullName]
 				normVerInManifest := strings.TrimPrefix(verInManifest, "v")
-				normVerOnDisk := strings.TrimPrefix(ver, "v")
+				normVerOnDisk := strings.TrimPrefix(version, "v")
 
-				isActive := declared && (verInManifest == ver ||
-					normVerInManifest == normVerOnDisk ||
-					verInManifest == "" ||
-					verInManifest == "main" ||
+				legacyActive := verInManifest == "main" ||
 					verInManifest == "master" ||
-					verInManifest == "HEAD")
+					verInManifest == "HEAD"
+				isActive := declared && (ver.ShouldKeep(verInManifest, versions, version) ||
+					legacyActive ||
+					(normVerInManifest != "" && normVerInManifest == normVerOnDisk))
 
 				var verHTML string
 				if isActive {
-					verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, ver)
+					verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, version)
 				} else {
-					verHTML = fmt.Sprintf(`<span style="color:var(--text-dim);">%s</span>`, ver)
+					verHTML = fmt.Sprintf(`<span style="color:var(--text-dim);">%s</span>`, version)
 				}
 
-				html.WriteString(fmt.Sprintf("<tr><td><span style='color:var(--neon-cyan);'>COLLECTION</span></td><td>%s</td><td>%s</td><td>%s</td></tr>", fullName, verHTML, formatSize(size)))
+				fmt.Fprintf(&html, "<tr><td><span style='color:var(--neon-cyan);'>COLLECTION</span></td><td>%s</td><td>%s</td><td>%s</td></tr>", fullName, verHTML, formatSize(size))
 			}
 		}
 	}
@@ -536,7 +568,7 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 
 	osName, osVer, osArch := getOSDetails()
 	freeDisk, _ := getStorageSpace(d.cfg.StoragePath)
-	cacheUsedSpace := dirSize(d.cfg.StoragePath)
+	cacheUsedSpace := d.dirSize(d.cfg.StoragePath)
 	bootTime := getSystemBootTime()
 
 	html := fmt.Sprintf(`
@@ -580,15 +612,14 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
-	logFile := "/var/log/orbitron/orbitron.log"
-	content, err := tailFile(logFile, 20)
+	content, err := tailFile(d.logLabel(), 20)
 	if err != nil {
 		content = []string{fmt.Sprintf("> ERROR READING LOGS: %v", err)}
 	}
 
 	w.Header().Set("Content-Type", "text/html")
 	for _, line := range content {
-		_, _ = w.Write(fmt.Appendf(nil, "%s<br>", line))
+		_, _ = w.Write([]byte(html.EscapeString(line) + "<br>"))
 	}
 }
 
@@ -653,7 +684,7 @@ func getOSDetails() (string, string, string) {
 	if err != nil {
 		return "Linux", "Generic", strings.ToUpper(runtime.GOARCH)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var id, name, version string
 	scanner := bufio.NewScanner(file)
@@ -734,7 +765,34 @@ func getSystemBootTime() string {
 	return boot.Format("2006-01-02 15:04:05")
 }
 
-func dirSize(path string) int64 {
+// dirSize returns the cached block-level size of a path (5s TTL) to avoid
+// re-walking the whole storage tree on every UI poll.
+func (d *Dashboard) dirSize(path string) int64 {
+	const ttl = 5 * time.Second
+	const maxEntries = 10000
+
+	d.sizeMu.Lock()
+	if d.sizeCache == nil {
+		d.sizeCache = make(map[string]sizeEntry)
+	}
+	if e, ok := d.sizeCache[path]; ok && time.Since(e.ts) < ttl {
+		d.sizeMu.Unlock()
+		return e.size
+	}
+	if len(d.sizeCache) > maxEntries {
+		d.sizeCache = make(map[string]sizeEntry)
+	}
+	d.sizeMu.Unlock()
+
+	size := computeDirSize(path)
+
+	d.sizeMu.Lock()
+	d.sizeCache[path] = sizeEntry{size: size, ts: time.Now()}
+	d.sizeMu.Unlock()
+	return size
+}
+
+func computeDirSize(path string) int64 {
 	var size int64
 	_ = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err == nil {
@@ -769,7 +827,7 @@ func tailFile(fileName string, lines int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	stat, _ := file.Stat()
 	var size = stat.Size()

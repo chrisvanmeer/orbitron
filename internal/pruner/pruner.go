@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"orbitron/internal/fetcher"
+	ver "orbitron/internal/version"
 )
 
 type Pruner struct {
@@ -22,65 +23,98 @@ func NewPruner(storagePath string) *Pruner {
 	}
 }
 
-// RunPrune scans manifests, finds orphaned versions on disk, prompts, and removes them
-func (p *Pruner) RunPrune() error {
-	fmt.Println("🔍 Scanning manifests and storage for orphaned versions...")
+// parseCollectionArtifact extracts the collection name and version from a
+// stored artifact filename of the form "<namespace>-<name>-<version>.tar.gz".
+func parseCollectionArtifact(namespace, filename string) (string, string, bool) {
+	if !strings.HasSuffix(filename, ".tar.gz") {
+		return "", "", false
+	}
+	stem := strings.TrimSuffix(filename, ".tar.gz")
+	prefix := namespace + "-"
+	if !strings.HasPrefix(stem, prefix) {
+		return "", "", false
+	}
+	remainder := strings.TrimPrefix(stem, prefix)
+	lastHyphen := strings.LastIndex(remainder, "-")
+	if lastHyphen == -1 {
+		return "", "", false
+	}
+	return remainder[:lastHyphen], remainder[lastHyphen+1:], true
+}
 
-	// 1. Collect active versions from manifests
-	activeRoles := make(map[string]map[string]bool)       // roleName -> version -> active
-	activeCollections := make(map[string]map[string]bool) // collectionName -> version -> active
+// collectDeclared parses every stored manifest and returns the declared
+// version requirements (exact versions, "latest", or specifier sets) for
+// each role and collection name.
+func (p *Pruner) collectDeclared() (map[string][]string, map[string][]string) {
+	roles := make(map[string][]string)
+	collections := make(map[string][]string)
 
 	manifestFiles, err := os.ReadDir(p.manifestPath)
-	if err == nil {
-		for _, mf := range manifestFiles {
-			if mf.IsDir() {
-				continue
-			}
+	if err != nil {
+		return roles, collections
+	}
 
-			data, err := os.ReadFile(filepath.Join(p.manifestPath, mf.Name()))
-			if err != nil {
-				continue
-			}
+	for _, mf := range manifestFiles {
+		if mf.IsDir() {
+			continue
+		}
 
-			reqs, err := fetcher.ParseRequirements(data)
-			if err != nil {
-				continue
-			}
+		data, err := os.ReadFile(filepath.Join(p.manifestPath, mf.Name()))
+		if err != nil {
+			continue
+		}
 
-			for _, role := range reqs.Roles {
-				name := role.Name
-				if name == "" && role.Src != "" {
-					name = strings.TrimSuffix(filepath.Base(role.Src), ".git")
-				}
-				ver := role.Version
-				if ver == "" {
-					ver = "latest"
-				}
-				if activeRoles[name] == nil {
-					activeRoles[name] = make(map[string]bool)
-				}
-				activeRoles[name][ver] = true
-			}
+		reqs, err := fetcher.ParseRequirements(data)
+		if err != nil {
+			continue
+		}
 
-			for _, col := range reqs.Collections {
-				name := col.Name
-				if name == "" && col.Src != "" {
-					name = strings.TrimSuffix(filepath.Base(col.Src), ".git")
-				}
-				ver := col.Version
-				if ver == "" {
-					ver = "latest"
-				}
-				if activeCollections[name] == nil {
-					activeCollections[name] = make(map[string]bool)
-				}
-				activeCollections[name][ver] = true
+		for _, role := range reqs.Roles {
+			name := role.Name
+			if name == "" && role.Src != "" {
+				name = strings.TrimSuffix(filepath.Base(role.Src), ".git")
+			}
+			if name != "" {
+				roles[name] = append(roles[name], role.Version)
+			}
+		}
+
+		for _, col := range reqs.Collections {
+			name := col.Name
+			if name == "" && col.Src != "" {
+				name = strings.TrimSuffix(filepath.Base(col.Src), ".git")
+			}
+			if name != "" {
+				collections[name] = append(collections[name], col.Version)
 			}
 		}
 	}
 
+	return roles, collections
+}
+
+// keepVersion reports whether the on-disk candidate version of a role or
+// collection should be kept given any of the declared requirements. Each
+// requirement is checked with the full set of on-disk versions so that
+// "latest" and constraint requirements only retain the highest match.
+func keepVersion(declarations []string, diskVersions []string, candidate string) bool {
+	for _, declared := range declarations {
+		if ver.ShouldKeep(declared, diskVersions, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+// RunPrune scans manifests, finds orphaned versions on disk, prompts, and removes them
+func (p *Pruner) RunPrune() error {
+	fmt.Println("🔍 Scanning manifests and storage for orphaned versions...")
+
+	activeRoles, activeCollections := p.collectDeclared()
+
 	// 2. Scan roles storage directory
 	var toDelete []string
+
 	rolesDir := filepath.Join(p.storagePath, "roles")
 	roleEntries, err := os.ReadDir(rolesDir)
 	if err == nil {
@@ -95,12 +129,19 @@ func (p *Pruner) RunPrune() error {
 				continue
 			}
 
+			var diskVersions []string
+			for _, vEntry := range verEntries {
+				if vEntry.IsDir() {
+					diskVersions = append(diskVersions, vEntry.Name())
+				}
+			}
+
 			for _, vEntry := range verEntries {
 				if !vEntry.IsDir() {
 					continue
 				}
 				version := vEntry.Name()
-				if !activeRoles[roleName][version] {
+				if !keepVersion(activeRoles[roleName], diskVersions, version) {
 					toDelete = append(toDelete, filepath.Join(versionsDir, version))
 				}
 			}
@@ -118,21 +159,25 @@ func (p *Pruner) RunPrune() error {
 				if err != nil {
 					continue
 				}
+
+				colVersionMap := make(map[string][]string) // fullName -> on-disk versions
 				for _, f := range files {
-					// Check .tar.gz files format: namespace-name-version.tar.gz
-					if strings.HasSuffix(f.Name(), ".tar.gz") {
-						isUsed := false
-						for _, versions := range activeCollections {
-							for ver := range versions {
-								if strings.Contains(f.Name(), ver) {
-									isUsed = true
-									break
-								}
-							}
-						}
-						if !isUsed {
-							toDelete = append(toDelete, filepath.Join(nsDir, f.Name()))
-						}
+					colName, colVer, ok := parseCollectionArtifact(cEntry.Name(), f.Name())
+					if !ok {
+						continue
+					}
+					fullName := cEntry.Name() + "." + colName
+					colVersionMap[fullName] = append(colVersionMap[fullName], colVer)
+				}
+
+				for _, f := range files {
+					colName, colVer, ok := parseCollectionArtifact(cEntry.Name(), f.Name())
+					if !ok {
+						continue
+					}
+					fullName := cEntry.Name() + "." + colName
+					if !keepVersion(activeCollections[fullName], colVersionMap[fullName], colVer) {
+						toDelete = append(toDelete, filepath.Join(nsDir, f.Name()))
 					}
 				}
 			}

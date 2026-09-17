@@ -5,9 +5,9 @@ BUILD_DIR=bin
 GOOS?=linux
 GOARCH?=arm64
 
-.PHONY: all build build-linux-amd64 build-linux-arm64 build-all lint clean
+.PHONY: all build build-linux-amd64 build-linux-arm64 build-all lint test clean
 
-all: lint build
+all: lint test build
 
 # Standard build command (creates Linux ARM64 binary)
 build:
@@ -29,6 +29,9 @@ build-all: build-linux-amd64 build-linux-arm64
 
 lint:
 	@golangci-lint run ./... || go vet ./...
+
+test:
+	go test ./...
 
 clean:
 	rm -rf $(BUILD_DIR)

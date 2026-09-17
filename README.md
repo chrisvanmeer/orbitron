@@ -133,6 +133,9 @@ tokens_file: "/etc/orbitron/tokens.json"
 
 # Set to true to require Bearer Token / Basic Auth for client pulls
 require_auth_pull: false
+
+# Maximum number of concurrent download/clone workers spawned during syncs
+max_concurrency: 4
 ```
 
 ---
@@ -141,6 +144,9 @@ require_auth_pull: false
 
 Content is mirrored by posting YAML requirement manifests to Orbitron via cURL.
 Orbitron stores the manifests and immediately triggers a background parallel download worker.
+Each manifest is persisted under a content hash, so distinct manifests coexist on disk while
+identical re-submissions are deduplicated. All stored manifests are replayed on full re-sync
+(`/api/v1/sync`) and considered by `--prune`.
 
 ### 1. Mirroring Roles
 
@@ -187,13 +193,78 @@ curl -X POST http://127.0.0.1:8080/api/v1/requirements/collections \
   --data-binary @collections_requirements.yml
 ```
 
-### 3. Force Full Re-Sync
+### 3. Version Specifiers
+
+The `version` field accepts the same range specifiers Ansible does. Orbitron
+resolves them against the published Galaxy indexes at sync time and stores the
+highest matching release (roles are mirrored as git tags, collections as tarballs).
+
+| Specifier            | Meaning                                     | Example         |
+| -------------------- | ------------------------------------------- | --------------- |
+| *(empty)* / `latest` | Highest published version                   | `latest`        |
+| `==1.4.5` / `1.4.5`  | Exact version (or tag/branch for git `src`) | `1.4.5`         |
+| `>=1.0.0`            | At least 1.0.0                              | `>=1.0.0`       |
+| `>1.0.0,<2.0.0`      | Ranges AND-combined                         | `>1.0.0,<2.0.0` |
+| `~=1.4.5`            | Compatible release (>=1.4.5, prefix 1.4)    | `~=1.4.5`       |
+| `!=2.0.0`            | Anything but 2.0.0                          | `!=2.0.0`       |
+| `==1.4.*` / `1.*`    | Wildcard prefix match                       | `==1.4.*`       |
+
+```yaml
+roles:
+  - name: geerlingguy.nginx
+    version: ">=2.0.0"
+collections:
+  - name: community.general
+    version: "~=8.0"
+```
+
+### 4. Force Full Re-Sync
 
 To re-sync all persisted manifests stored on the Orbitron server:
 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/v1/sync \
   -H "Authorization: Bearer $ORBITRON_TOKEN"
+```
+
+### 5. Deleting Cached Versions
+
+Orbitron exposes authorized `DELETE` endpoints to remove a **single** cached version of a role or
+collection (one artifact/directory plus its pin in the stored manifest). Endpoints require a valid
+admin Bearer token; without one the request is rejected with `401`.
+
+**Delete a single cached role version:**
+
+```bash
+curl -X DELETE http://127.0.0.1:8080/api/v1/storage/roles/geerlingguy.nginx/1.2.3 \
+  -H "Authorization: Bearer $ORBITRON_TOKEN"
+```
+
+**Delete a single cached collection version:**
+
+```bash
+curl -X DELETE http://127.0.0.1:8080/api/v1/storage/collections/community.general/8.5.0 \
+  -H "Authorization: Bearer $ORBITRON_TOKEN"
+```
+
+**Ansible Task Snippet:**
+
+```yaml
+- name: Delete a cached role version from Orbitron
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8080/api/v1/storage/roles/geerlingguy.nginx/1.2.3"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ orbitron_token }}"
+    status_code: 200
+
+- name: Delete a cached collection version from Orbitron
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8080/api/v1/storage/collections/community.general/8.5.0"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ orbitron_token }}"
+    status_code: 200
 ```
 
 ### Automated Ingestion via Ansible Playbook
