@@ -38,7 +38,7 @@ func NewServer(cfg *config.Config) *Server {
 
 func generateRoleID(roleName string) string {
 	h := fnv.New32a()
-	h.Write([]byte(roleName))
+	_, _ = h.Write([]byte(roleName))
 	return fmt.Sprintf("%d", h.Sum32())
 }
 
@@ -174,7 +174,7 @@ func (s *Server) HandleRequirementsCollections(w http.ResponseWriter, r *http.Re
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
-	w.Write([]byte(`{"status":"collections_sync_started"}`))
+	_, _ = w.Write([]byte(`{"status":"collections_sync_started"}`))
 }
 
 func (s *Server) HandleRequirementsRoles(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +216,7 @@ func (s *Server) HandleRequirementsRoles(w http.ResponseWriter, r *http.Request)
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
-	w.Write([]byte(`{"status":"roles_sync_started"}`))
+	_, _ = w.Write([]byte(`{"status":"roles_sync_started"}`))
 }
 
 func (s *Server) HandleSync(w http.ResponseWriter, r *http.Request) {
@@ -228,12 +228,12 @@ func (s *Server) HandleSync(w http.ResponseWriter, r *http.Request) {
 	go s.fetcher.SyncAll()
 
 	w.WriteHeader(http.StatusAccepted)
-	w.Write([]byte(`{"status":"full_sync_triggered"}`))
+	_, _ = w.Write([]byte(`{"status":"full_sync_triggered"}`))
 }
 
 func (s *Server) HandleApiRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"available_versions":{"v1":"v1/","v2":"v2/","v3":"v3/"}}`))
+	_, _ = w.Write([]byte(`{"available_versions":{"v1":"v1/","v2":"v2/","v3":"v3/"}}`))
 }
 
 func (s *Server) HandleGalaxyV1RolesRouter(w http.ResponseWriter, r *http.Request) {
@@ -278,7 +278,7 @@ func (s *Server) HandleGalaxyV1RolesRouter(w http.ResponseWriter, r *http.Reques
     }]
   }`, roleID, name, owner)
 
-	w.Write([]byte(resp))
+	_, _ = w.Write([]byte(resp))
 }
 
 func (s *Server) HandleGalaxyV1RoleVersions(w http.ResponseWriter, r *http.Request, roleID string) {
@@ -328,7 +328,7 @@ func (s *Server) HandleGalaxyV1RoleVersions(w http.ResponseWriter, r *http.Reque
 	}
 
 	respBytes, _ := json.Marshal(map[string]any{"results": results})
-	w.Write(respBytes)
+	_, _ = w.Write(respBytes)
 }
 
 func (s *Server) HandleRoleDownload(w http.ResponseWriter, r *http.Request) {
@@ -429,7 +429,7 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 			"results": results,
 		}
 		respBytes, _ := json.Marshal(respData)
-		w.Write(respBytes)
+		_, _ = w.Write(respBytes)
 		return
 	}
 
@@ -467,7 +467,7 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
           "deprecated": false,
           "highest_version": {"version": "%s"}
         }`, namespace, name, highestVer)
-				w.Write([]byte(resp))
+				_, _ = w.Write([]byte(resp))
 				return
 			}
 
@@ -510,7 +510,7 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
               "requires_ansible": ">=2.12.0"
             }
           }`, version, href, downloadURL, namespace, name, artifactName, size, sha256hash)
-					w.Write([]byte(resp))
+					_, _ = w.Write([]byte(resp))
 					return
 				}
 
@@ -521,7 +521,7 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 					"results": versionResults,
 				}
 				respBytes, _ := json.Marshal(respData)
-				w.Write(respBytes)
+				_, _ = w.Write(respBytes)
 				return
 			}
 		}
@@ -529,7 +529,7 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Root V3 Discovery
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"available_versions":{"v3":"v3/"}}`))
+	_, _ = w.Write([]byte(`{"available_versions":{"v3":"v3/"}}`))
 }
 
 func (s *Server) Start() error {
