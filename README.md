@@ -60,6 +60,13 @@ Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real
 make build
 ```
 
+### Pre-compiled binaries
+
+With each version increment, set of pre-compiled binaries are generated and available for direct download:
+<https://github.com/chrisvanmeer/orbitron/releases>
+
+Self contained binaries are provided for Linux AMD64 and Linux ARM64 architectures.
+
 ### Installing Orbitron
 
 Executing `--install` as root automatically creates the `orbitron` system user/group, directories,
