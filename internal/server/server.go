@@ -19,6 +19,7 @@ import (
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
 	"orbitron/internal/logger"
+	"orbitron/internal/telemetry"
 )
 
 type Server struct {
@@ -251,15 +252,15 @@ func (s *Server) HandleGalaxyV1RolesRouter(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	resp := fmt.Sprintf(`{
-		"count": 1,
-		"results": [{
-			"id": %s,
-			"name": "%s",
-			"summary_fields": {
-				"namespace": {"name": "%s"}
-			}
-		}]
-	}`, roleID, name, owner)
+    "count": 1,
+    "results": [{
+      "id": %s,
+      "name": "%s",
+      "summary_fields": {
+        "namespace": {"name": "%s"}
+      }
+    }]
+  }`, roleID, name, owner)
 
 	w.Write([]byte(resp))
 }
@@ -445,11 +446,11 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 			if len(parts) == 2 {
 				w.Header().Set("Content-Type", "application/json")
 				resp := fmt.Sprintf(`{
-					"namespace": {"name": "%s"},
-					"name": "%s",
-					"deprecated": false,
-					"highest_version": {"version": "%s"}
-				}`, namespace, name, highestVer)
+          "namespace": {"name": "%s"},
+          "name": "%s",
+          "deprecated": false,
+          "highest_version": {"version": "%s"}
+        }`, namespace, name, highestVer)
 				w.Write([]byte(resp))
 				return
 			}
@@ -476,23 +477,23 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 
 					w.Header().Set("Content-Type", "application/json")
 					resp := fmt.Sprintf(`{
-						"version": "%s",
-						"href": "%s",
-						"download_url": "%s",
-						"requires_ansible": ">=2.12.0",
-						"namespace": {"name": "%s"},
-						"collection": {"name": "%s"},
-						"dependencies": {},
-						"artifact": {
-							"filename": "%s",
-							"size": %d,
-							"sha256": "%s"
-						},
-						"metadata": {
-							"dependencies": {},
-							"requires_ansible": ">=2.12.0"
-						}
-					}`, version, href, downloadURL, namespace, name, artifactName, size, sha256hash)
+            "version": "%s",
+            "href": "%s",
+            "download_url": "%s",
+            "requires_ansible": ">=2.12.0",
+            "namespace": {"name": "%s"},
+            "collection": {"name": "%s"},
+            "dependencies": {},
+            "artifact": {
+              "filename": "%s",
+              "size": %d,
+              "sha256": "%s"
+            },
+            "metadata": {
+              "dependencies": {},
+              "requires_ansible": ">=2.12.0"
+            }
+          }`, version, href, downloadURL, namespace, name, artifactName, size, sha256hash)
 					w.Write([]byte(resp))
 					return
 				}
@@ -517,6 +518,10 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
+
+	// Prometheus Telemetry Endpoint (Beveiligd met token auth via AuthMiddleware)
+	metrics := telemetry.NewMetrics()
+	mux.HandleFunc("/metrics", s.AuthMiddleware(metrics.Handler(s.cfg)))
 
 	mux.HandleFunc("/api/v1/requirements/collections", s.AuthMiddleware(s.HandleRequirementsCollections))
 	mux.HandleFunc("/api/v1/requirements/roles", s.AuthMiddleware(s.HandleRequirementsRoles))
