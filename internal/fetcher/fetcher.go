@@ -52,7 +52,7 @@ func NewFetcher(storagePath string) *Fetcher {
 
 	dirs := []string{storagePath, manifestPath, collectionsPath, rolesPath}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			logger.Error("Failed to initialize storage directory (%s): %v", dir, err)
 		}
 	}
@@ -109,10 +109,10 @@ func ParseRequirements(data []byte) (*RequirementsYML, error) {
 }
 
 func (f *Fetcher) SaveManifest(filename string, data []byte) error {
-	if err := os.MkdirAll(f.manifestPath, 0755); err != nil {
+	if err := os.MkdirAll(f.manifestPath, 0750); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(f.manifestPath, filename), data, 0644)
+	return os.WriteFile(filepath.Join(f.manifestPath, filename), data, 0640)
 }
 
 func (f *Fetcher) SyncAll() {
@@ -175,7 +175,7 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 		return fmt.Errorf("git executable not found in system PATH")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(targetDir), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(targetDir), 0750); err != nil {
 		return err
 	}
 
@@ -340,7 +340,7 @@ func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
 	targetDir := filepath.Join(f.storagePath, "collections", namespace)
 	targetFile := filepath.Join(targetDir, fmt.Sprintf("%s-%s-%s.tar.gz", namespace, name, version))
 
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0750); err != nil {
 		return err
 	}
 
@@ -355,7 +355,7 @@ func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
 		return fmt.Errorf("galaxy returned status code: %s", resp.Status)
 	}
 
-	out, err := os.Create(targetFile)
+	out, err := os.OpenFile(targetFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0640)
 	if err != nil {
 		return err
 	}

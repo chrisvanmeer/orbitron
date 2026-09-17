@@ -49,5 +49,5 @@ func (c *Config) SetupProxy() {
 }
 
 func EnsureDirExists(path string) error {
-	return os.MkdirAll(path, 0755)
+	return os.MkdirAll(path, 0750)
 }

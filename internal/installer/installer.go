@@ -18,7 +18,6 @@ const (
 	ConfigFile    = "/etc/orbitron/config.yml"
 	LogDir        = "/var/log/orbitron"
 	StorageDir    = "/var/lib/orbitron/storage"
-	ManifestsDir  = "/var/lib/orbitron/manifests"
 	SystemdFile   = "/etc/systemd/system/orbitron.service"
 	LogrotateDir  = "/etc/logrotate.d"
 	LogrotateFile = "/etc/logrotate.d/orbitron"
@@ -59,25 +58,30 @@ func RunInstall() error {
 	_ = os.Chown(BinPath, uid, gid)
 	fmt.Printf("  ✔ Installed binary to %s (owned by orbitron:orbitron)\n", BinPath)
 
-	// 4. Create directories
-	dirs := []string{ConfigDir, LogDir, StorageDir, ManifestsDir}
-	for _, dir := range dirs {
-		if err := config.EnsureDirExists(dir); err != nil {
+	// 4. Create directories with strict 0750 permissions
+	baseDirs := []string{"/var/lib/orbitron"}
+	dirs := []string{ConfigDir, LogDir, StorageDir}
+
+	for _, dir := range append(baseDirs, dirs...) {
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+		if err := os.Chmod(dir, 0750); err != nil {
+			return fmt.Errorf("failed to set permissions on directory %s: %w", dir, err)
 		}
 		if err := chownRecursive(dir, uid, gid); err != nil {
 			return fmt.Errorf("failed to chown directory %s: %w", dir, err)
 		}
 	}
-	fmt.Println("  ✔ Configured application directories (/etc/orbitron, /var/log/orbitron, /var/lib/orbitron)")
+	fmt.Println("  ✔ Configured application directories (/etc/orbitron, /var/log/orbitron, /var/lib/orbitron) with 0750 permissions")
 
-	// 5. Create example config.yml if missing
+	// 5. Create example config.yml if missing with 0640 permissions
 	if _, err := os.Stat(ConfigFile); os.IsNotExist(err) {
-		if err := os.WriteFile(ConfigFile, []byte(config.GetDefaultConfigYML()), 0644); err != nil {
+		if err := os.WriteFile(ConfigFile, []byte(config.GetDefaultConfigYML()), 0640); err != nil {
 			return fmt.Errorf("failed to write config file: %w", err)
 		}
 		_ = os.Chown(ConfigFile, uid, gid)
-		fmt.Printf("  ✔ Created configuration file at %s\n", ConfigFile)
+		fmt.Printf("  ✔ Created configuration file at %s (0640)\n", ConfigFile)
 	} else {
 		fmt.Printf("  ℹ Configuration file already exists at %s (skipping)\n", ConfigFile)
 	}
