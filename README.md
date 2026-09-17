@@ -13,12 +13,16 @@ enterprise environments to cache, store, and serve Ansible roles and collections
 
 ## Key Features
 
-* **Galaxy V1 & V3 API Support**: Complete compatibility with `ansible-galaxy role install` and `ansible-galaxy collection install`.
+* **Galaxy V1 & V3 API Support**: Complete compatibility with `ansible-galaxy role install` and
+  `ansible-galaxy collection install`.
 * **On-the-Fly Archiving**: Packages unpacked Git-based roles into `.tar.gz` streams on-the-fly during download.
 * **Parallel Background Sync**: Concurrent fetching of roles, collections, and shallow Git clones (`--depth 1`).
-* **Flexible Authentication**: Unauthenticated pulls by default with an optional `require_auth_pull: true` toggle supporting Bearer tokens and HTTP Basic Auth.
-* **Automated Lifecycle Management**: Integrated CLI commands for user creation (`orbitron:orbitron`), systemd service registration, logrotate configuration, and full uninstallation cleanup.
-* **Storage Pruner**: Built-in CLI flag (`--prune`) to scan manifests, detect orphaned versions, and clean up disk usage.
+* **Flexible Authentication**: Unauthenticated pulls by default with an optional `require_auth_pull: true` toggle
+  supporting Bearer tokens and HTTP Basic Auth.
+* **Automated Lifecycle Management**: Integrated CLI commands for user creation (`orbitron:orbitron`),
+  systemd service registration, logrotate configuration, and full uninstallation cleanup.
+* **Storage Pruner**: Built-in CLI flag (`--prune`) to scan manifests, detect orphaned versions, and clean up
+  disk usage.
 
 ---
 
@@ -32,8 +36,8 @@ make build
 
 ### Installing Orbitron
 
-Executing `--install` as root automatically creates the `orbitron` system user/group, directories, configuration files,
-systemd unit, and logrotate script, then enables and starts the daemon:
+Executing `--install` as root automatically creates the `orbitron` system user/group, directories,
+configuration files, systemd unit, and logrotate script, then enables and starts the daemon:
 
 ```bash
 sudo ./bin/orbitron --install
@@ -49,8 +53,8 @@ sudo systemctl stop orbitron
 
 ### Full Uninstallation
 
-Executing `--uninstall` stops and disables the systemd unit, cleans up storage paths and manifests, and removes
-system users and binaries:
+Executing `--uninstall` stops and disables the systemd unit, cleans up storage paths and manifests,
+and removes system users and binaries:
 
 ```bash
 sudo ./bin/orbitron --uninstall
@@ -102,8 +106,8 @@ require_auth_pull: false
 
 ## Mirroring Content (Server Ingestion)
 
-Content is mirrored by posting YAML requirement manifests to Orbitron via cURL. Orbitron stores the manifests and
-immediately triggers a background parallel download worker.
+Content is mirrored by posting YAML requirement manifests to Orbitron via cURL.
+Orbitron stores the manifests and immediately triggers a background parallel download worker.
 
 ### 1. Mirroring Roles
 
@@ -260,7 +264,8 @@ This ensures all API calls, token transmissions, and Git credentials remain secu
 
 ### Nginx Example Configuration
 
-Below is a standard Nginx reverse proxy configuration that secures Orbitron with HTTPS and redirects all HTTP traffic:
+Below is a standard Nginx reverse proxy configuration that secures
+Orbitron with HTTPS and redirects all HTTP traffic:
 
 ```nginx
 # Redirect HTTP to HTTPS
@@ -301,6 +306,49 @@ server {
 ```
 
 *Note: If you use a reverse proxy, ensure your `ansible.cfg` points to the `https://` address.*
+
+---
+
+## Prometheus Telemetry & Metrics
+
+Orbitron exposes daemon and storage metrics at `/metrics` using standard Prometheus exposition format
+(`text/plain; version=0.0.4`). Access to this endpoint requires Bearer Token or HTTP Basic Auth.
+
+### Exposed Metrics
+
+| Metric                         | Type    | Description                                         |
+| :----------------------------- | :------ | :-------------------------------------------------- |
+| `orbitron_uptime_seconds`      | Counter | Total daemon uptime in seconds.                     |
+| `orbitron_roles_total`         | Gauge   | Total number of stored Ansible role directories.    |
+| `orbitron_collections_total`   | Gauge   | Total number of stored Ansible collection archives. |
+| `orbitron_manifests_total`     | Gauge   | Total number of stored requirement manifests.       |
+| `orbitron_active_tokens_total` | Gauge   | Total number of registered Bearer tokens.           |
+
+### Scraping Metrics
+
+**cURL via Bearer Token:**
+
+```bash
+curl -H "Authorization: Bearer $ORBITRON_TOKEN" http://127.0.0.1:8080/metrics
+```
+
+**cURL via Basic Auth:**
+
+```bash
+curl -u "token:$ORBITRON_TOKEN" http://127.0.0.1:8080/metrics
+```
+
+**Prometheus Configuration Example (`prometheus.yml`):**
+
+```yaml
+scrape_configs:
+  - job_name: 'orbitron'
+    metrics_path: '/metrics'
+    authorization:
+      credentials: 'YOUR_ORBITRON_TOKEN'
+    static_configs:
+      - targets: ['127.0.0.1:8080']
+```
 
 ---
 
