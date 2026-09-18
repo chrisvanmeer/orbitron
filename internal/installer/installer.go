@@ -197,6 +197,10 @@ func chownRecursive(path string, uid, gid int) error {
 	})
 }
 
+// copyFile copies src to dst atomically: the content is written to a temporary
+// file in the same directory and then renamed over dst. Renaming replaces the
+// destination even when it is currently executing, which an open-for-truncate
+// would refuse with "text file busy" (ETXTBSY). The destination inherits mode.
 func copyFile(src, dst string, mode os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -204,12 +208,24 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	}
 	defer func() { _ = in.Close() }()
 
-	out, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
+	tmp, err := os.CreateTemp(filepath.Dir(dst), filepath.Base(dst)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	defer func() { _ = out.Close() }()
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpName, dst)
 }
