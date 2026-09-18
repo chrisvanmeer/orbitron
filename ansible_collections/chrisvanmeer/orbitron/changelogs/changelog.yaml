@@ -21,3 +21,15 @@ releases:
         `changed_when` policies, and mirror role variable prefixes), plus the
         missing changelog metadata.
     release_date: '2026-09-18'
+  1.2.1:
+    changes:
+      release_summary: |
+        Fix the Galaxy import by adding the role metadata and readme files the
+        Ansible Galaxy importer requires for the `orbitron` and
+        `orbitron_mirror` roles.
+      bugfixes:
+        - >-
+          Add ``meta/main.yml`` and ``README.md`` to both roles so the Galaxy
+          import validation no longer fails on missing role metadata and
+          missing role readmes.
+    release_date: '2026-09-18'

@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  author: Chris van Meer
+  description: Install and manage the Orbitron Galaxy mirror daemon
+  license: GPL-3.0-or-later
+  min_ansible_version: "2.16"
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Fedora
+      versions:
+        - all
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - galaxy
+    - mirror
+    - caching
+    - infrastructure
+    - system
+dependencies: []

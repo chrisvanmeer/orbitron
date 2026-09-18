@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  author: Chris van Meer
+  description: Declaratively mirror roles and collections to Orbitron
+  license: GPL-3.0-or-later
+  min_ansible_version: "2.16"
+  platforms:
+    - name: GenericLinux
+      versions:
+        - all
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - galaxy
+    - mirror
+    - caching
+    - infrastructure
+dependencies: []
