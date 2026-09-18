@@ -24,10 +24,10 @@ jobs:
           mkdir -p dist
 
           # Linux AMD64
-          GOOS=linux GOARCH=amd64 go build -o dist/orbitron-linux-amd64 .
+          GOOS=linux GOARCH=amd64 go build -ldflags="-w -s -X orbitron/internal/build.Version=${{ github.ref_name }}" -o dist/orbitron-linux-amd64 .
 
           # Linux ARM64
-          GOOS=linux GOARCH=arm64 go build -o dist/orbitron-linux-arm64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags="-w -s -X orbitron/internal/build.Version=${{ github.ref_name }}" -o dist/orbitron-linux-arm64 .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -41,3 +41,36 @@ jobs:
           files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-collection:
+    name: Publish Collection to Ansible Galaxy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install ansible-core
+        run: pip install ansible-core
+
+      - name: Verify collection version matches the tag
+        run: |
+          COLLECTION_VERSION="$(python3 -c "import yaml; print(yaml.safe_load(open('ansible_collections/chrisvanmeer/orbitron/galaxy.yml'))['version'])")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$COLLECTION_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::warning::galaxy.yml version ($COLLECTION_VERSION) does not match tag ($GITHUB_REF_NAME); skipping collection publish."
+            echo "SKIP_PUBLISH=true" >>"$GITHUB_ENV"
+          else
+            echo "::notice::Version verified: $COLLECTION_VERSION"
+            echo "SKIP_PUBLISH=false" >>"$GITHUB_ENV"
+          fi
+
+      - name: Build the collection
+        if: env.SKIP_PUBLISH == 'false'
+        run: ansible-galaxy collection build ansible_collections/chrisvanmeer/orbitron --output-path dist
+
+      - name: Publish the collection to Galaxy
+        if: env.SKIP_PUBLISH == 'false'
+        run: ansible-galaxy collection publish dist/chrisvanmeer-orbitron-*.tar.gz --token "${{ secrets.GALAXY_API_KEY }}"

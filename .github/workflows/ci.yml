@@ -50,3 +50,21 @@ jobs:
           name: orbitron-linux-arm64
           path: bin/orbitron
           retention-days: 7
+
+  ansible-collection:
+    name: Ansible Collection (sanity + units)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible_collections/chrisvanmeer/orbitron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install ansible-core
+        run: pip install ansible-core
+      - name: Sanity tests
+        run: ansible-test sanity --venv --requirements
+      - name: Unit tests
+        run: ansible-test units --venv --requirements
