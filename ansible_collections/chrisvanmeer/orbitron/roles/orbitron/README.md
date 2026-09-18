@@ -11,22 +11,29 @@ Galaxy mirror daemon on a Linux host with `systemd`.
 
 ## Role variables
 
-| Variable                     | Default                          | Description                                      |
-| :--------------------------- | :------------------------------- | :----------------------------------------------- |
-| `orbitron_state`             | `present`                        | `present` installs, `absent` uninstalls.         |
-| `orbitron_version`           | `latest`                         | Exact release tag to install, e.g. `v1.2.0`.     |
-| `orbitron_binary_src`        | `""`                             | Local binary path for air-gapped installs.       |
-| `orbitron_checksum`          | `""`                             | SHA-256 checksum for downloaded binaries.        |
-| `orbitron_install_git`       | `true`                           | Install `git` for git-backed requirements.       |
-| `orbitron_listen_addr`       | `127.0.0.1:8080`                 | Daemon listen address.                           |
-| `orbitron_storage_path`      | `/var/lib/orbitron/storage`      | Mirror cache directory.                          |
-| `orbitron_log_path`          | `/var/log/orbitron/orbitron.log` | Daemon log file.                                 |
-| `orbitron_tokens_file`       | `/etc/orbitron/tokens.json`      | Token store path.                                |
-| `orbitron_require_auth_pull` | `false`                          | Require a token for client pulls.                |
-| `orbitron_max_concurrency`   | `4`                              | Parallel sync workers.                           |
-| `orbitron_token_ttl_days`    | `0`                              | Default token lifetime in days (`0` = never).    |
-| `orbitron_token`             | `""`                             | Pre-set admin token (else generated).            |
-| `orbitron_token_path`        | `/root/.orbitron_token`          | Where a generated token is persisted (0600).     |
+| Variable                     | Default                          | Description                                              |
+| :--------------------------- | :------------------------------- | :------------------------------------------------------- |
+| `orbitron_state`             | `present`                        | `present` installs, `absent` uninstalls.                 |
+| `orbitron_version`           | `latest`                         | Exact release tag to install, e.g. `v1.2.0`.             |
+| `orbitron_binary_src`        | `""`                             | Local binary path for air-gapped installs.               |
+| `orbitron_checksum`          | `""`                             | SHA-256 checksum for downloaded binaries.                |
+| `orbitron_stage_dir`         | `/var/tmp/orbitron-ansible`      | Temporary staging dir for the binary before `--install`. |
+| `orbitron_install_git`       | `true`                           | Install `git` for git-backed requirements.               |
+| `orbitron_listen_addr`       | `127.0.0.1:8080`                 | Daemon listen address.                                   |
+| `orbitron_storage_path`      | `/var/lib/orbitron/storage`      | Mirror cache directory.                                  |
+| `orbitron_log_path`          | `/var/log/orbitron/orbitron.log` | Daemon log file.                                         |
+| `orbitron_tokens_file`       | `/etc/orbitron/tokens.json`      | Token store path.                                        |
+| `orbitron_require_auth_pull` | `false`                          | Require a token for client pulls.                        |
+| `orbitron_max_concurrency`   | `4`                              | Parallel sync workers.                                   |
+| `orbitron_token_ttl_days`    | `0`                              | Default token lifetime in days (`0` = never).            |
+| `orbitron_token`             | `""`                             | Pre-set admin token (else generated).                    |
+| `orbitron_token_path`        | `/root/.orbitron_token`          | Where a generated token is persisted (0600).             |
+
+The role stages the binary in `orbitron_stage_dir` before running `--install`
+and removes the staging directory again afterwards. Because the staged binary
+is executed, the directory must be located on a mount that permits execution.
+If your `/var` (or `/var/tmp`) filesystem is mounted with `noexec`, point
+`orbitron_stage_dir` elsewhere, for example `/opt/orbitron/stage`.
 
 ## Exposed facts
 

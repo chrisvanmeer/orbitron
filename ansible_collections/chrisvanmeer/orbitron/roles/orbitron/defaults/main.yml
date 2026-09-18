@@ -10,6 +10,12 @@ orbitron_binary_src: ""
 # SHA-256 checksum of the binary for get_url verification.
 orbitron_checksum: ""
 
+# Directory that temporarily stages the binary before `orbitron --install` runs
+# and that is removed afterwards. The staged binary is executed, so this path
+# MUST be on a mount that allows execution; override it when /var (or /var/tmp)
+# is mounted with `noexec`, e.g. orbitron_stage_dir: /opt/orbitron/stage.
+orbitron_stage_dir: /var/tmp/orbitron-ansible
+
 # Install git so git-backed roles/collections can be mirrored.
 orbitron_install_git: true
 

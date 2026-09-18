@@ -360,8 +360,11 @@ declarative mirroring, and day-two operations such as purging cached versions.
   resolves and downloads the release binary, runs `orbitron --install` to
   bootstrap the system user/dirs/systemd/logrotate, renders
   `/etc/orbitron/config.yml`, ensures the service is healthy, and generates (or
-  reuses) an initial admin token. Supports full uninstallation with
-  `orbitron_state: absent`.
+  reuses) an initial admin token. The binary is staged in `orbitron_stage_dir`
+  (default `/var/tmp/orbitron-ansible`) and that directory is removed again
+  afterwards; because the staged binary is executed, the path must not be on a
+  `noexec` mount (override it, e.g. with `/opt/orbitron/stage`, when `/var` is
+  mounted `noexec`). Supports full uninstallation with `orbitron_state: absent`.
 * **`chrisvanmeer.orbitron.orbitron_mirror` role** – declarative mirroring from
   structured role/collection lists or local requirements files, with an
   optional `orbitron_mirror_wait_sync` on completion.

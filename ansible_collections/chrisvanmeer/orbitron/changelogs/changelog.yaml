@@ -33,3 +33,29 @@ releases:
           import validation no longer fails on missing role metadata and
           missing role readmes.
     release_date: '2026-09-18'
+  1.2.2:
+    changes:
+      release_summary: |
+        Harden binary (re)installation. The ``orbitron --install`` self-copy
+        now replaces the target atomically (temporary file plus rename) so it
+        no longer fails with "text file busy" against an in-use binary. The
+        ``orbitron`` role stages the binary in ``orbitron_stage_dir`` before
+        bootstrapping and removes the staging directory afterwards, stops the
+        daemon only when the binary actually changes, and renames its tasks so
+        they describe the desired end state.
+      bugfixes:
+        - >-
+          ``orbitron --install`` copies the binary to a throwaway file and
+          renames it over the destination instead of truncating it in place,
+          which failed on Linux with ETXTBSY when the destination was
+          currently executing.
+        - >-
+          The ``orbitron`` role no longer runs ``orbitron --install`` from the
+          final binary path. The binary is staged under ``orbitron_stage_dir``
+          (must be on an ``exec``-capable mount), the service is stopped only
+          when the binary must be replaced, and the staging directory is
+          removed even when the bootstrap fails.
+        - >-
+          Role task names now describe the desired end state
+          (``Ensure ...``) instead of the performed action.
+    release_date: '2026-09-18'

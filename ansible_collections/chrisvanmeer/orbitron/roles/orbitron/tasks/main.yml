@@ -14,7 +14,7 @@
     _orbitron_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
   when: orbitron_state == "present"
 
-- name: Install git for git-backed roles/collections
+- name: Ensure git is installed for git-backed roles/collections
   ansible.builtin.package:
     name: git
     state: present
@@ -72,48 +72,84 @@
       }}
   when: orbitron_state == "present"
 
-- name: Download the orbitron release binary
-  ansible.builtin.get_url:
-    url: >-
-      https://github.com/chrisvanmeer/orbitron/releases/download/{{ _orbitron_resolved_version }}/orbitron-linux-{{ _orbitron_arch }}
-    dest: /usr/local/bin/orbitron
-    mode: "0755"
-    checksum: "{{ orbitron_checksum | default(omit) }}"
-  when:
-    - orbitron_state == "present"
-    - orbitron_binary_src == ""
-    - _orbitron_needs_binary
-  notify: Restart orbitron
-  tags: orbitron-install
-
-- name: Install orbitron from a local binary
-  ansible.builtin.copy:
-    src: "{{ orbitron_binary_src }}"
-    dest: /usr/local/bin/orbitron
-    mode: "0755"
-  when:
-    - orbitron_state == "present"
-    - orbitron_binary_src != ""
-  notify: Restart orbitron
-  tags: orbitron-install
-
-- name: Check for an existing systemd unit
+- name: Check whether the orbitron systemd unit exists
   ansible.builtin.stat:
     path: /etc/systemd/system/orbitron.service
   register: _orbitron_unit
   when: orbitron_state == "present"
 
-- name: Bootstrap service, user, directories and logrotate
-  ansible.builtin.command: /usr/local/bin/orbitron --install
-  register: _orbitron_install
-  changed_when: true
-  notify: Reload orbitron systemd
+- name: Remove any leftover orbitron staging directory
+  ansible.builtin.file:
+    path: "{{ orbitron_stage_dir }}"
+    state: absent
+  when: orbitron_state == "present"
+
+- name: Stage and bootstrap the orbitron daemon
   when:
     - orbitron_state == "present"
     - _orbitron_needs_binary or not _orbitron_unit.stat.exists
-  tags: orbitron-install
+  block:
+    - name: Create the orbitron staging directory
+      ansible.builtin.file:
+        path: "{{ orbitron_stage_dir }}"
+        state: directory
+        mode: "0700"
 
-- name: Render the orbitron configuration
+    - name: Fetch the orbitron release binary to staging
+      ansible.builtin.get_url:
+        url: >-
+          https://github.com/chrisvanmeer/orbitron/releases/download/{{ _orbitron_resolved_version }}/orbitron-linux-{{ _orbitron_arch }}
+        dest: "{{ orbitron_stage_dir }}/orbitron"
+        mode: "0755"
+        checksum: "{{ orbitron_checksum | default(omit) }}"
+      when:
+        - orbitron_binary_src == ""
+        - _orbitron_needs_binary
+      notify: Restart orbitron
+      tags: orbitron-install
+
+    - name: Stage the orbitron binary from a local source
+      ansible.builtin.copy:
+        src: "{{ orbitron_binary_src }}"
+        dest: "{{ orbitron_stage_dir }}/orbitron"
+        mode: "0755"
+      when:
+        - orbitron_binary_src != ""
+        - _orbitron_needs_binary
+      notify: Restart orbitron
+      tags: orbitron-install
+
+    - name: Copy the installed orbitron binary to staging
+      ansible.builtin.copy:
+        src: /usr/local/bin/orbitron
+        dest: "{{ orbitron_stage_dir }}/orbitron"
+        remote_src: true
+        mode: "0755"
+      when:
+        - not _orbitron_needs_binary
+        - not _orbitron_unit.stat.exists
+
+    - name: Stop the orbitron service before reinstalling the binary
+      ansible.builtin.systemd:
+        name: orbitron
+        state: stopped
+      when:
+        - _orbitron_needs_binary
+        - _orbitron_unit.stat.exists
+
+    - name: Bootstrap the service, user, directories and logrotate
+      ansible.builtin.command: "{{ orbitron_stage_dir }}/orbitron --install"
+      register: _orbitron_install
+      changed_when: true
+      notify: Reload orbitron systemd
+      tags: orbitron-install
+  always:
+    - name: Remove the orbitron staging directory
+      ansible.builtin.file:
+        path: "{{ orbitron_stage_dir }}"
+        state: absent
+
+- name: Ensure the orbitron configuration is rendered
   ansible.builtin.template:
     src: config.yml.j2
     dest: "{{ orbitron_config_file }}"
@@ -123,7 +159,7 @@
   when: orbitron_state == "present"
   notify: Restart orbitron
 
-- name: Enable and start the orbitron service
+- name: Ensure the orbitron service is enabled and started
   ansible.builtin.systemd:
     name: orbitron
     enabled: true
@@ -147,7 +183,7 @@
   register: _orbitron_token_file
   when: orbitron_state == "present"
 
-- name: Generate an administrative token
+- name: Ensure an administrative token exists
   ansible.builtin.command: /usr/local/bin/orbitron --generate-token -q --config {{ orbitron_config_file }}
   register: _orbitron_generated_token
   check_mode: false
@@ -157,7 +193,7 @@
     - orbitron_token == ""
     - not _orbitron_token_file.stat.exists
 
-- name: Persist the generated admin token
+- name: Ensure the generated admin token is persisted (0600)
   ansible.builtin.copy:
     content: "{{ _orbitron_generated_token.stdout ~ '\n' }}"
     dest: "{{ orbitron_token_path }}"
@@ -197,7 +233,7 @@
     fail_msg: Failed to obtain an admin token for the orbitron daemon.
   when: orbitron_state == "present"
 
-- name: Uninstall orbitron with the bundled uninstaller
+- name: Ensure orbitron is uninstalled via the bundled uninstaller
   ansible.builtin.command: /usr/local/bin/orbitron --uninstall
   register: _orbitron_uninstall
   changed_when: true
@@ -205,7 +241,7 @@
     - orbitron_state == "absent"
     - _orbitron_binary.stat.exists
 
-- name: Remove leftover orbitron paths (no binary available)
+- name: Ensure leftover orbitron paths are removed
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
