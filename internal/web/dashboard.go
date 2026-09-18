@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"orbitron/internal/auth"
+	"orbitron/internal/build"
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
 	"orbitron/internal/logger"
@@ -278,8 +279,10 @@ const htmlTemplate = `
         .btn-logout {
             color: var(--neon-pink); text-decoration: none; border: 1px solid var(--neon-pink);
             padding: 6px 12px; font-size: 0.85em; transition: 0.3s; font-weight: bold;
+            background: transparent; cursor: pointer; font-family: inherit; text-transform: uppercase;
         }
         .btn-logout:hover { background: var(--neon-pink); color: #000; }
+        .btn-logout.armed { background: var(--neon-pink); color: #000; box-shadow: 0 0 12px var(--neon-pink); }
 
         /* Main Workspace (Full Screen Matrix) */
         .main-workspace {
@@ -338,7 +341,7 @@ const htmlTemplate = `
             <h1>Orbitron // Cache Matrix<span class="blink">_</span></h1>
             <div class="header-actions">
                 <button class="btn-metrics" onclick="toggleRightDrawer()">◄ SYS METRICS</button>
-                <a href="/ui/logout" class="btn-logout">[ DISCONNECT ]</a>
+                <button id="btn-disconnect" class="btn-logout" onclick="armDisconnect()">[ DISCONNECT ]</button>
             </div>
         </div>
 
@@ -370,6 +373,37 @@ const htmlTemplate = `
             const drawer = document.getElementById('right-drawer');
             drawer.classList.toggle('open');
         }
+
+        let disconnectTimer = null;
+        let disconnectArmed = false;
+
+        function armDisconnect() {
+            const btn = document.getElementById('btn-disconnect');
+            if (disconnectArmed) {
+                window.location.href = '/ui/logout';
+                return;
+            }
+            disconnectArmed = true;
+            btn.innerText = '[ CONFIRM DISCONNECT ]';
+            btn.classList.add('armed');
+            disconnectTimer = setTimeout(resetDisconnect, 5000);
+        }
+
+        function resetDisconnect() {
+            const btn = document.getElementById('btn-disconnect');
+            disconnectArmed = false;
+            if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
+            if (btn) {
+                btn.innerText = '[ DISCONNECT ]';
+                btn.classList.remove('armed');
+            }
+        }
+
+        document.addEventListener('click', function (e) {
+            if (disconnectArmed && !e.target.closest('#btn-disconnect')) {
+                resetDisconnect();
+            }
+        }, true);
 
         function toggleBottomDrawer() {
             const drawer = document.getElementById('bottom-drawer');
@@ -577,6 +611,9 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 			<span style="color:var(--text-dim); font-size:0.8em; cursor:pointer; font-weight:bold;" onclick="toggleRightDrawer()">[ CLOSE ]</span>
 		</div>
 		
+		<div class="stat-label">Orbitron Version</div>
+		<div class="stat-value" style="color:var(--neon-cyan);">%s</div>
+
 		<div class="stat-label">Uplink Status</div>
 		<div class="stat-value" style="color:var(--neon-cyan);">%s</div>
 
@@ -605,7 +642,7 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 
 		<div class="stat-label">Last System Boot</div>
 		<div class="stat-value">%s</div>
-	`, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime)
+	`, build.Version, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime)
 
 	w.Header().Set("Content-Type", "text/html")
 	_, _ = w.Write([]byte(html))
