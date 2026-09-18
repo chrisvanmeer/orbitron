@@ -675,6 +675,11 @@ func (s *Server) Start() error {
 	// Storage pruning. Currently answers with a "for_future_use" placeholder.
 	mux.HandleFunc("POST /api/v1/prune", s.AuthMiddleware(s.HandlePrune))
 
+	// Read-only management views for automation: stored requirements manifests
+	// (content-addressed) and the cached storage inventory.
+	mux.HandleFunc("GET /api/v1/manifests", s.AuthMiddleware(s.HandleManifests))
+	mux.HandleFunc("GET /api/v1/storage", s.AuthMiddleware(s.HandleStorageInventory))
+
 	// Authorized admin-only storage deletion endpoints (one version per call).
 	// Registered with method-specific patterns so they take precedence over the
 	// broader pull-auth /api/ and galaxy routers. Always require a valid token.

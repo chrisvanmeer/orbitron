@@ -198,6 +198,59 @@ func extractFetcherRoleName(r RoleItem) string {
 	return strings.Trim(target, "\"'")
 }
 
+// ManifestMeta describes a single stored requirements manifest as surfaced by
+// the management API: its on-disk name, content hash, and parsed entries.
+type ManifestMeta struct {
+	Type        string           `json:"type"`
+	File        string           `json:"file"`
+	SHA256      string           `json:"sha256"`
+	Roles       []RoleItem       `json:"roles,omitempty"`
+	Collections []CollectionItem `json:"collections,omitempty"`
+}
+
+// ListManifests returns every stored requirements manifest. Manifests whose
+// content can no longer be parsed are still reported (with empty entries) so
+// operators can discover and repair them; the SHA-256 covers the raw content
+// exactly as POSTed, enabling content-addressed idempotency in automation.
+func (f *Fetcher) ListManifests() ([]ManifestMeta, error) {
+	entries, err := os.ReadDir(f.manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	metas := make([]ManifestMeta, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(f.manifestPath, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		manifestType := "roles"
+		if strings.HasPrefix(entry.Name(), "collections_") {
+			manifestType = "collections"
+		}
+
+		meta := ManifestMeta{
+			Type:   manifestType,
+			File:   entry.Name(),
+			SHA256: fmt.Sprintf("%x", sha256.Sum256(data)),
+		}
+		if reqs, err := ParseRequirements(data); err == nil {
+			meta.Roles = reqs.Roles
+			meta.Collections = reqs.Collections
+		}
+		metas = append(metas, meta)
+	}
+	return metas, nil
+}
+
 // runConcurrently executes the given jobs with at most f.maxConcurrency workers.
 func (f *Fetcher) runConcurrently(jobs []func()) {
 	if len(jobs) == 0 {

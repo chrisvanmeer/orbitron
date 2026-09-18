@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -209,6 +210,8 @@ func registerAdminMux(s *Server) *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/tokens/{token}/rotate", s.AuthMiddleware(s.HandleTokenRotate))
 	mux.HandleFunc("GET /api/v1/sync/status", s.AuthMiddleware(s.HandleSyncStatus))
 	mux.HandleFunc("POST /api/v1/prune", s.AuthMiddleware(s.HandlePrune))
+	mux.HandleFunc("GET /api/v1/manifests", s.AuthMiddleware(s.HandleManifests))
+	mux.HandleFunc("GET /api/v1/storage", s.AuthMiddleware(s.HandleStorageInventory))
 	return mux
 }
 
@@ -588,5 +591,184 @@ func TestPruneEndpointRequiresAuth(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+}
+
+func TestManifestsEndpointListsStoredRequirements(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	rolesManifest := []byte("roles:\n  - name: geerlingguy.nginx\n    version: 1.2.3\n")
+	if err := s.fetcher.SaveManifest("roles", rolesManifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.fetcher.SaveManifest("collections", []byte("collections:\n  - name: community.general\n    version: 8.4.0\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.fetcher.SaveManifest("collections", []byte("collections:\n  - name: community.docker\n    version: 3.6.0\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := registerAdminMux(s)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/manifests", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET manifests: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Roles       []fetcher.ManifestMeta `json:"roles"`
+		Collections []fetcher.ManifestMeta `json:"collections"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(body.Roles) != 1 {
+		t.Fatalf("expected 1 roles manifest, got %d", len(body.Roles))
+	}
+	if len(body.Collections) != 2 {
+		t.Fatalf("expected 2 collections manifests, got %d", len(body.Collections))
+	}
+
+	got := body.Roles[0]
+	if want := fmt.Sprintf("%x", sha256.Sum256(rolesManifest)); got.SHA256 != want {
+		t.Errorf("sha256 mismatch: got %q want %q", got.SHA256, want)
+	}
+	if got.Type != "roles" {
+		t.Errorf("expected type roles, got %q", got.Type)
+	}
+	if len(got.Roles) != 1 || got.Roles[0].Name != "geerlingguy.nginx" || got.Roles[0].Version != "1.2.3" {
+		t.Errorf("roles manifest entries not parsed: %+v", got.Roles)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/manifests", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET manifests without auth: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", resp.StatusCode)
+	}
+}
+
+func TestStorageInventoryEndpoint(t *testing.T) {
+	s, storage := newTestServer(t)
+
+	// Roles: two cached versions. Only 1.0.0 is pinned by a manifest.
+	roleDir := filepath.Join(storage, "roles", "acme.sample")
+	for _, v := range []string{"1.0.0", "1.1.0"} {
+		if err := os.MkdirAll(filepath.Join(roleDir, v), 0750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(roleDir, "1.0.0", "main.yml"), []byte("x"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(roleDir, "1.1.0", "main.yml"), []byte("y"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.fetcher.SaveManifest("roles", []byte("roles:\n  - name: acme.sample\n    version: 1.0.0\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Collections: a single artifact pinned by a manifest, plus a git clone dir.
+	colDir := filepath.Join(storage, "collections", "community")
+	if err := os.MkdirAll(filepath.Join(colDir, "git"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(colDir, "community-general-8.4.0.tar.gz"), []byte("x"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.fetcher.SaveManifest("collections", []byte("collections:\n  - name: community.general\n    version: 8.4.0\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := registerAdminMux(s)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/storage", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET storage: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Roles       []storageItem `json:"roles"`
+		Collections []storageItem `json:"collections"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(body.Roles) != 1 {
+		t.Fatalf("expected 1 role, got %d", len(body.Roles))
+	}
+	role := body.Roles[0]
+	if role.Name != "acme.sample" {
+		t.Errorf("expected role acme.sample, got %q", role.Name)
+	}
+	if len(role.Versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(role.Versions))
+	}
+	for _, v := range role.Versions {
+		if v.Version == "1.0.0" && !v.Declared {
+			t.Errorf("1.0.0 should be declared")
+		}
+		if v.Version == "1.1.0" && v.Declared {
+			t.Errorf("1.1.0 should not be declared")
+		}
+		if v.SizeBytes == 0 {
+			t.Errorf("expected non-zero size for %s", v.Version)
+		}
+	}
+
+	if len(body.Collections) != 1 {
+		t.Fatalf("expected 1 collection, got %d", len(body.Collections))
+	}
+	col := body.Collections[0]
+	if col.Name != "community.general" {
+		t.Errorf("expected community.general, got %q", col.Name)
+	}
+	if len(col.Versions) != 1 || !col.Versions[0].Declared || col.Versions[0].Version != "8.4.0" {
+		t.Errorf("collection versions not as expected: %+v", col.Versions)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/storage", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET storage without auth: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", resp.StatusCode)
 	}
 }

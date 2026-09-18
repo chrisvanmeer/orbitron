@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"orbitron/internal/auth"
+	"orbitron/internal/build"
 	"orbitron/internal/config"
 	"orbitron/internal/installer"
 	"orbitron/internal/logger"
@@ -37,8 +38,14 @@ func main() {
 
 	quiet := flag.Bool("quiet", false, "Output raw token only")
 	flag.BoolVar(quiet, "q", false, "Output raw token only (shorthand)")
+	showVersion := flag.Bool("version", false, "Print build version and exit")
 
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("orbitron %s\n", build.Version)
+		os.Exit(0)
+	}
 
 	if *doInstall {
 		if err := installer.RunInstall(); err != nil {
