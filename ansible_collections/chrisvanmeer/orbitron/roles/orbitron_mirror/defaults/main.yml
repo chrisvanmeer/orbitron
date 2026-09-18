@@ -13,7 +13,6 @@ orbitron_mirror_collection_manifest_path: ""
 # Wait for the triggered sync to complete.
 orbitron_mirror_wait_sync: true
 
-# Only trigger a sync when a stored manifest changed in this run (role stays
-# idempotent on re-runs). Set to true to always force a full re-sync, e.g.
-# after reinstalling the daemon or to re-fetch unpinned ("latest") content.
+# Force a full re-sync even when everything declared is already mirrored,
+# e.g. to re-fetch content after reinstalling the daemon.
 orbitron_mirror_sync_force: false

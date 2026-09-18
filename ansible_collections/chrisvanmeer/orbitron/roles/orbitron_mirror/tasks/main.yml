@@ -25,7 +25,6 @@
     type: roles
     roles: "{{ orbitron_mirror_roles | default(omit) }}"
     path: "{{ orbitron_mirror_role_manifest_path | default('') }}"
-  register: _orbitron_mirror_roles_manifest
   when: _orbitron_mirror_has_roles
 
 - name: Ensure the collections manifest is stored
@@ -35,21 +34,12 @@
     type: collections
     collections: "{{ orbitron_mirror_collections | default(omit) }}"
     path: "{{ orbitron_mirror_collection_manifest_path | default('') }}"
-  register: _orbitron_mirror_collections_manifest
   when: _orbitron_mirror_has_collections
-
-- name: Decide whether a sync is required
-  ansible.builtin.set_fact:
-    _orbitron_mirror_sync_now: >-
-      {{ orbitron_mirror_sync_force
-         or (_orbitron_mirror_roles_manifest | default({})).changed | default(false)
-         or (_orbitron_mirror_collections_manifest | default({})).changed | default(false) }}
 
 - name: Sync the mirror
   chrisvanmeer.orbitron.orbitron_sync:
     url: "{{ orbitron_mirror_url }}"
     token: "{{ orbitron_mirror_token }}"
+    force: "{{ orbitron_mirror_sync_force }}"
     wait: "{{ orbitron_mirror_wait_sync }}"
-  when:
-    - _orbitron_mirror_has_requirements
-    - _orbitron_mirror_sync_now
+  when: _orbitron_mirror_has_requirements

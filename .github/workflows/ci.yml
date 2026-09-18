@@ -137,22 +137,44 @@ jobs:
                 vars:
                   orbitron_mirror_url: http://127.0.0.1:${ORBITRON_TEST_PORT}
                   orbitron_mirror_token: "{{ lookup('env', 'ORBITRON_TEST_TOKEN') }}"
-                  orbitron_mirror_wait_sync: false
                   orbitron_mirror_collections:
                     - name: community.general
                       version: "8.5.0"
           YAML
 
+          check_sync_result() {
+            logfile="$1"; expected="$2"; label="$3"
+            sync_line="$(awk '/Sync the mirror/ {found=1; next} found && /^(ok|changed|skipping):/ {print; exit}' "$logfile")"
+            case "$sync_line" in
+              "$expected":*) ;;
+              *)
+                echo "sync task on $label expected $expected but was: $sync_line"
+                cat "$logfile"
+                exit 1
+                ;;
+            esac
+          }
+
+          # Run 1: first ingest must trigger a sync (changed).
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run1.log" 2>&1
-          # A repeat run with unchanged requirements must be idempotent: the
-          # sync task has to go ok/skipped, never changed.
+          check_sync_result "$SCRATCH/run1.log" changed "run 1 (fresh content)"
+
+          # Run 2: an unchanged, fully mirrored playbook must be idempotent:
+          # the sync task reports ok and queues no new sync.
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run2.log" 2>&1
-          sync_line="$(awk '/Sync the mirror/ {found=1; next} found && /^(ok|changed|skipping):/ {print; exit}' "$SCRATCH/run2.log")"
-          case "$sync_line" in
-            ok:* | skipping:*) ;;
-            *)
-              echo "sync task was not idempotent on the second run: $sync_line"
-              cat "$SCRATCH/run2.log"
-              exit 1
-              ;;
-          esac
+          check_sync_result "$SCRATCH/run2.log" ok "run 2 (unchanged, complete)"
+
+          # Run 3: declaring a new version must trigger a sync again.
+          sed 's/"8.5.0"/"8.6.0"/' "$SCRATCH/mirror_test.yml" > "$SCRATCH/mirror_test_bump.yml"
+          ansible-playbook "$SCRATCH/mirror_test_bump.yml" > "$SCRATCH/run3.log" 2>&1
+          check_sync_result "$SCRATCH/run3.log" changed "run 3 (version bumped)"
+
+          # Run 4: reverting to an already mirrored version must still report
+          # the change; the sync started by the new manifest must never be
+          # suppressed (v1.2.5 regression).
+          ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run4.log" 2>&1
+          check_sync_result "$SCRATCH/run4.log" changed "run 4 (manifest reverted)"
+
+          # Run 5: back to an unchanged, fully mirrored playbook: ok again.
+          ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run5.log" 2>&1
+          check_sync_result "$SCRATCH/run5.log" ok "run 5 (idempotent again)"

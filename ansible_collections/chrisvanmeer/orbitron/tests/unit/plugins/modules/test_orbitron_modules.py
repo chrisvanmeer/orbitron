@@ -200,42 +200,199 @@ def test_token_absent_noop_when_unknown(monkeypatch):
 
 # ---------------------------------------------------------------- sync
 
-def test_sync_triggers_when_idle(monkeypatch):
-    seen = []
+COLLECTION_META = {
+    "type": "collections",
+    "file": "collections_x_requirements.yml",
+    "sha256": "digest",
+    "collections": [{"Name": "community.general", "Version": "8.5.0"}],
+}
 
-    class NoopClient(object):
-        def __init__(self, module, token_required=True):
-            pass
 
-        def get(self, path):
+class SyncClient(object):
+    """Path-aware client: idle status, one declared collection, empty mirror."""
+
+    def __init__(self, module, token_required=True):
+        self.posted = []
+
+    def get(self, path):
+        if path == "/api/v1/sync/status":
             return 200, {"current": None, "history": []}
+        if path == "/api/v1/manifests":
+            return 200, {"roles": [], "collections": [COLLECTION_META]}
+        return 200, {"roles": [], "collections": []}
 
-        def post(self, path, payload=None):
-            seen.append(path)
-            return 202, {"status": "full_sync_triggered"}
+    def post(self, path, payload=None):
+        self.posted.append(path)
+        return 202, {"status": "full_sync_triggered"}
 
-    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True)
-    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=NoopClient)
+
+def test_sync_triggers_when_pending(monkeypatch):
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=SyncClient)
     _run(orbitron_sync.main)
 
     assert fake.result["changed"] is True
-    assert seen == ["/api/v1/sync"]
+    assert fake.result["state"] == "completed"
+    assert fake.result["pending"] == [{"kind": "collections", "name": "community.general", "version": "8.5.0"}]
 
 
-def test_sync_skips_when_running(monkeypatch):
-    class NoopClient(object):
+def test_sync_idle_when_up_to_date(monkeypatch):
+    class UpToDateClient(SyncClient):
+        def get(self, path):
+            if path == "/api/v1/storage":
+                return 200, {
+                    "roles": [],
+                    "collections": [{"type": "collections", "name": "community.general", "versions": [{"version": "8.5.0"}]}],
+                }
+            return super(UpToDateClient, self).get(path)
+
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=UpToDateClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is False
+    assert fake.result["state"] == "idle"
+    assert fake.result["pending"] == []
+
+
+def test_sync_running_reports_changed(monkeypatch):
+    class RunningClient(object):
+        posted = []
+
         def __init__(self, module, token_required=True):
             pass
 
         def get(self, path):
             return 200, {"current": {"id": "3", "kind": "full", "status": "running"}, "history": []}
 
-    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True)
-    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=NoopClient)
+        def post(self, path, payload=None):
+            RunningClient.posted.append(path)
+            return 202, {"status": "full_sync_triggered"}
+
+    params = dict(BASE_PARAMS, wait=False, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=RunningClient)
     _run(orbitron_sync.main)
 
-    assert fake.result["changed"] is False
+    assert fake.result["changed"] is True
     assert fake.result["state"] == "running"
+    assert RunningClient.posted == []
+
+
+def test_sync_running_with_wait_polls_to_completion(monkeypatch):
+    class DrainingClient(object):
+        def __init__(self, module, token_required=True):
+            self.polls = 0
+
+        def get(self, path):
+            if path == "/api/v1/sync/status":
+                self.polls += 1
+                if self.polls == 1:
+                    return 200, {"current": {"id": "3", "kind": "full", "status": "running"}, "history": []}
+                return 200, {"current": None, "history": [{"id": "3", "status": "done"}]}
+            if path == "/api/v1/manifests":
+                return 200, {"roles": [], "collections": [COLLECTION_META]}
+            return 200, {"roles": [], "collections": []}
+
+        def post(self, path, payload=None):
+            raise AssertionError("must not POST a second sync while one runs")
+
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=DrainingClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is True
+    assert fake.result["state"] == "completed"
+
+
+def test_sync_force_triggers_even_when_up_to_date(monkeypatch):
+    class UpToDateClient(SyncClient):
+        def get(self, path):
+            if path == "/api/v1/storage":
+                return 200, {
+                    "roles": [],
+                    "collections": [{"type": "collections", "name": "community.general", "versions": [{"version": "8.5.0"}]}],
+                }
+            return super(UpToDateClient, self).get(path)
+
+    params = dict(BASE_PARAMS, wait=False, timeout=5, skip_if_running=True, force=True)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=UpToDateClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is True
+    assert fake.result["state"] == "full_sync_triggered"
+
+
+def test_sync_check_mode_reports_would_trigger(monkeypatch):
+    class CheckModeClient(SyncClient):
+        posted = []
+
+        def post(self, path, payload=None):
+            CheckModeClient.posted.append(path)
+            return 202, {"status": "full_sync_triggered"}
+
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, check_mode=True, client_impl=CheckModeClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is True
+    assert fake.result["state"] == "would_trigger"
+    assert CheckModeClient.posted == []
+
+
+def test_plan_sync_pure_cases():
+    manifests = {
+        "roles": [
+            {
+                "roles": [
+                    {"Name": "geerlingguy.nginx", "Version": "3.3.1"},
+                    {"Name": "geerlingguy.nginx", "Version": "latest"},
+                    {"Name": "geerlingguy.php", "Version": ">=2.0"},
+                    {"Name": "geerlingguy.php", "Version": ""},
+                    {"Name": "", "Src": "geerlingguy/ansible-role-nginx.git", "Version": "1.2.3"},
+                ]
+            }
+        ],
+        "collections": [
+            {"collections": [{"Name": "community.general", "Version": "8.5.0"}, {"Name": "community.general", "Version": "v8.5.0"}]}
+        ],
+    }
+    inventory = {
+        "roles": [
+            {
+                "name": "geerlingguy.nginx",
+                "versions": [{"version": "3.3.1"}, {"version": "1.2.3"}, {"version": "1.2.4"}],
+            },
+            {"name": "ansible-role-nginx", "versions": [{"version": "1.2.3"}]},
+        ],
+        "collections": [{"name": "community.general", "versions": [{"version": "8.5.0"}]}],
+    }
+
+    pending, should_sync = orbitron_sync.plan_sync(manifests, inventory, force=False)
+
+    assert should_sync is True
+    assert pending == [
+        {"kind": "roles", "name": "geerlingguy.nginx", "version": "latest"},
+        {"kind": "roles", "name": "geerlingguy.php", "version": ">=2.0"},
+        {"kind": "roles", "name": "geerlingguy.php", "version": ""},
+    ]
+
+    pending, should_sync = orbitron_sync.plan_sync(manifests, inventory, force=True)
+    assert pending == [
+        {"kind": "roles", "name": "geerlingguy.nginx", "version": "latest"},
+        {"kind": "roles", "name": "geerlingguy.php", "version": ">=2.0"},
+        {"kind": "roles", "name": "geerlingguy.php", "version": ""},
+    ]
+    assert should_sync is True
+
+
+def test_plan_sync_up_to_date_is_noop():
+    manifests = {"roles": [], "collections": [{"collections": [{"Name": "community.general", "Version": "8.5.0"}]}]}
+    inventory = {"collections": [{"name": "community.general", "versions": [{"version": "8.5.0"}]}]}
+
+    pending, should_sync = orbitron_sync.plan_sync(manifests, inventory, force=False)
+
+    assert pending == []
+    assert should_sync is False
 
 
 # ---------------------------------------------------------------- purge

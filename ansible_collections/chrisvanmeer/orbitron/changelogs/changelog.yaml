@@ -92,6 +92,42 @@ releases:
           validation no longer fails with "Conditionals must have a boolean
           result" when a manifest source is configured.
     release_date: '2026-09-18'
+  1.2.6:
+    changes:
+      release_summary: |
+        Fix the 1.2.5 sync regression and polish the daemon dashboard. The
+        mirror role only synced when its manifest submission reported
+        ``changed`` in that run, and the sync module would suppress the job
+        again when the daemon had already picked the new manifest up, so a
+        changed playbook could report ``ok`` and never mirror anything. The
+        ``orbitron_sync`` module is now a real decision layer: every run it
+        compares the declared requirements with what the mirror already holds
+        and triggers a sync when a requirement is not mirrored at its exact
+        version (empty, ``latest``, and expression-style versions always
+        warrant a re-check), when ``force`` is set, or when a manifest just
+        started a background sync. Repeat runs of a fully mirrored playbook
+        are still idempotent and report ``ok``. The web dashboard now shows
+        the Orbitron version in System Metrics and the DISCONNECT button
+        requires a deliberate two-step confirmation so it can no longer be
+        triggered by accident.
+      bugfixes:
+        - >-
+          ``orbitron_sync`` compares ``GET /api/v1/manifests`` with
+          ``GET /api/v1/storage`` before triggering and only reports a change
+          when work is actually needed: a declared version that is not
+          mirrored at its exact version, ``force``, or a sync the manifest
+          submission already started. Unchanged, fully mirrored playbooks
+          report ``ok`` and queue nothing.
+        - >-
+          The orbitron_mirror role always runs its sync task again (it is the
+          module that decides), so uploading a changed manifest can never be
+          masked by a background sync that started between the manifest
+          submission and the sync task.
+        - >-
+          The web dashboard DISCONNECT button now arms on the first click and
+          only logs out on a second click within five seconds, preventing
+          accidental logouts; System Metrics gained an Orbitron Version row.
+    release_date: '2026-09-18'
   1.2.5:
     changes:
       release_summary: |

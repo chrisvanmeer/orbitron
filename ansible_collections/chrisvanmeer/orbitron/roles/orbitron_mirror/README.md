@@ -20,15 +20,20 @@ Declaratively mirrors Ansible roles and collections to a running
 | `orbitron_mirror_role_manifest_path`       | `""`                    | Path to a role requirements file.                                     |
 | `orbitron_mirror_collection_manifest_path` | `""`                    | Path to a collection requirements file.                               |
 | `orbitron_mirror_wait_sync`                | `true`                  | Wait for the triggered sync to finish.                                |
-| `orbitron_mirror_sync_force`               | `false`                 | Always trigger a full sync, even when no manifest changed.            |
+| `orbitron_mirror_sync_force`               | `false`                 | Always trigger a full sync, even when all content is already mirrored.|
 
 Provide either the structured `orbitron_mirror_roles` /
 `orbitron_mirror_collections` lists or a requirements file path, and set
 `orbitron_mirror_token`.
 
-The role is idempotent: a sync is only triggered when a stored manifest
-changed in this run (or when `orbitron_mirror_sync_force` is set), so repeat
-runs of an unchanged playbook report no changes.
+The role is idempotent. Each run makes sure the mirror stores what the
+playbook declares and syncs it: the `orbitron_sync` module compares the
+declared requirements with what the mirror already holds and reports a change
+only when a requirement is not mirrored at its exact version (empty,
+`latest`, and expression-style versions always warrant a re-check), when
+`orbitron_mirror_sync_force` is set, or when a sync is already running. Repeat
+runs of an unchanged, fully mirrored playbook report no changes (`ok`) and
+queue no new sync.
 
 ## Example
 
@@ -43,7 +48,7 @@ runs of an unchanged playbook report no changes.
             version: "8.5.0"
         orbitron_mirror_roles:
           - name: geerlingguy.nginx
-            version: "3.4.3"
+            version: "3.3.1"
 ```
 
 ## License
