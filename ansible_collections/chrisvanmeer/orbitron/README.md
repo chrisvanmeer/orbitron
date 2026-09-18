@@ -4,6 +4,18 @@ Ansible collection to install, configure, and manage the
 [Orbitron](https://github.com/chrisvanmeer/orbitron) Ansible Galaxy mirror
 daemon.
 
+## Installation
+
+```bash
+ansible-galaxy collection install chrisvanmeer.orbitron
+```
+
+Pin a specific version with:
+
+```bash
+ansible-galaxy collection install chrisvanmeer.orbitron:1.2.1
+```
+
 ## Requirements
 
 - Ansible Core >= 2.16 on the controller

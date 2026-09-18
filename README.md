@@ -369,9 +369,12 @@ declarative mirroring, and day-two operations such as purging cached versions.
 ### Installing the collection
 
 ```bash
-# Build and install directly from this repository
+# Install from Ansible Galaxy
+ansible-galaxy collection install chrisvanmeer.orbitron
+
+# Or build and install directly from this repository
 ansible-galaxy collection build ansible_collections/chrisvanmeer/orbitron
-ansible-galaxy collection install chrisvanmeer-orbitron-1.0.0.tar.gz
+ansible-galaxy collection install chrisvanmeer-orbitron-<version>.tar.gz
 ```
 
 The full variable reference, module docs, and security notes live in the
