@@ -10,3 +10,14 @@ releases:
         `orbitron_prune`) and two roles (`orbitron`, `orbitron_mirror`) to
         install, configure, and operate the Orbitron Galaxy mirror daemon.
     release_date: '2026-09-18'
+  1.2.0:
+    changes:
+      release_summary: |
+        First version published to Ansible Galaxy.
+
+        Adds the GPL-3.0-or-later license files (`COPYING`,
+        `LICENSES/GPL-3.0-or-later.txt`), a Galaxy auto-publish workflow, and
+        an end-to-end ansible-lint cleanup of the roles (handler naming,
+        `changed_when` policies, and mirror role variable prefixes), plus the
+        missing changelog metadata.
+    release_date: '2026-09-18'
