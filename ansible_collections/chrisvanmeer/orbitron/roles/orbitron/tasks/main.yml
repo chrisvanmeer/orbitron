@@ -1,0 +1,227 @@
+---
+- name: Fail on unsupported platforms
+  ansible.builtin.assert:
+    that:
+      - ansible_system | lower == "linux"
+      - ansible_architecture in ["x86_64", "aarch64"]
+    fail_msg: >-
+      The orbitron role supports Linux on amd64 (x86_64) or arm64 (aarch64)
+      with systemd.
+  when: orbitron_state == "present"
+
+- name: Map Ansible architecture to release asset suffix
+  ansible.builtin.set_fact:
+    _orbitron_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
+  when: orbitron_state == "present"
+
+- name: Install git for git-backed roles/collections
+  ansible.builtin.package:
+    name: git
+    state: present
+  when:
+    - orbitron_state == "present"
+    - orbitron_install_git
+    - ansible_facts.packages is not defined or 'git' not in ansible_facts.packages
+  tags: orbitron-install
+
+- name: Resolve the latest GitHub release tag
+  when:
+    - orbitron_state == "present"
+    - orbitron_binary_src == ""
+    - orbitron_version == "latest"
+  block:
+    - name: Query the GitHub release API
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/chrisvanmeer/orbitron/releases/latest
+        return_content: true
+      register: _orbitron_release
+
+    - name: Pin the resolved version
+      ansible.builtin.set_fact:
+        _orbitron_resolved_version: "{{ _orbitron_release.json.tag_name }}"
+
+- name: Pin an explicit orbitron version
+  ansible.builtin.set_fact:
+    _orbitron_resolved_version: "{{ orbitron_version }}"
+  when:
+    - orbitron_state == "present"
+    - orbitron_binary_src == ""
+    - orbitron_version != "latest"
+
+- name: Inspect the installed binary
+  ansible.builtin.stat:
+    path: /usr/local/bin/orbitron
+  register: _orbitron_binary
+
+- name: Read the installed binary version
+  ansible.builtin.command: /usr/local/bin/orbitron --version
+  register: _orbitron_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: _orbitron_binary.stat.exists
+
+- name: Decide whether the binary must be (re)installed
+  ansible.builtin.set_fact:
+    _orbitron_needs_binary: >-
+      {{
+        not _orbitron_binary.stat.exists
+        or (_orbitron_resolved_version is defined
+            and _orbitron_resolved_version != ''
+            and _orbitron_installed.stdout | regex_replace('^orbitron ', '') | trim != _orbitron_resolved_version)
+      }}
+  when: orbitron_state == "present"
+
+- name: Download the orbitron release binary
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/chrisvanmeer/orbitron/releases/download/{{ _orbitron_resolved_version }}/orbitron-linux-{{ _orbitron_arch }}
+    dest: /usr/local/bin/orbitron
+    mode: "0755"
+    checksum: "{{ orbitron_checksum | default(omit) }}"
+  when:
+    - orbitron_state == "present"
+    - orbitron_binary_src == ""
+    - _orbitron_needs_binary
+  notify: Restart orbitron
+  tags: orbitron-install
+
+- name: Install orbitron from a local binary
+  ansible.builtin.copy:
+    src: "{{ orbitron_binary_src }}"
+    dest: /usr/local/bin/orbitron
+    mode: "0755"
+  when:
+    - orbitron_state == "present"
+    - orbitron_binary_src != ""
+  notify: Restart orbitron
+  tags: orbitron-install
+
+- name: Check for an existing systemd unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/orbitron.service
+  register: _orbitron_unit
+  when: orbitron_state == "present"
+
+- name: Bootstrap service, user, directories and logrotate
+  ansible.builtin.command: /usr/local/bin/orbitron --install
+  register: _orbitron_install
+  changed_when: true
+  notify: Reload orbitron systemd
+  when:
+    - orbitron_state == "present"
+    - _orbitron_needs_binary or not _orbitron_unit.stat.exists
+  tags: orbitron-install
+
+- name: Render the orbitron configuration
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: "{{ orbitron_config_file }}"
+    owner: orbitron
+    group: orbitron
+    mode: "0640"
+  when: orbitron_state == "present"
+  notify: Restart orbitron
+
+- name: Enable and start the orbitron service
+  ansible.builtin.systemd:
+    name: orbitron
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: orbitron_state == "present"
+
+- name: Wait for the orbitron daemon to become healthy
+  ansible.builtin.uri:
+    url: "http://{{ orbitron_listen_addr }}/healthz"
+    return_content: true
+  register: _orbitron_health
+  until: _orbitron_health.status == 200
+  retries: 30
+  delay: 2
+  when: orbitron_state == "present"
+
+- name: Inspect the bootstrap token file
+  ansible.builtin.stat:
+    path: "{{ orbitron_token_path }}"
+  register: _orbitron_token_file
+  when: orbitron_state == "present"
+
+- name: Generate an administrative token
+  ansible.builtin.command: /usr/local/bin/orbitron --generate-token -q --config {{ orbitron_config_file }}
+  register: _orbitron_generated_token
+  check_mode: false
+  changed_when: true
+  when:
+    - orbitron_state == "present"
+    - orbitron_token == ""
+    - not _orbitron_token_file.stat.exists
+
+- name: Persist the generated admin token
+  ansible.builtin.copy:
+    content: "{{ _orbitron_generated_token.stdout ~ '\n' }}"
+    dest: "{{ orbitron_token_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when:
+    - orbitron_state == "present"
+    - orbitron_token == ""
+    - not _orbitron_token_file.stat.exists
+
+- name: Read back the stored admin token
+  ansible.builtin.slurp:
+    src: "{{ orbitron_token_path }}"
+  register: _orbitron_token_slurp
+  when:
+    - orbitron_state == "present"
+    - orbitron_token == ""
+    - _orbitron_token_file.stat.exists
+
+- name: Expose orbitron facts to the play
+  ansible.builtin.set_fact:
+    orbitron_admin_token: >-
+      {{ orbitron_token or _orbitron_generated_token.stdout | default('', true)
+         or _orbitron_token_slurp.content | default('', true) | b64decode | trim }}
+    orbitron_version: >-
+      {{ _orbitron_resolved_version
+         | default(_orbitron_installed.stdout | default('orbitron ', true)
+                   | regex_replace('^orbitron ', '') | trim, true) }}
+  no_log: true
+
+- name: Ensure an admin token is available
+  ansible.builtin.assert:
+    that:
+      - orbitron_admin_token != ""
+    fail_msg: Failed to obtain an admin token for the orbitron daemon.
+  when: orbitron_state == "present"
+
+- name: Uninstall orbitron with the bundled uninstaller
+  ansible.builtin.command: /usr/local/bin/orbitron --uninstall
+  register: _orbitron_uninstall
+  changed_when: true
+  when:
+    - orbitron_state == "absent"
+    - _orbitron_binary.stat.exists
+
+- name: Remove leftover orbitron paths (no binary available)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/orbitron
+    - /etc/logrotate.d/orbitron
+    - /etc/systemd/system/orbitron.service
+    - /var/log/orbitron
+    - /var/lib/orbitron
+  when:
+    - orbitron_state == "absent"
+    - not _orbitron_binary.stat.exists
+
+- name: Reload systemd after manual cleanup
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - orbitron_state == "absent"
+    - not _orbitron_binary.stat.exists

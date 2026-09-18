@@ -1,0 +1,12 @@
+---
+releases:
+  1.0.0:
+    changes:
+      release_summary: |
+        Initial release of the `chrisvanmeer.orbitron` collection.
+
+        Provides six HTTP modules (`orbitron_info`, `orbitron_token`,
+        `orbitron_manifest`, `orbitron_sync`, `orbitron_purge`,
+        `orbitron_prune`) and two roles (`orbitron`, `orbitron_mirror`) to
+        install, configure, and operate the Orbitron Galaxy mirror daemon.
+    release_date: '2026-09-18'

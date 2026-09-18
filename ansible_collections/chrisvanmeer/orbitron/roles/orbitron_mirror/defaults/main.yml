@@ -1,0 +1,14 @@
+---
+# Connection to the mirror daemon.
+orbitron_mirror_url: http://127.0.0.1:8080
+orbitron_mirror_token: ""
+
+# Declarative requirements. Either the structured lists below or local
+# requirements file paths may be used.
+orbitron_mirror_roles: []
+orbitron_mirror_collections: []
+orbitron_mirror_role_manifest_path: ""
+orbitron_mirror_collection_manifest_path: ""
+
+# Wait for the triggered sync to complete.
+orbitron_mirror_wait_sync: true

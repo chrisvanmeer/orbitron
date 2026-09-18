@@ -1,0 +1,43 @@
+---
+- name: Determine which manifest sources are configured
+  ansible.builtin.set_fact:
+    _orbitron_mirror_has_roles: >-
+      {{ orbitron_mirror_roles or orbitron_mirror_role_manifest_path }}
+    _orbitron_mirror_has_collections: >-
+      {{ orbitron_mirror_collections or orbitron_mirror_collection_manifest_path }}
+    _orbitron_mirror_has_requirements: >-
+      {{ _orbitron_mirror_has_roles or _orbitron_mirror_has_collections }}
+
+- name: Validate the mirror configuration
+  ansible.builtin.assert:
+    that:
+      - orbitron_mirror_token != ""
+      - _orbitron_mirror_has_requirements
+    fail_msg: >-
+      Configure orbitron_mirror_roles, orbitron_mirror_collections, or a
+      requirements file path, and set orbitron_mirror_token.
+
+- name: Store the roles manifest
+  chrisvanmeer.orbitron.orbitron_manifest:
+    url: "{{ orbitron_mirror_url }}"
+    token: "{{ orbitron_mirror_token }}"
+    type: roles
+    roles: "{{ orbitron_mirror_roles | default(omit) }}"
+    path: "{{ orbitron_mirror_role_manifest_path | default('') }}"
+  when: _orbitron_mirror_has_roles
+
+- name: Store the collections manifest
+  chrisvanmeer.orbitron.orbitron_manifest:
+    url: "{{ orbitron_mirror_url }}"
+    token: "{{ orbitron_mirror_token }}"
+    type: collections
+    collections: "{{ orbitron_mirror_collections | default(omit) }}"
+    path: "{{ orbitron_mirror_collection_manifest_path | default('') }}"
+  when: _orbitron_mirror_has_collections
+
+- name: Sync the mirror
+  chrisvanmeer.orbitron.orbitron_sync:
+    url: "{{ orbitron_mirror_url }}"
+    token: "{{ orbitron_mirror_token }}"
+    wait: "{{ orbitron_mirror_wait_sync }}"
+  when: _orbitron_mirror_has_requirements

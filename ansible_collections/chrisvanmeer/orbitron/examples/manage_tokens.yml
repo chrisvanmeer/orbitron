@@ -1,0 +1,36 @@
+---
+- name: Manage admin tokens on an existing Orbitron daemon
+  hosts: mirrors
+  vars:
+    orbitron_url: http://127.0.0.1:8080
+    orbitron_bootstrap_token: "{{ vault_orbitron_admin_token }}"
+
+  tasks:
+    - name: Create (or reuse) a short-lived CI token
+      chrisvanmeer.orbitron.orbitron_token:
+        url: "{{ orbitron_url }}"
+        token: "{{ orbitron_bootstrap_token }}"
+        label: ci-builder
+        ttl_days: 30
+      register: ci_token
+      no_log: true
+
+    - name: Show the mirror health and cache inventory
+      chrisvanmeer.orbitron.orbitron_info:
+        url: "{{ orbitron_url }}"
+        token: "{{ ci_token.orbitron.token }}"
+      register: info
+
+    - name: Assert the daemon is healthy
+      ansible.builtin.assert:
+        that:
+          - info.orbitron.health.status == "ok"
+
+    - name: Drop a stale cached role version
+      chrisvanmeer.orbitron.orbitron_purge:
+        url: "{{ orbitron_url }}"
+        token: "{{ ci_token.orbitron.token }}"
+        kind: role
+        name: geerlingguy.nginx
+        version: 1.2.2
+      when: "info.orbitron.storage.roles is defined"

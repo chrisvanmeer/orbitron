@@ -1,0 +1,8 @@
+tests/output/
+tests/unit/results/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+*.tar.gz
+/build/

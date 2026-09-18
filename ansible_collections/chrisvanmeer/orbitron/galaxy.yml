@@ -1,0 +1,22 @@
+namespace: chrisvanmeer
+name: orbitron
+version: 1.0.0
+readme: README.md
+authors:
+  - Chris van Meer
+description: Install and manage the Orbitron Ansible Galaxy mirror daemon
+license:
+  - GPL-3.0-or-later
+tags:
+  - galaxy
+  - ansible
+  - mirror
+  - repository
+  - caching
+  - infrastructure
+dependencies: {}
+repository: https://github.com/chrisvanmeer/orbitron
+documentation: https://github.com/chrisvanmeer/orbitron
+homepage: https://github.com/chrisvanmeer/orbitron
+issues: https://github.com/chrisvanmeer/orbitron/issues
+build_ignore: []

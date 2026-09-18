@@ -1,6 +1,6 @@
 # Orbitron Binaries
 bin/
-orbitron
+/orbitron
 *.exe
 *.exe?
 *.dll

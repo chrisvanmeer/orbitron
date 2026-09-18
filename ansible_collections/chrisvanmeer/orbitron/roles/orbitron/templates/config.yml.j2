@@ -1,0 +1,8 @@
+# Managed by the chrisvanmeer.orbitron role - manual edits are overwritten.
+listen_addr: "{{ orbitron_listen_addr }}"
+storage_path: "{{ orbitron_storage_path }}"
+log_path: "{{ orbitron_log_path }}"
+tokens_file: "{{ orbitron_tokens_file }}"
+require_auth_pull: {{ orbitron_require_auth_pull | lower }}
+max_concurrency: {{ orbitron_max_concurrency }}
+token_ttl_days: {{ orbitron_token_ttl_days }}

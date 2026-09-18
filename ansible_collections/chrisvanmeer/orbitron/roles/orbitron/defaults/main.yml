@@ -1,0 +1,44 @@
+---
+# --- Installation -----------------------------------------------------------
+# Which orbitron release to install: "latest", or an exact tag such as v0.5.0.
+orbitron_version: latest
+
+# Local path to a pre-downloaded orbitron binary (air-gapped installs). Takes
+# precedence over orbitron_version when set.
+orbitron_binary_src: ""
+
+# SHA-256 checksum of the binary for get_url verification.
+orbitron_checksum: ""
+
+# Install git so git-backed roles/collections can be mirrored.
+orbitron_install_git: true
+
+# --- Daemon configuration (config.yml keys) -------------------------------
+
+# Address the daemon binds and exposes its API on.
+orbitron_listen_addr: 127.0.0.1:8080
+orbitron_storage_path: /var/lib/orbitron/storage
+orbitron_log_path: /var/log/orbitron/orbitron.log
+orbitron_tokens_file: /etc/orbitron/tokens.json
+
+# Require a token for pulling/downloading cached content.
+orbitron_require_auth_pull: false
+
+# Maximum number of concurrent download/clone workers during syncs.
+orbitron_max_concurrency: 4
+
+# Default lifetime of newly generated admin tokens in days (0 = never expire).
+orbitron_token_ttl_days: 0
+
+# --- Service layout --------------------------------------------------------
+orbitron_config_file: /etc/orbitron/config.yml
+
+# --- Lifecycle -------------------------------------------------------------
+# present installs and configures the daemon; absent uninstalls it.
+orbitron_state: present
+
+# --- Token bootstrap -------------------------------------------------------
+# Initial administrative token. Leave "" to have the role generate one through
+# the orbitron CLI and persist it to orbitron_token_path (mode 0600).
+orbitron_token: ""
+orbitron_token_path: /root/.orbitron_token

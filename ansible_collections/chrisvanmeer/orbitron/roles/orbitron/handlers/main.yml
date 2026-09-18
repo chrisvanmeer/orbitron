@@ -1,0 +1,10 @@
+---
+- name: Restart orbitron
+  ansible.builtin.systemd:
+    name: orbitron
+    state: restarted
+
+- name: Reload orbitron systemd
+  ansible.builtin.systemd:
+    name: orbitron
+    daemon_reload: true

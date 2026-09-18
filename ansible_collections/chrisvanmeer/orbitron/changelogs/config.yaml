@@ -1,0 +1,23 @@
+---
+changelog_filename_template: CHANGELOG.rst
+changelog_filename_version_depth: 0
+changes_file: changelog.yaml
+changes_format: combined
+ignore_other_fragments: true
+keep_fragments: false
+mention_rc: true
+new_plugins_aftername: removed
+notesdir: fragments
+prelude_section_name: release_summary
+prelude_sections:
+  - name: release_summary
+    heading: Release Summary
+  - name: minor_features
+    heading: Minor Changes
+  - name: bugfixes
+    heading: Bugfixes
+sections:
+  - section: minor_features
+    type: minor_features
+  - section: bugfixes
+    type: bugfixes
