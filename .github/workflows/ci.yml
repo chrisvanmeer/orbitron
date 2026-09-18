@@ -68,3 +68,79 @@ jobs:
         run: ansible-test sanity --venv --requirements
       - name: Unit tests
         run: ansible-test units --venv --requirements
+
+  integration-mirror:
+    name: Integration (orbitron_mirror)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install ansible-core
+        run: pip install ansible-core
+
+      - name: Run the orbitron_mirror role against a scratch daemon
+        env:
+          ORBITRON_TEST_PORT: 18080
+        run: |
+          set -euo pipefail
+
+          SCRATCH="$(mktemp -d)"
+          mkdir -p "$SCRATCH/storage"
+          trap 'rm -rf "$SCRATCH"' EXIT
+
+          go build -o "$SCRATCH/orbitron" .
+
+          cat > "$SCRATCH/config.yml" <<YAML
+          listen_addr: "127.0.0.1:${ORBITRON_TEST_PORT}"
+          storage_path: "${SCRATCH}/storage"
+          log_path: "${SCRATCH}/orbitron.log"
+          tokens_file: "${SCRATCH}/tokens.json"
+          require_auth_pull: false
+          max_concurrency: 2
+          token_ttl_days: 0
+          YAML
+
+          "$SCRATCH/orbitron" --config "$SCRATCH/config.yml" &
+          DAEMON_PID=$!
+          trap 'kill "$DAEMON_PID" 2>/dev/null || true; rm -rf "$SCRATCH"' EXIT
+
+          curl_health() { curl -fsS "http://127.0.0.1:${ORBITRON_TEST_PORT}/healthz" >/dev/null; }
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl_health 2>/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          "$ready"
+
+          export ORBITRON_TEST_TOKEN
+          ORBITRON_TEST_TOKEN="$("$SCRATCH/orbitron" --config "$SCRATCH/config.yml" --generate-token -q)"
+
+          ansible-galaxy collection build ansible_collections/chrisvanmeer/orbitron --output-path "$SCRATCH" >/dev/null
+          ansible-galaxy collection install "$SCRATCH"/chrisvanmeer-orbitron-*.tar.gz --force >/dev/null
+
+          cat > "$SCRATCH/mirror_test.yml" <<YAML
+          ---
+          - name: Mirror requirements against the scratch daemon
+            hosts: localhost
+            connection: local
+            roles:
+              - role: chrisvanmeer.orbitron.orbitron_mirror
+                vars:
+                  orbitron_mirror_url: http://127.0.0.1:${ORBITRON_TEST_PORT}
+                  orbitron_mirror_token: "{{ lookup('env', 'ORBITRON_TEST_TOKEN') }}"
+                  orbitron_mirror_wait_sync: false
+                  orbitron_mirror_collections:
+                    - name: community.general
+                      version: "8.5.0"
+          YAML
+
+          ansible-playbook "$SCRATCH/mirror_test.yml"

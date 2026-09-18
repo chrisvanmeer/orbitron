@@ -6,7 +6,8 @@
     _orbitron_mirror_has_collections: >-
       {{ orbitron_mirror_collections or orbitron_mirror_collection_manifest_path }}
     _orbitron_mirror_has_requirements: >-
-      {{ _orbitron_mirror_has_roles or _orbitron_mirror_has_collections }}
+      {{ orbitron_mirror_roles or orbitron_mirror_role_manifest_path
+         or orbitron_mirror_collections or orbitron_mirror_collection_manifest_path }}
 
 - name: Validate the mirror configuration
   ansible.builtin.assert:

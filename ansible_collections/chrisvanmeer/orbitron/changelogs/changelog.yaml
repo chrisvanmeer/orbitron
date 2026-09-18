@@ -59,3 +59,19 @@ releases:
           Role task names now describe the desired end state
           (``Ensure ...``) instead of the performed action.
     release_date: '2026-09-18'
+  1.2.3:
+    changes:
+      release_summary: |
+        Fix the orbitron_mirror role so it can actually run. Its opening
+        ``set_fact`` computed the "has requirements" flag from sibling facts
+        that are set in the same task; because Ansible templates a task's
+        arguments before applying any of its facts, the expression failed at
+        runtime with ``'_orbitron_mirror_has_roles' is undefined``. The flag
+        is now derived directly from the four configured manifest sources.
+      bugfixes:
+        - >-
+          The orbitron_mirror role no longer references facts set in the same
+          ``set_fact`` task when deriving the "has requirements" flag, so the
+          role stops failing with ``'... is undefined'`` before its first run
+          completes.
+    release_date: '2026-09-18'
