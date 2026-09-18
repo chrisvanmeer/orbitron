@@ -18,6 +18,7 @@ import (
 
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
+	"orbitron/internal/logger"
 )
 
 func newTestServer(t *testing.T) (*Server, string) {
@@ -371,6 +372,33 @@ func TestHealthzDegradedWhenStorageUnwritable(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestLoggingMiddlewareSuppressesRoutinePaths(t *testing.T) {
+	s, _ := newTestServer(t)
+	handler := s.LoggingMiddleware(http.NewServeMux())
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	defer logger.SetOutput(os.Stdout)
+
+	for _, suppressed := range []string{"/healthz", "/favicon.ico", "/ui/"} {
+		buf.Reset()
+		req := httptest.NewRequest(http.MethodGet, suppressed, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if strings.Contains(buf.String(), suppressed) {
+			t.Errorf("expected %q to be suppressed from log output, got: %s", suppressed, buf.String())
+		}
+	}
+
+	buf.Reset()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if !strings.Contains(buf.String(), "/api/v1/sync/status") {
+		t.Errorf("expected ordinary API path to be logged, got: %s", buf.String())
 	}
 }
 
