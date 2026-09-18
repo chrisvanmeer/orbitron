@@ -2,12 +2,12 @@
 - name: Determine which manifest sources are configured
   ansible.builtin.set_fact:
     _orbitron_mirror_has_roles: >-
-      {{ orbitron_mirror_roles or orbitron_mirror_role_manifest_path }}
+      {{ (orbitron_mirror_roles or orbitron_mirror_role_manifest_path) is truthy }}
     _orbitron_mirror_has_collections: >-
-      {{ orbitron_mirror_collections or orbitron_mirror_collection_manifest_path }}
+      {{ (orbitron_mirror_collections or orbitron_mirror_collection_manifest_path) is truthy }}
     _orbitron_mirror_has_requirements: >-
-      {{ orbitron_mirror_roles or orbitron_mirror_role_manifest_path
-         or orbitron_mirror_collections or orbitron_mirror_collection_manifest_path }}
+      {{ (orbitron_mirror_roles or orbitron_mirror_role_manifest_path
+          or orbitron_mirror_collections or orbitron_mirror_collection_manifest_path) is truthy }}
 
 - name: Validate the mirror configuration
   ansible.builtin.assert:

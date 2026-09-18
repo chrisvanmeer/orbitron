@@ -75,3 +75,20 @@ releases:
           role stops failing with ``'... is undefined'`` before its first run
           completes.
     release_date: '2026-09-18'
+  1.2.4:
+    changes:
+      release_summary: |
+        Make the orbitron_mirror manifest flags real booleans. While the
+        1.2.3 fix removed the sibling-``set_fact`` reference, the "or"
+        expressions still yielded the first truthy source value itself (a list
+        or string), and recent ansible-core rejects non-boolean values in
+        ``assert``/``when`` conditionals with "Conditionals must have a
+        boolean result". The flags are now derived with the ``truthy`` test so
+        the role runs to completion.
+      bugfixes:
+        - >-
+          The orbitron_mirror role's ``_orbitron_mirror_has_*`` facts are now
+          actual booleans via the ``truthy`` test, so the configuration
+          validation no longer fails with "Conditionals must have a boolean
+          result" when a manifest source is configured.
+    release_date: '2026-09-18'
