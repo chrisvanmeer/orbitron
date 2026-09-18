@@ -174,7 +174,7 @@ identical re-submissions are deduplicated. All stored manifests are replayed on 
 ```yaml
 roles:
   - name: geerlingguy.nginx
-    version: 3.2.0
+    version: 3.3.1
   - name: geerlingguy.docker
     version: 7.1.0
   - name: RHEL9-CIS
@@ -417,7 +417,7 @@ it as `orbitron_admin_token`; the `orbitron_mirror` role consumes it through
             version: "1.12.0"
         orbitron_mirror_roles:
           - name: geerlingguy.nginx
-            version: "3.4.3"
+            version: "3.3.1"
 ```
 
 ```bash

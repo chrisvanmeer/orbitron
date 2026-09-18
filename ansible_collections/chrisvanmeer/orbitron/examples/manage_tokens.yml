@@ -32,5 +32,5 @@
         token: "{{ ci_token.orbitron.token }}"
         kind: role
         name: geerlingguy.nginx
-        version: 1.2.2
+        version: 3.3.0
       when: "info.orbitron.storage.roles is defined"

@@ -62,7 +62,7 @@ EXAMPLES = r"""
     token: "{{ orbitron_admin_token }}"
     kind: role
     name: geerlingguy.nginx
-    version: 1.2.2
+    version: 3.3.0
 
 - name: Drop an old collection artifact
   chrisvanmeer.orbitron.orbitron_purge:

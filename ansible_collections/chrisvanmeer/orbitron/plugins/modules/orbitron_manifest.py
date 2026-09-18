@@ -123,7 +123,7 @@ EXAMPLES = r"""
     content: |
       roles:
         - name: geerlingguy.nginx
-          version: 3.4.3
+          version: 3.3.1
 """
 
 RETURN = r"""
