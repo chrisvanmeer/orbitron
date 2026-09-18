@@ -109,7 +109,7 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 
 	// 1. Check Cookie (For Browser/UI sessions leaking into API)
 	if cookie, err := r.Cookie("orbitron_token"); err == nil {
-		if _, ok := store.Tokens[cookie.Value]; ok {
+		if store.Valid(cookie.Value) {
 			return true
 		}
 	}
@@ -118,7 +118,7 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if _, ok := store.Tokens[token]; ok {
+		if store.Valid(token) {
 			return true
 		}
 	}
@@ -126,10 +126,10 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 	// 3. Check Basic Auth
 	user, pass, ok := r.BasicAuth()
 	if ok {
-		if _, ok := store.Tokens[pass]; ok {
+		if store.Valid(pass) {
 			return true
 		}
-		if _, ok := store.Tokens[user]; ok {
+		if store.Valid(user) {
 			return true
 		}
 	}
@@ -640,6 +640,14 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
+	// Expired tokens are never resurrected by a daemon restart; sweep them once
+	// on boot so the store stays tidy.
+	if pruned, err := auth.PruneExpiredTokens(s.cfg.TokensFile); err != nil {
+		logger.Error("Failed to prune expired tokens on startup: %v", err)
+	} else if pruned > 0 {
+		logger.Info("Pruned %d expired token(s) on startup", pruned)
+	}
+
 	// Prometheus Telemetry Endpoint (Protected with token auth via AuthMiddleware)
 	metrics := telemetry.NewMetrics()
 	mux.HandleFunc("/metrics", s.AuthMiddleware(metrics.Handler(s.cfg)))
@@ -648,9 +656,24 @@ func (s *Server) Start() error {
 	dashboard := web.NewDashboard(s.cfg)
 	dashboard.Register(mux)
 
+	// Unauthenticated liveness probe for orchestrators & load balancers.
+	mux.HandleFunc("GET /healthz", s.HandleHealthz)
+
 	mux.HandleFunc("/api/v1/requirements/collections", s.AuthMiddleware(s.HandleRequirementsCollections))
 	mux.HandleFunc("/api/v1/requirements/roles", s.AuthMiddleware(s.HandleRequirementsRoles))
 	mux.HandleFunc("/api/v1/sync", s.AuthMiddleware(s.HandleSync))
+
+	// Async sync queue / run state.
+	mux.HandleFunc("GET /api/v1/sync/status", s.AuthMiddleware(s.HandleSyncStatus))
+
+	// Administrative token lifecycle (create, list, revoke, rotate).
+	mux.HandleFunc("POST /api/v1/tokens", s.AuthMiddleware(s.HandleTokenCreate))
+	mux.HandleFunc("GET /api/v1/tokens", s.AuthMiddleware(s.HandleTokenList))
+	mux.HandleFunc("DELETE /api/v1/tokens/{token}", s.AuthMiddleware(s.HandleTokenRevoke))
+	mux.HandleFunc("POST /api/v1/tokens/{token}/rotate", s.AuthMiddleware(s.HandleTokenRotate))
+
+	// Storage pruning. Currently answers with a "for_future_use" placeholder.
+	mux.HandleFunc("POST /api/v1/prune", s.AuthMiddleware(s.HandlePrune))
 
 	// Authorized admin-only storage deletion endpoints (one version per call).
 	// Registered with method-specific patterns so they take precedence over the

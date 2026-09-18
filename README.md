@@ -25,6 +25,12 @@ enterprise environments to cache, store, and serve Ansible roles and collections
   systemd service registration, logrotate configuration, and full uninstallation cleanup.
 * **Storage Pruner**: Built-in CLI flag (`--prune`) to scan manifests, detect orphaned versions, and clean up
   disk usage.
+* **Liveness Probe (`/healthz`)**: Unauthenticated health endpoint for orchestrators, load balancers, and uptime
+  monitors; reports `200` when the storage path is writable and `503` otherwise.
+* **Async Sync Status API**: `GET /api/v1/sync/status` exposes the currently running sync job (kind, progress,
+  failures) plus a bounded history of recent syncs.
+* **Token Lifecycle API**: Create, list, revoke, and rotate administrative tokens over HTTP, with native expiry
+  support and `token_ttl_days` configuration.
 
 ---
 
@@ -136,6 +142,11 @@ require_auth_pull: false
 
 # Maximum number of concurrent download/clone workers spawned during syncs
 max_concurrency: 4
+
+# Default lifetime of newly generated administrative tokens in days.
+# 0 disables expiry so tokens never expire. Per-token TTLs can be
+# overridden with the HTTP token API.
+token_ttl_days: 0
 ```
 
 ---
@@ -354,6 +365,65 @@ ansible-galaxy role install -r roles_requirements.yml
 ```bash
 ansible-galaxy collection install -r collections_requirements.yml
 ```
+
+---
+
+## Management & Operations API
+
+Orbitron exposes several administrative endpoints for health checks, sync visibility, and token lifecycle
+management. All management endpoints except `/healthz` require a valid Bearer/Basic authorization header.
+
+### 1. Health Check (`/healthz`)
+
+Unauthenticated liveness probe for orchestrators, load balancers, and uptime monitors. Returns `200`
+`{"status":"ok"}` while the storage path is writable, and `503 {"status":"degraded"}` otherwise.
+
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+### 2. Sync Status (`GET /api/v1/sync/status`)
+
+Returns the currently running background sync (kind, progress, per-item failures) together with a bounded
+history of recently finished syncs, so automation can wait on completion instead of polling metrics.
+
+```bash
+curl -H "Authorization: Bearer $ORBITRON_TOKEN" http://127.0.0.1:8080/api/v1/sync/status
+```
+
+```json
+{
+  "current": {"kind": "full", "status": "running", "total": 4, "done": 2, "failures": []},
+  "history": []
+}
+```
+
+### 3. Token Lifecycle (`/api/v1/tokens`)
+
+| Method | Path                           | Description                                              |
+| :----- | :----------------------------- | :------------------------------------------------------- |
+| `POST`   | `/api/v1/tokens`               | Generate a token (optional `ttl_days` / `label` in body). |
+| `GET`    | `/api/v1/tokens`               | List token metadata (`?full=true` reveals the secrets).  |
+| `DELETE` | `/api/v1/tokens/{token}`       | Revoke a token.                                          |
+| `POST`   | `/api/v1/tokens/{token}/rotate`| Replace a token, revoking the original atomically.       |
+
+**Create a token with a 30-day lifetime:**
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/tokens \
+  -H "Authorization: Bearer $ORBITRON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ttl_days": 30, "label": "ci"}'
+```
+
+Tokens honour the global `token_ttl_days` configuration by default; an explicit `ttl_days: 0` in the request
+body disables expiry for that token. Expired tokens are rejected by every authenticated endpoint and pruned
+from the token store at daemon startup.
+
+### 4. Prune API (`POST /api/v1/prune`)
+
+Reserved for a future storage pruning endpoint. Until it is enabled, the route answers with
+`501 {"status":"for_future_use"}` and performs no action.
 
 ---
 

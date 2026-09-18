@@ -199,6 +199,19 @@ func registerDeleteMux(s *Server) *http.ServeMux {
 	return mux
 }
 
+// registerAdminMux mirrors the new-era admin API routes registered in Start():
+// token lifecycle, sync status, and the (placeholder) prune endpoint.
+func registerAdminMux(s *Server) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/tokens", s.AuthMiddleware(s.HandleTokenCreate))
+	mux.HandleFunc("GET /api/v1/tokens", s.AuthMiddleware(s.HandleTokenList))
+	mux.HandleFunc("DELETE /api/v1/tokens/{token}", s.AuthMiddleware(s.HandleTokenRevoke))
+	mux.HandleFunc("POST /api/v1/tokens/{token}/rotate", s.AuthMiddleware(s.HandleTokenRotate))
+	mux.HandleFunc("GET /api/v1/sync/status", s.AuthMiddleware(s.HandleSyncStatus))
+	mux.HandleFunc("POST /api/v1/prune", s.AuthMiddleware(s.HandlePrune))
+	return mux
+}
+
 // writeTestTokensFile writes a single valid token into a temp tokens store
 // in the exact shape auth.LoadTokens parses: {"tokens":{"<token>":<unix>}}.
 func writeTestTokensFile(t *testing.T, token string) string {
@@ -318,5 +331,262 @@ func TestHandleRoleDownloadMissingReturns404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHealthzOK(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	s.HandleHealthz(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Status          string `json:"status"`
+		StorageWritable bool   `json:"storage_writable"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != "ok" || !body.StorageWritable {
+		t.Errorf("unexpected body: %+v", body)
+	}
+}
+
+func TestHealthzDegradedWhenStorageUnwritable(t *testing.T) {
+	s := &Server{cfg: &config.Config{
+		StoragePath: filepath.Join(t.TempDir(), "does-not-exist"),
+	}}
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	s.HandleHealthz(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestSyncStatusEndpoint(t *testing.T) {
+	s, _ := newTestServer(t)
+	mux := registerAdminMux(s)
+
+	send := func(token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/status", nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := send(""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+
+	rec := send("valid-admin-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	var snap struct {
+		Current any   `json:"current"`
+		History []any `json:"history"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &snap); err != nil {
+		t.Fatal(err)
+	}
+	if snap.Current != nil {
+		t.Errorf("expected null current job, got %v", snap.Current)
+	}
+	if snap.History == nil {
+		t.Error("expected history array to be present")
+	}
+}
+
+func TestTokenCRUDFlow(t *testing.T) {
+	s, _ := newTestServer(t)
+	mux := registerAdminMux(s)
+
+	// Create with a request-scoped TTL and label.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens", strings.NewReader(`{"ttl_days":1,"label":"ci"}`))
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create token: expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	var created tokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Token == "" {
+		t.Fatal("expected non-empty token")
+	}
+	if created.Label != "ci" {
+		t.Errorf("label = %q, want ci", created.Label)
+	}
+	if created.ExpiresAt-created.CreatedAt != 24*60*60 {
+		t.Errorf("expected 1 day TTL, got %d", created.ExpiresAt-created.CreatedAt)
+	}
+
+	// List hides secrets by default.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tokens?full=false", nil)
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list tokens: expected 200, got %d", rec.Code)
+	}
+	var list struct {
+		Tokens []tokenResponse `json:"tokens"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Tokens) < 2 {
+		t.Fatalf("expected at least 2 tokens listed, got %d", len(list.Tokens))
+	}
+	for _, entry := range list.Tokens {
+		if entry.Token != "" {
+			t.Errorf("token secret leaked without full=true: %q", entry.Token)
+		}
+	}
+
+	// full=true reveals secrets.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tokens?full=true", nil)
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	secretSeen := false
+	for _, entry := range list.Tokens {
+		if entry.Token != "" {
+			secretSeen = true
+		}
+	}
+	if !secretSeen {
+		t.Error("expected raw tokens with full=true")
+	}
+
+	// Rotate the created token: old revoked, new active.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/tokens/"+created.Token+"/rotate", nil)
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotate token: expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	var rotated tokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &rotated); err != nil {
+		t.Fatal(err)
+	}
+	if rotated.Token == "" || rotated.Token == created.Token {
+		t.Errorf("expected fresh token, got %q", rotated.Token)
+	}
+
+	// The revoked original can no longer authenticate.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tokens", nil)
+	req.Header.Set("Authorization", "Bearer "+created.Token)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("revoked token should be rejected, got %d", rec.Code)
+	}
+
+	// Revoke the rotated token.
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/"+rotated.Token, nil)
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("revoke token: expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Revoking again returns 404.
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/"+rotated.Token, nil)
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("second revoke: expected 404, got %d", rec.Code)
+	}
+}
+
+func TestTokenCreateRequiresAuth(t *testing.T) {
+	s, _ := newTestServer(t)
+	mux := registerAdminMux(s)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens", strings.NewReader(`{"ttl_days":1}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+}
+
+func TestExpiredTokenRejectedByAPI(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tokens.json")
+	// A token whose expires_at has already passed, in the current token format.
+	now := time.Now().Unix()
+	data := fmt.Sprintf(`{"tokens":{"expired-token":{"created_at":%d,"expires_at":%d}}}`, now-7200, now-3600)
+	if err := os.WriteFile(path, []byte(data), 0640); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{cfg: &config.Config{TokensFile: path}}
+	mux := registerAdminMux(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tokens", nil)
+	req.Header.Set("Authorization", "Bearer expired-token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for expired token, got %d", rec.Code)
+	}
+}
+
+func TestPruneEndpointForFutureUse(t *testing.T) {
+	s, _ := newTestServer(t)
+	mux := registerAdminMux(s)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/prune", nil)
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "for_future_use" {
+		t.Errorf("expected status for_future_use, got %q", body["status"])
+	}
+}
+
+func TestPruneEndpointRequiresAuth(t *testing.T) {
+	s, _ := newTestServer(t)
+	mux := registerAdminMux(s)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/prune", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", rec.Code)
 	}
 }

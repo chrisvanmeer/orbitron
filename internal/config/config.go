@@ -13,6 +13,9 @@ type Config struct {
 	TokensFile      string `yaml:"tokens_file"`
 	RequireAuthPull bool   `yaml:"require_auth_pull"`
 	MaxConcurrency  int    `yaml:"max_concurrency"`
+	// TokenTTLDays is the default lifetime for newly generated administrative
+	// tokens, in days. 0 disables expiry so tokens never expire.
+	TokenTTLDays int `yaml:"token_ttl_days"`
 }
 
 func GetDefaultConfigYML() string {
@@ -27,6 +30,11 @@ require_auth_pull: false
 
 # Maximum number of concurrent download/clone workers spawned during syncs
 max_concurrency: 4
+
+# Default lifetime of newly generated administrative tokens in days.
+# 0 disables expiry so tokens never expire. Per-token TTLs can be
+# overridden when creating tokens via the HTTP token API.
+token_ttl_days: 0
 `
 }
 
@@ -38,6 +46,7 @@ func LoadConfig(path string) (*Config, error) {
 		TokensFile:      "/etc/orbitron/tokens.json",
 		RequireAuthPull: false,
 		MaxConcurrency:  4,
+		TokenTTLDays:    0,
 	}
 
 	data, err := os.ReadFile(path)

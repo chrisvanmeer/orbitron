@@ -33,7 +33,7 @@ func (m *Metrics) Handler(cfg *config.Config) http.HandlerFunc {
 		store, _ := auth.LoadTokens(cfg.TokensFile)
 		activeTokensCount := 0
 		if store != nil {
-			activeTokensCount = len(store.Tokens)
+			activeTokensCount = store.ActiveCount()
 		}
 
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

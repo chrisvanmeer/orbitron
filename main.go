@@ -18,6 +18,15 @@ import (
 	"orbitron/internal/server"
 )
 
+// tokenTTL converts the configured TokenTTLDays into a time.Duration. A
+// non-positive value returns 0, meaning generated tokens never expire.
+func tokenTTL(cfg *config.Config) time.Duration {
+	if cfg.TokenTTLDays <= 0 {
+		return 0
+	}
+	return time.Duration(cfg.TokenTTLDays) * 24 * time.Hour
+}
+
 func main() {
 	configPath := flag.String("config", "/etc/orbitron/config.yml", "Path to configuration file")
 	doInstall := flag.Bool("install", false, "Install Orbitron service, user, and logrotate")
@@ -54,7 +63,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		token, err := auth.GenerateToken(cfg.TokensFile)
+		token, _, err := auth.GenerateToken(cfg.TokensFile, "", tokenTTL(cfg))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to generate token: %v\n", err)
 			os.Exit(1)

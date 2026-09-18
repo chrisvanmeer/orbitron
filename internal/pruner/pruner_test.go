@@ -6,6 +6,111 @@ import (
 	"testing"
 )
 
+func TestRunPruneDryRunReportsWithoutDeleting(t *testing.T) {
+	storage := t.TempDir()
+	manifestDir := filepath.Join(storage, "manifests")
+	if err := os.MkdirAll(manifestDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := []byte("roles:\n  - name: foo.role\n    version: 1.0.0\n")
+	if err := os.WriteFile(filepath.Join(manifestDir, "roles_abc123_requirements.yml"), manifest, 0640); err != nil {
+		t.Fatal(err)
+	}
+
+	activeDir := filepath.Join(storage, "roles", "foo.role", "1.0.0")
+	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
+	for _, d := range []string{activeDir, orphanDir} {
+		if err := os.MkdirAll(d, 0750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	p := NewPruner(storage)
+	items, err := p.RunPruneDryRun()
+	if err != nil {
+		t.Fatalf("RunPruneDryRun: %v", err)
+	}
+	if len(items) != 1 || items[0] != orphanDir {
+		t.Fatalf("expected exactly orphan dir %s, got %v", orphanDir, items)
+	}
+
+	// Nothing may be deleted on a dry run.
+	if _, err := os.Stat(orphanDir); err != nil {
+		t.Errorf("dry run must not delete: %v", err)
+	}
+}
+
+func TestRunPruneAPIDeletesUnreferenced(t *testing.T) {
+	storage := t.TempDir()
+	manifestDir := filepath.Join(storage, "manifests")
+	if err := os.MkdirAll(manifestDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := []byte("roles:\n  - name: foo.role\n    version: 1.0.0\n")
+	if err := os.WriteFile(filepath.Join(manifestDir, "roles_abc123_requirements.yml"), manifest, 0640); err != nil {
+		t.Fatal(err)
+	}
+
+	activeDir := filepath.Join(storage, "roles", "foo.role", "1.0.0")
+	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
+	for _, d := range []string{activeDir, orphanDir} {
+		if err := os.MkdirAll(d, 0750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	p := NewPruner(storage)
+	result, err := p.RunPruneAPI(false)
+	if err != nil {
+		t.Fatalf("RunPruneAPI: %v", err)
+	}
+	if !result.Executed {
+		t.Error("Executed should be true for a non-dry-run invocation")
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 pruned item, got %d", len(result.Items))
+	}
+	if _, err := os.Stat(orphanDir); !os.IsNotExist(err) {
+		t.Errorf("orphan should be deleted, got err=%v", err)
+	}
+	if _, err := os.Stat(activeDir); err != nil {
+		t.Errorf("active version must be preserved: %v", err)
+	}
+}
+
+func TestRunPruneAPIDryRunSkippedDelete(t *testing.T) {
+	storage := t.TempDir()
+	manifestDir := filepath.Join(storage, "manifests")
+	if err := os.MkdirAll(manifestDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte("roles:\n  - name: foo.role\n    version: 1.0.0\n")
+	if err := os.WriteFile(filepath.Join(manifestDir, "roles_abc123_requirements.yml"), manifest, 0640); err != nil {
+		t.Fatal(err)
+	}
+	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
+	if err := os.MkdirAll(orphanDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPruner(storage)
+	result, err := p.RunPruneAPI(true)
+	if err != nil {
+		t.Fatalf("RunPruneAPI(dry): %v", err)
+	}
+	if result.Executed {
+		t.Error("Executed should be false for a dry run")
+	}
+	if result.FreedBytes != 0 {
+		t.Errorf("dry run should not report freed bytes, got %d", result.FreedBytes)
+	}
+	if _, err := os.Stat(orphanDir); err != nil {
+		t.Errorf("dry run must not delete the orphan: %v", err)
+	}
+}
+
 func TestParseCollectionArtifact(t *testing.T) {
 	tests := []struct {
 		namespace string

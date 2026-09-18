@@ -68,7 +68,7 @@ func (d *Dashboard) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		valid := false
 		if token != "" {
 			if store, err := auth.LoadTokens(d.cfg.TokensFile); err == nil {
-				if _, ok := store.Tokens[token]; ok {
+				if store.Valid(token) {
 					valid = true
 				}
 			}
@@ -98,7 +98,7 @@ func (d *Dashboard) handleLogin(w http.ResponseWriter, r *http.Request) {
 	valid := false
 
 	if store, err := auth.LoadTokens(d.cfg.TokensFile); err == nil {
-		if _, ok := store.Tokens[token]; ok {
+		if store.Valid(token) {
 			valid = true
 		}
 	}

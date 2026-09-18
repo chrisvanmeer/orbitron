@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"orbitron/internal/fetcher"
 	ver "orbitron/internal/version"
@@ -106,15 +107,39 @@ func keepVersion(declarations []string, diskVersions []string, candidate string)
 	return false
 }
 
-// RunPrune scans manifests, finds orphaned versions on disk, prompts, and removes them
-func (p *Pruner) RunPrune() error {
-	fmt.Println("🔍 Scanning manifests and storage for orphaned versions...")
+// computeDirSize returns the recursive, block-aware size of a path so freed
+// disk space can be reported accurately for directories and files alike.
+func computeDirSize(path string) int64 {
+	var size int64
+	_ = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err == nil {
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+				size += stat.Blocks * 512
+			} else if !info.IsDir() {
+				size += info.Size()
+			}
+		}
+		return nil
+	})
+	return size
+}
 
+// PruneResult is a structured outcome of a prune operation, used by programmatic
+// callers (e.g., the HTTP prune endpoint) rather than the interactive CLI.
+type PruneResult struct {
+	Items      []string `json:"items"`
+	FreedBytes int64    `json:"freed_bytes"`
+	Executed   bool     `json:"executed"`
+}
+
+// Scan returns the absolute paths of every role/collection version that is no
+// longer referenced by any stored requirements manifest. It never deletes.
+func (p *Pruner) Scan() []string {
 	activeRoles, activeCollections := p.collectDeclared()
 
-	// 2. Scan roles storage directory
 	var toDelete []string
 
+	// Scan roles storage directory.
 	rolesDir := filepath.Join(p.storagePath, "roles")
 	roleEntries, err := os.ReadDir(rolesDir)
 	if err == nil {
@@ -148,7 +173,7 @@ func (p *Pruner) RunPrune() error {
 		}
 	}
 
-	// 3. Scan collections storage directory (.tar.gz files and git folders)
+	// Scan collections storage directory (.tar.gz files and git folders).
 	collectionsDir := filepath.Join(p.storagePath, "collections")
 	colEntries, err := os.ReadDir(collectionsDir)
 	if err == nil {
@@ -183,6 +208,47 @@ func (p *Pruner) RunPrune() error {
 			}
 		}
 	}
+
+	return toDelete
+}
+
+// RunPruneDryRun returns the candidate paths for pruning without deleting or
+// prompting, mirroring the read-only scan used by RunPrune.
+func (p *Pruner) RunPruneDryRun() ([]string, error) {
+	return p.Scan(), nil
+}
+
+// RunPruneAPI prunes the unreferenced versions, optionally as a dry run, and
+// returns a structured result. It is the programmatic counterpart of the
+// interactive RunPrune and backs the (currently gated) HTTP prune endpoint.
+func (p *Pruner) RunPruneAPI(dryRun bool) (*PruneResult, error) {
+	toDelete := p.Scan()
+
+	result := &PruneResult{
+		Items:    toDelete,
+		Executed: !dryRun,
+	}
+
+	if dryRun {
+		return result, nil
+	}
+
+	for _, path := range toDelete {
+		freed := computeDirSize(path)
+		if err := os.RemoveAll(path); err != nil {
+			return result, fmt.Errorf("failed to remove %s: %w", path, err)
+		}
+		result.FreedBytes += freed
+	}
+
+	return result, nil
+}
+
+// RunPrune scans manifests, finds orphaned versions on disk, prompts, and removes them
+func (p *Pruner) RunPrune() error {
+	fmt.Println("🔍 Scanning manifests and storage for orphaned versions...")
+
+	toDelete := p.Scan()
 
 	if len(toDelete) == 0 {
 		fmt.Println("✨ Storage is clean. No unreferenced or older versions found.")

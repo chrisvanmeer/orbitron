@@ -47,6 +47,7 @@ type Fetcher struct {
 	manifestPath   string
 	httpClient     *http.Client
 	maxConcurrency int
+	tracker        *SyncTracker
 }
 
 func NewFetcher(storagePath string, maxConcurrency int) *Fetcher {
@@ -81,6 +82,7 @@ func NewFetcher(storagePath string, maxConcurrency int) *Fetcher {
 		storagePath:    storagePath,
 		manifestPath:   manifestPath,
 		maxConcurrency: maxConcurrency,
+		tracker:        NewSyncTracker(),
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   30 * time.Second,
@@ -229,30 +231,73 @@ func (f *Fetcher) runConcurrently(jobs []func()) {
 	wg.Wait()
 }
 
-func (f *Fetcher) ProcessRoles(items []RoleItem) {
-	jobs := make([]func(), 0, len(items))
-	for _, item := range items {
-		jobs = append(jobs, func() {
-			if err := f.ProcessRole(item); err != nil {
-				logger.Error("Error processing role (%s): %v", item.Name, err)
-			}
-		})
+// StatusSnapshot returns a concurrency-safe view of the current and recent
+// background sync jobs, suitable for JSON serialization in the API layer.
+func (f *Fetcher) StatusSnapshot() SyncSnapshot {
+	if f.tracker == nil {
+		return SyncSnapshot{History: []SyncJob{}}
 	}
-	f.runConcurrently(jobs)
+	return f.tracker.snapshot()
+}
+
+// roleItemName returns the best human-readable identity for a role item.
+func (f *Fetcher) roleItemName(item RoleItem) string {
+	if n := strings.TrimSpace(item.Name); n != "" {
+		return n
+	}
+	return extractFetcherRoleName(item)
+}
+
+func (f *Fetcher) ProcessRoles(items []RoleItem) {
+	f.tracker.begin(SyncKindRoles, len(items))
+	f.runRoleJobs(items)
+	f.tracker.end()
 	logger.Info("Role requirements sync completed.")
 }
 
 func (f *Fetcher) ProcessCollections(items []CollectionItem) {
+	f.tracker.begin(SyncKindCollections, len(items))
+	f.runCollectionJobs(items)
+	f.tracker.end()
+	logger.Info("Collection requirements sync completed.")
+}
+
+// runRoleJobs executes the given role items concurrently, reporting each
+// result to the tracker. It never starts or finishes a tracker job itself, so
+// callers can chain a single "full" job around both role and collection sets.
+func (f *Fetcher) runRoleJobs(items []RoleItem) {
 	jobs := make([]func(), 0, len(items))
 	for _, item := range items {
+		item := item
+		name := f.roleItemName(item)
 		jobs = append(jobs, func() {
-			if err := f.ProcessCollection(item); err != nil {
-				logger.Error("Error processing collection (%s): %v", item.Name, err)
+			err := f.ProcessRole(item)
+			f.tracker.itemDone()
+			if err != nil {
+				logger.Error("Error processing role (%s): %v", item.Name, err)
+				f.tracker.itemFailed(name, err)
 			}
 		})
 	}
 	f.runConcurrently(jobs)
-	logger.Info("Collection requirements sync completed.")
+}
+
+// runCollectionJobs executes the given collection items concurrently,
+// reporting each result to the tracker without starting a job of its own.
+func (f *Fetcher) runCollectionJobs(items []CollectionItem) {
+	jobs := make([]func(), 0, len(items))
+	for _, item := range items {
+		item := item
+		jobs = append(jobs, func() {
+			err := f.ProcessCollection(item)
+			f.tracker.itemDone()
+			if err != nil {
+				logger.Error("Error processing collection (%s): %v", item.Name, err)
+				f.tracker.itemFailed(strings.TrimSpace(item.Name), err)
+			}
+		})
+	}
+	f.runConcurrently(jobs)
 }
 
 func (f *Fetcher) SyncAll() {
@@ -289,18 +334,21 @@ func (f *Fetcher) SyncAll() {
 		collections = append(collections, reqs.Collections...)
 	}
 
+	f.tracker.begin(SyncKindFull, len(roles)+len(collections))
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		f.ProcessCollections(collections)
+		f.runRoleJobs(roles)
 	}()
 	go func() {
 		defer wg.Done()
-		f.ProcessRoles(roles)
+		f.runCollectionJobs(collections)
 	}()
 	wg.Wait()
 
+	f.tracker.end()
 	logger.Info("Full sync job completed.")
 }
 
