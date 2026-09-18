@@ -31,6 +31,10 @@ enterprise environments to cache, store, and serve Ansible roles and collections
   failures) plus a bounded history of recent syncs.
 * **Token Lifecycle API**: Create, list, revoke, and rotate administrative tokens over HTTP, with native expiry
   support and `token_ttl_days` configuration.
+* **Content Inventory APIs**: `GET /api/v1/manifests` lists the stored requirement manifests (with content
+  hashes) and `GET /api/v1/storage` exposes the precise cached-version inventory of roles and collections.
+* **Official Ansible Collection (`chrisvanmeer.orbitron`)**: install, configure, and operate the daemon purely
+  with Ansible – six purpose-built HTTP modules plus declarative install/mirror roles.
 
 ---
 
@@ -118,6 +122,9 @@ sudo orbitron --prune
 
 # Start daemon with custom config
 orbitron --config /etc/orbitron/config.yml
+
+# Show the compiled-in version
+orbitron --version
 ```
 
 | Flag               | Shorthand | Description                                                             |
@@ -126,6 +133,7 @@ orbitron --config /etc/orbitron/config.yml
 | `--quiet`          | `-q`      | Suppresses verbose log formatting and prints the raw token string only. |
 | `--revoke-token`   |           | Revokes an existing Bearer token by string value.                       |
 | `--prune`          |           | Interactively deletes unused roles and collection archives.             |
+| `--version`        |           | Prints the version (e.g. `v0.5.0` or `dev`).                            |
 
 ---
 
@@ -332,6 +340,113 @@ ansible-playbook feed_orbitron.yml
 
 ---
 
+## Ansible Collection (`chrisvanmeer.orbitron`)
+
+The repository ships an official Ansible collection under
+`ansible_collections/chrisvanmeer/orbitron` to install, configure, and operate
+Orbitron without hand-written `curl`/`systemctl` steps. It covers the full
+lifecycle: daemon installation and service management, token bootstrapping,
+declarative mirroring, and day-two operations such as purging cached versions.
+
+### What it provides
+
+* **Six HTTP modules** – `orbitron_info` (facts: health, storage inventory,
+  manifests, sync status, tokens), `orbitron_token` (create/rotate/revoke),
+  `orbitron_manifest` (store role/collection requirements), `orbitron_sync`
+  (trigger a full sync, optionally wait), `orbitron_purge` (remove one cached
+  version), `orbitron_prune` (invoke the gated prune API). All modules accept
+  `url`, `token` (or `ORBITRON_TOKEN`), `validate_certs`, and `timeout`.
+* **`chrisvanmeer.orbitron.orbitron` role** – end-to-end daemon install:
+  resolves and downloads the release binary, runs `orbitron --install` to
+  bootstrap the system user/dirs/systemd/logrotate, renders
+  `/etc/orbitron/config.yml`, ensures the service is healthy, and generates (or
+  reuses) an initial admin token. Supports full uninstallation with
+  `orbitron_state: absent`.
+* **`chrisvanmeer.orbitron.orbitron_mirror` role** – declarative mirroring from
+  structured role/collection lists or local requirements files, with an
+  optional `orbitron_mirror_wait_sync` on completion.
+
+### Installing the collection
+
+```bash
+# Build and install directly from this repository
+ansible-galaxy collection build ansible_collections/chrisvanmeer/orbitron
+ansible-galaxy collection install chrisvanmeer-orbitron-1.0.0.tar.gz
+```
+
+The full variable reference, module docs, and security notes live in the
+collection's own `README.md`; example playbooks ship under
+`ansible_collections/chrisvanmeer/orbitron/examples/`.
+
+### Example playbook (`orbitron_daemon.yml`)
+
+Install the daemon on a fresh host and mirror a set of roles/collections in one
+run. The `orbitron` role generates the admin token on first install and exposes
+it as `orbitron_admin_token`; the `orbitron_mirror` role consumes it through
+`orbitron_mirror_token` (a vault value if you pre-set `orbitron_token`):
+
+```yaml
+---
+- name: Install Orbitron and mirror content
+  hosts: mirrors
+  become: true
+  vars:
+    # Optional pre-set admin token (or the role generates one and stores it in
+    # orbitron_token_path, default /root/.orbitron_token, mode 0600).
+    orbitron_token: "{{ vault_orbitron_token }}"
+
+  roles:
+    - role: chrisvanmeer.orbitron.orbitron
+      vars:
+        orbitron_version: v0.5.0
+        orbitron_listen_addr: 127.0.0.1:8080
+        orbitron_token_ttl_days: 365
+    - role: chrisvanmeer.orbitron.orbitron_mirror
+      vars:
+        orbitron_mirror_token: "{{ orbitron_admin_token | default(vault_orbitron_token) }}"
+        orbitron_mirror_collections:
+          - name: community.general
+            version: "8.5.0"
+          - name: containers.podman
+            version: "1.12.0"
+        orbitron_mirror_roles:
+          - name: geerlingguy.nginx
+            version: "3.4.3"
+```
+
+```bash
+ansible-playbook -i hosts orbitron_daemon.yml
+```
+
+### Operating an existing daemon with the modules
+
+Against a daemon that is already running, point tasks straight at the API using
+the HTTP modules:
+
+```yaml
+- name: Facts about the running daemon
+  chrisvanmeer.orbitron.orbitron_info:
+    url: http://127.0.0.1:8080
+    token: "{{ orbitron_token }}"
+
+- name: Store a collection requirements manifest
+  chrisvanmeer.orbitron.orbitron_manifest:
+    type: collections
+    content: |
+      collections:
+        - name: community.docker
+          version: "3.6.0"
+    token: "{{ orbitron_token }}"
+
+- name: Trigger a full sync and wait for completion
+  chrisvanmeer.orbitron.orbitron_sync:
+    url: http://127.0.0.1:8080
+    token: "{{ orbitron_token }}"
+    wait: true
+```
+
+---
+
 ## Ansible Client Configuration
 
 To configure `ansible-galaxy` to use Orbitron as its Galaxy server for both roles and collections,
@@ -400,12 +515,12 @@ curl -H "Authorization: Bearer $ORBITRON_TOKEN" http://127.0.0.1:8080/api/v1/syn
 
 ### 3. Token Lifecycle (`/api/v1/tokens`)
 
-| Method | Path                           | Description                                              |
-| :----- | :----------------------------- | :------------------------------------------------------- |
-| `POST`   | `/api/v1/tokens`               | Generate a token (optional `ttl_days` / `label` in body). |
-| `GET`    | `/api/v1/tokens`               | List token metadata (`?full=true` reveals the secrets).  |
-| `DELETE` | `/api/v1/tokens/{token}`       | Revoke a token.                                          |
-| `POST`   | `/api/v1/tokens/{token}/rotate`| Replace a token, revoking the original atomically.       |
+| Method   | Path                          | Description                                               |
+| :------- | :---------------------------- | :-------------------------------------------------------- |
+| `POST`   | /api/v1/tokens                | Generate a token (optional `ttl_days` / `label` in body). |
+| `GET`    | /api/v1/tokens                | List token metadata (`?full=true` reveals the secrets).   |
+| `DELETE` | /api/v1/tokens/{token}        | Revoke a token.                                           |
+| `POST`   | /api/v1/tokens/{token}/rotate | Replace a token, revoking the original atomically.        |
 
 **Create a token with a 30-day lifetime:**
 
@@ -420,7 +535,41 @@ Tokens honour the global `token_ttl_days` configuration by default; an explicit 
 body disables expiry for that token. Expired tokens are rejected by every authenticated endpoint and pruned
 from the token store at daemon startup.
 
-### 4. Prune API (`POST /api/v1/prune`)
+### 4. Stored Requirements Manifests (`GET /api/v1/manifests`)
+
+Lists every requirements manifest currently stored on the mirror, grouped by type, with the content hash
+(`sha256`) used for idempotent ingestion:
+
+```bash
+curl -H "Authorization: Bearer $ORBITRON_TOKEN" http://127.0.0.1:8080/api/v1/manifests
+```
+
+```json
+{
+  "roles": [{"file": "roles_x_requirements.yml", "sha256": "737690a6..."}],
+  "collections": []
+}
+```
+
+### 5. Storage Inventory (`GET /api/v1/storage`)
+
+Returns the cached-version inventory of every role (directory) and collection (archive) on disk, including
+which versions are actively declared by a stored manifest and their physical size in bytes:
+
+```bash
+curl -H "Authorization: Bearer $ORBITRON_TOKEN" http://127.0.0.1:8080/api/v1/storage
+```
+
+```json
+{
+  "roles": [
+    {"type": "role", "name": "geerlingguy.nginx", "versions": [{"version": "1.2.3", "declared": true, "size_bytes": 20480}]}
+  ],
+  "collections": []
+}
+```
+
+### 6. Prune API (`POST /api/v1/prune`)
 
 Reserved for a future storage pruning endpoint. Until it is enabled, the route answers with
 `501 {"status":"for_future_use"}` and performs no action.
@@ -534,4 +683,6 @@ Chris van Meer - <chris@atcomputing.nl>
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the GNU General Public License v3.0 (see the
+top-level `LICENSE` file). The Ansible collection in `ansible_collections/` is
+licensed under the same terms, as noted in `COPYING`.
