@@ -92,3 +92,23 @@ releases:
           validation no longer fails with "Conditionals must have a boolean
           result" when a manifest source is configured.
     release_date: '2026-09-18'
+  1.2.5:
+    changes:
+      release_summary: |
+        Make the orbitron_mirror role truly idempotent and quiet down the
+        liveness probe in the daemon log. The mirror role used to trigger a
+        full ``orbitron_sync`` on every run and always reported ``changed``;
+        it now only syncs when a stored manifest actually changed in that run
+        (set ``orbitron_mirror_sync_force`` to override). The daemon no longer
+        logs routine ``/healthz`` probes alongside the already-suppressed
+        ``/ui`` and favicon requests.
+      bugfixes:
+        - >-
+          Re-running an unchanged orbitron_mirror playbook now reports no
+          changes: the sync task only runs when a manifest changed, keeping
+          the role idempotent while ``orbitron_mirror_sync_force: false``.
+        - >-
+          The Orbitron daemon stops logging ``HTTP GET /healthz`` probe
+          requests at INFO level, keeping the log readable for orchestrators
+          and uptime monitors that poll the liveness endpoint.
+    release_date: '2026-09-18'

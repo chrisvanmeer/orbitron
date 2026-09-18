@@ -143,4 +143,16 @@ jobs:
                       version: "8.5.0"
           YAML
 
-          ansible-playbook "$SCRATCH/mirror_test.yml"
+          ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run1.log" 2>&1
+          # A repeat run with unchanged requirements must be idempotent: the
+          # sync task has to go ok/skipped, never changed.
+          ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run2.log" 2>&1
+          sync_line="$(awk '/Sync the mirror/ {found=1; next} found && /^(ok|changed|skipping):/ {print; exit}' "$SCRATCH/run2.log")"
+          case "$sync_line" in
+            ok:* | skipping:*) ;;
+            *)
+              echo "sync task was not idempotent on the second run: $sync_line"
+              cat "$SCRATCH/run2.log"
+              exit 1
+              ;;
+          esac

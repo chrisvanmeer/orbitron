@@ -71,7 +71,9 @@ keys, `orbitron_state` (`present`/`absent`), and the token bootstrap variables.
 ### `orbitron_mirror`
 
 Declarative mirroring: stores role/collection requirements and waits for the
-sync.
+sync. The role is idempotent — re-running an unchanged playbook reports no
+changes, because a sync only triggers when a manifest changed (set
+`orbitron_mirror_sync_force: true` to force a full re-sync).
 
 ```yaml
 - hosts: mirrors
