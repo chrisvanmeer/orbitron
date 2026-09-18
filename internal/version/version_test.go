@@ -172,6 +172,9 @@ func TestSatisfies(t *testing.T) {
 		{"master", "main", false},
 		{"~=1.4", "1.9.0", true},
 		{"~=1.4", "2.0.0", false},
+		{"all", "1.2.3", true},
+		{"ALL", "2.0.0", true},
+		{"all", "0.0.1", true},
 		{"not-a-version", "not-a-version", true},
 	}
 
@@ -200,11 +203,36 @@ func TestShouldKeep(t *testing.T) {
 		{"1.0.0", "1.0.0", true},
 		{"1.0.0", "1.5.0", false},
 		{">9.0.0", "2.0.0", false},
+		{"all", "0.9.0", true},
+		{"all", "1.0.0", true},
+		{"all", "2.0.0", true},
 	}
 
 	for _, tt := range tests {
 		if got := ShouldKeep(tt.declared, disk, tt.candidate); got != tt.want {
 			t.Errorf("ShouldKeep(%q, disk, %q) = %v, want %v", tt.declared, tt.candidate, got, tt.want)
+		}
+	}
+}
+
+func TestIsAll(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"all", true},
+		{"ALL", true},
+		{"All", true},
+		{" all ", true},
+		{"latest", false},
+		{"*", false},
+		{"1.2.3", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		if got := IsAll(tt.in); got != tt.want {
+			t.Errorf("IsAll(%q) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }

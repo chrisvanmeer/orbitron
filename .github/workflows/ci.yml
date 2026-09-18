@@ -178,3 +178,45 @@ jobs:
           # Run 5: back to an unchanged, fully mirrored playbook: ok again.
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run5.log" 2>&1
           check_sync_result "$SCRATCH/run5.log" ok "run 5 (idempotent again)"
+
+          # Run 6: version 'all' mirrors every published version of a small
+          # collection. The artifact count must be stable across a rerun: the
+          # rerun re-checks the indexes but must not re-download anything.
+          cat > "$SCRATCH/mirror_all.yml" <<YAML
+          ---
+          - name: Mirror every published version
+            hosts: localhost
+            connection: local
+            roles:
+              - role: chrisvanmeer.orbitron.orbitron_mirror
+                vars:
+                  orbitron_mirror_url: http://127.0.0.1:${ORBITRON_TEST_PORT}
+                  orbitron_mirror_token: "{{ lookup('env', 'ORBITRON_TEST_TOKEN') }}"
+                  orbitron_mirror_collections:
+                    - name: ansible.posix
+                      version: all
+          YAML
+
+          count_posix() {
+            curl -fsS -H "Authorization: Bearer $ORBITRON_TEST_TOKEN" \
+              "http://127.0.0.1:${ORBITRON_TEST_PORT}/api/v1/storage" \
+              | python3 -c "import json,sys; d=json.load(sys.stdin); c=[i for i in d['collections'] if i['name']=='ansible.posix']; print(sum(len(i['versions']) for i in c))"
+          }
+
+          ansible-playbook "$SCRATCH/mirror_all.yml" > "$SCRATCH/run6.log" 2>&1
+          check_sync_result "$SCRATCH/run6.log" changed "run 6 (mirror all)"
+          before="$(count_posix)"
+          if [ "$before" -eq 0 ]; then
+            echo "no ansible.posix versions mirrored for version 'all'"
+            cat "$SCRATCH/run6.log"
+            exit 1
+          fi
+
+          ansible-playbook "$SCRATCH/mirror_all.yml" > "$SCRATCH/run7.log" 2>&1
+          check_sync_result "$SCRATCH/run7.log" changed "run 7 (mirror all rerun)"
+          after="$(count_posix)"
+          if [ "$before" != "$after" ]; then
+            echo "rerun re-downloaded content: ansible.posix versions before=$before after=$after"
+            exit 1
+          fi
+          echo "no re-download on rerun (ansible.posix artifacts: $after)"

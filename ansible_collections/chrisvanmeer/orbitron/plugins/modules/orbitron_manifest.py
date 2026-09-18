@@ -66,7 +66,7 @@ options:
         description: Source control mode, typically git.
         type: str
       version:
-        description: Version, tag, branch, or specifier such as >=1.0.0.
+        description: Version, tag, branch, specifier such as >=1.0.0, or C(all) to mirror every published version.
         type: str
   collections:
     description:
@@ -85,7 +85,7 @@ options:
         description: Collection type, e.g. git.
         type: str
       version:
-        description: Version, tag, branch, or specifier such as >=2.0.0.
+        description: Version, tag, branch, specifier such as >=2.0.0, or C(all) to mirror every published version.
         type: str
       source:
         description: Source override for the collection.
@@ -103,6 +103,9 @@ notes:
     list; providing several is an error.
   - The server queues a background sync of the submitted items; use
     M(chrisvanmeer.orbitron.orbitron_sync) afterwards to wait for completion.
+  - "Orbitron never re-downloads content it already holds; a version on disk is
+    trusted until it is deleted. To repair a corrupt role or collection
+    version, remove that version first and let the next sync fetch it again."
 """
 
 EXAMPLES = r"""
@@ -124,6 +127,14 @@ EXAMPLES = r"""
       roles:
         - name: geerlingguy.nginx
           version: 3.3.1
+
+- name: Mirror every published version of a collection
+  chrisvanmeer.orbitron.orbitron_manifest:
+    token: "{{ orbitron_admin_token }}"
+    type: collections
+    collections:
+      - name: ansible.posix
+        version: all
 """
 
 RETURN = r"""

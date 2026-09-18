@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -115,5 +116,62 @@ func TestSaveManifestDeduplicatesByContent(t *testing.T) {
 	files, _ = os.ReadDir(f.manifestPath)
 	if len(files) != 2 {
 		t.Fatalf("expected 2 distinct manifests, got %d", len(files))
+	}
+}
+
+func TestDirExistsNonEmpty(t *testing.T) {
+	dir := t.TempDir()
+	if dirExistsNonEmpty(dir) {
+		t.Error("empty directory reported as non-empty")
+	}
+	if dirExistsNonEmpty(filepath.Join(dir, "missing")) {
+		t.Error("missing directory reported as non-empty")
+	}
+
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "f"), []byte("x"), 0640); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if !dirExistsNonEmpty(sub) {
+		t.Error("directory with content reported as empty")
+	}
+}
+
+// TestSyncGitRepoSkipsExistingVersion proves the no-re-download guarantee
+// without needing git: a version directory that already exists is skipped.
+func TestSyncGitRepoSkipsExistingVersion(t *testing.T) {
+	f := NewFetcher(t.TempDir(), 2)
+	target := filepath.Join(f.storagePath, "roles", "geerlingguy.nginx", "3.3.1")
+	if err := os.MkdirAll(target, 0750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "content"), []byte("already mirrored"), 0640); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := f.SyncGitRepo("https://example.invalid/repo.git", "3.3.1", target); err != nil {
+		t.Fatalf("SyncGitRepo on cached version returned error: %v", err)
+	}
+}
+
+// TestDownloadCollectionArtifactSkipsCached proves the no-re-download guarantee
+// for galaxy collections: an existing artifact file is trusted and never fetched
+// again, even with a fake galaxy host.
+func TestDownloadCollectionArtifactSkipsCached(t *testing.T) {
+	f := NewFetcher(t.TempDir(), 2)
+	targetDir := filepath.Join(f.storagePath, "collections", "community")
+	targetFile := filepath.Join(targetDir, "community-general-8.5.0.tar.gz")
+	if err := os.MkdirAll(targetDir, 0750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(targetFile, []byte("fake artifact"), 0640); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := f.downloadCollectionArtifact("community", "general", "8.5.0"); err != nil {
+		t.Fatalf("downloadCollectionArtifact on cached file returned error: %v", err)
 	}
 }

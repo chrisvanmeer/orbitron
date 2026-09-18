@@ -30,7 +30,7 @@ The role is idempotent. Each run makes sure the mirror stores what the
 playbook declares and syncs it: the `orbitron_sync` module compares the
 declared requirements with what the mirror already holds and reports a change
 only when a requirement is not mirrored at its exact version (empty,
-`latest`, and expression-style versions always warrant a re-check), when
+`latest`, `all`, and expression-style versions always warrant a re-check), when
 `orbitron_mirror_sync_force` is set, or when a sync is already running. Repeat
 runs of an unchanged, fully mirrored playbook report no changes (`ok`) and
 queue no new sync.

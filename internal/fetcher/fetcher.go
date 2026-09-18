@@ -406,6 +406,13 @@ func (f *Fetcher) SyncAll() {
 }
 
 func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
+	// Versions already on disk are never re-downloaded. A corrupt version is
+	// repaired by deleting it first and letting the next sync fetch it fresh.
+	if version != "" && dirExistsNonEmpty(targetDir) {
+		logger.Info("Role version %s already exists at %s; skipping", version, targetDir)
+		return nil
+	}
+
 	if _, err := exec.LookPath("git"); err != nil {
 		logger.Error("Git sync failed: 'git' binary is not installed")
 		return fmt.Errorf("git executable not found in system PATH")
@@ -461,6 +468,9 @@ func (f *Fetcher) ProcessCollection(item CollectionItem) error {
 	isGit := item.SCM == "git" || item.Type == "git" || gitURL != ""
 
 	if isGit {
+		if ver.IsAll(item.Version) {
+			return fmt.Errorf("version %q is only supported for Galaxy collections; git-sourced collections cannot mirror every version", item.Version)
+		}
 		repoName := filepath.Base(gitURL)
 		repoName = strings.TrimSuffix(repoName, ".git")
 		targetDir := filepath.Join(f.storagePath, "collections", "git", repoName)
@@ -594,6 +604,16 @@ func saveRequirements(path string, reqs *RequirementsYML) error {
 	return os.WriteFile(path, data, 0640)
 }
 
+// dirExistsNonEmpty reports whether path is a directory that already contains
+// entries; used to skip content that is already cached on disk.
+func dirExistsNonEmpty(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	return len(entries) > 0
+}
+
 // ProcessRole syncs a single required role, dispatching to Git whenever the
 // item carries an SCM of git or an explicit git source URL, and otherwise to
 // the Galaxy V1 role API.
@@ -611,6 +631,9 @@ func (f *Fetcher) ProcessRole(item RoleItem) error {
 	isGit := item.SCM == "git" || gitURL != ""
 
 	if isGit {
+		if ver.IsAll(item.Version) {
+			return fmt.Errorf("version %q is only supported for Galaxy roles; git-sourced roles cannot mirror every version", item.Version)
+		}
 		roleName := item.Name
 		if roleName == "" {
 			roleName = filepath.Base(gitURL)
@@ -804,6 +827,26 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 	gitURL := fmt.Sprintf("https://github.com/%s/%s.git", ghUser, ghRepo)
 	roleDir := fmt.Sprintf("%s.%s", namespace, name)
 
+	if ver.IsAll(version) {
+		published, err := f.fetchRoleVersions(first.ID)
+		if err != nil {
+			return fmt.Errorf("failed to resolve versions for galaxy role %s.%s: %w", namespace, name, err)
+		}
+		if len(published) == 0 {
+			logger.Info("Galaxy role %s.%s has no published versions; cloning default branch", namespace, name)
+			targetDir := filepath.Join(f.storagePath, "roles", roleDir, "latest")
+			return f.SyncGitRepo(gitURL, "", targetDir)
+		}
+		logger.Info("Mirroring all %d published versions of galaxy role %s.%s", len(published), namespace, name)
+		for _, publishedVersion := range published {
+			targetDir := filepath.Join(f.storagePath, "roles", roleDir, publishedVersion)
+			if err := f.SyncGitRepo(gitURL, publishedVersion, targetDir); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	if ver.IsLatest(version) || ver.IsConstraint(version) {
 		published, err := f.fetchRoleVersions(first.ID)
 		if err != nil {
@@ -832,6 +875,23 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 }
 
 func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
+	if ver.IsAll(version) {
+		published, err := f.fetchCollectionVersions(namespace, name)
+		if err != nil {
+			return fmt.Errorf("failed to resolve versions for galaxy collection %s.%s: %w", namespace, name, err)
+		}
+		if len(published) == 0 {
+			return fmt.Errorf("galaxy collection %s.%s has no published versions", namespace, name)
+		}
+		logger.Info("Mirroring all %d published versions of galaxy collection %s.%s", len(published), namespace, name)
+		for _, publishedVersion := range published {
+			if err := f.downloadCollectionArtifact(namespace, name, publishedVersion); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	if version == "" || ver.IsLatest(version) || ver.IsConstraint(version) {
 		published, err := f.fetchCollectionVersions(namespace, name)
 		if err != nil {
@@ -845,11 +905,24 @@ func (f *Fetcher) SyncGalaxyCollection(namespace, name, version string) error {
 		version = resolved
 	}
 
+	return f.downloadCollectionArtifact(namespace, name, version)
+}
+
+// downloadCollectionArtifact fetches a single galaxy collection tarball, but
+// only when it is not already cached on disk: content that exists is trusted
+// and never re-downloaded. A corrupt artifact is repaired by deleting it and
+// letting the next sync fetch it fresh.
+func (f *Fetcher) downloadCollectionArtifact(namespace, name, version string) error {
 	// Galaxy V3 direct artifact URL scheme: artifacts/namespace-name-version.tar.gz
 	downloadURL := fmt.Sprintf("https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/%s-%s-%s.tar.gz", namespace, name, version)
 
 	targetDir := filepath.Join(f.storagePath, "collections", namespace)
 	targetFile := filepath.Join(targetDir, fmt.Sprintf("%s-%s-%s.tar.gz", namespace, name, version))
+
+	if _, err := os.Stat(targetFile); err == nil {
+		logger.Info("Collection %s.%s (%s) already cached; skipping", namespace, name, version)
+		return nil
+	}
 
 	if err := os.MkdirAll(targetDir, 0750); err != nil {
 		return err

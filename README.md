@@ -216,11 +216,13 @@ curl -X POST http://127.0.0.1:8080/api/v1/requirements/collections \
 
 The `version` field accepts the same range specifiers Ansible does. Orbitron
 resolves them against the published Galaxy indexes at sync time and stores the
-highest matching release (roles are mirrored as git tags, collections as tarballs).
+highest matching release, or every published version when `all` is used (roles
+are mirrored as git tags, collections as tarballs).
 
 | Specifier            | Meaning                                     | Example         |
 | -------------------- | ------------------------------------------- | --------------- |
 | *(empty)* / `latest` | Highest published version                   | `latest`        |
+| `all`                | Every published version                     | `all`           |
 | `==1.4.5` / `1.4.5`  | Exact version (or tag/branch for git `src`) | `1.4.5`         |
 | `>=1.0.0`            | At least 1.0.0                              | `>=1.0.0`       |
 | `>1.0.0,<2.0.0`      | Ranges AND-combined                         | `>1.0.0,<2.0.0` |
@@ -235,7 +237,19 @@ roles:
 collections:
   - name: community.general
     version: "~=8.0"
+  - name: ansible.posix
+    version: all
 ```
+
+`all` is a reserved keyword and works for Galaxy roles and collections (not
+for git `src` items): every published version is fetched and kept, including
+new releases, on each sync. Like `latest` and specifier versions, `all` is
+never "fully satisfied" — a sync always re-checks the published indexes.
+
+Orbitron never re-downloads content it already has on disk: a version that is
+present is trusted until it is deleted. To repair a corrupt or stale version,
+remove that version first (purge or `DELETE /api/v1/storage/...`) and let the
+next sync fetch it again.
 
 ### 4. Force Full Re-Sync
 

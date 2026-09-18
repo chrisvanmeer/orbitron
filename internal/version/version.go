@@ -239,6 +239,13 @@ func IsLatest(s string) bool {
 	return t == "" || strings.EqualFold(t, "latest")
 }
 
+// IsAll reports whether s requests mirroring every published version of the
+// declared role or collection ("all"). The keyword is case-insensitive and
+// reserved: a tag or branch literally named "all" cannot be pinned.
+func IsAll(s string) bool {
+	return strings.EqualFold(strings.TrimSpace(s), "all")
+}
+
 // IsConstraint reports whether s is a range specifier (contains comparison
 // operators, wildcards, or comma-separated alternatives) rather than an
 // exact version or tag name.
@@ -477,6 +484,9 @@ func HighestMatching(versions []string, set Set) string {
 // Satisfies reports whether the on-disk version disk satisfies the declared
 // requirement, which may be an exact version, "latest", or a specifier set.
 func Satisfies(declared, disk string) bool {
+	if IsAll(declared) {
+		return true
+	}
 	if IsLatest(declared) {
 		return true
 	}
@@ -500,6 +510,9 @@ func Satisfies(declared, disk string) bool {
 // only the single highest matching version is kept, mirroring what the
 // fetcher stores so pruning never deletes resolvable state.
 func ShouldKeep(declared string, disk []string, candidate string) bool {
+	if IsAll(declared) {
+		return true
+	}
 	if IsLatest(declared) {
 		best, err := Highest(disk)
 		if err != nil {

@@ -92,6 +92,33 @@ releases:
           validation no longer fails with "Conditionals must have a boolean
           result" when a manifest source is configured.
     release_date: '2026-09-18'
+  1.2.7:
+    changes:
+      release_summary: |
+        Support mirroring every published version of a role or collection and
+        stop re-downloading content the mirror already holds. A requirements
+        version of ``all`` now fetches every published Galaxy version of that
+        role (as git tags) or collection (as tarballs) instead of a single
+        pinned or resolved release. Syncs no longer re-download versions that
+        are already on disk, whether triggered by a manifest ingest or by an
+        explicit sync: a corrupt or stale version is repaired by deleting it
+        first (purge/DELETE) and letting the next sync fetch it fresh. Like
+        ``latest`` and specifier versions, ``all`` is never fully satisfied,
+        so every sync re-checks the published indexes for new releases while
+        existing artifacts stay untouched.
+      features:
+        - >-
+          Declare ``version: all`` (case-insensitive, reserved keyword) for
+          Galaxy roles and collections to mirror every published version on
+          every sync; git-sourced items reject it with a clear error since a
+          git ``src`` has no published version index.
+        - >-
+          The daemon no longer re-downloads cached content: Galaxy collection
+          artifacts that already exist are skipped and git versions whose
+          directory already exists are skipped, so syncs only fetch what is
+          missing or new. Delete a corrupt version to have the next sync
+          fetch it again.
+    release_date: '2026-09-18'
   1.2.6:
     changes:
       release_summary: |
