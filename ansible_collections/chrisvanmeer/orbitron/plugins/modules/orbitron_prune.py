@@ -78,7 +78,7 @@ orbitron:
         - completed when C(dry_run=false), dry_run when C(dry_run=true).
       type: str
       sample: dry_run
-    items:
+    pruned_versions:
       description: Absolute paths of the pruned (or prune-able) versions.
       type: list
       elements: str
@@ -116,7 +116,7 @@ def main():
 
     try:
         if module.check_mode:
-            module.exit_json(changed=False, orbitron={"state": "check_mode", "items": [], "freed_bytes": 0, "executed": False})
+            module.exit_json(changed=False, orbitron={"state": "check_mode", "pruned_versions": [], "freed_bytes": 0, "executed": False})
 
         status, body = client.post("/api/v1/prune", payload=payload)
 
@@ -124,7 +124,7 @@ def main():
             changed=bool(body.get("executed")),
             orbitron={
                 "state": "completed" if body.get("executed") else "dry_run",
-                "items": body.get("items", body.get("candidates", [])),
+                "pruned_versions": body.get("items", body.get("candidates", [])),
                 "freed_bytes": body.get("freed_bytes", 0),
                 "executed": bool(body.get("executed")),
             },
