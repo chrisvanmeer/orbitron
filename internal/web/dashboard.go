@@ -14,12 +14,11 @@ import (
 	"syscall"
 	"time"
 
+	"orbitron/internal/access"
 	"orbitron/internal/auth"
 	"orbitron/internal/build"
 	"orbitron/internal/config"
-	"orbitron/internal/fetcher"
 	"orbitron/internal/logger"
-	ver "orbitron/internal/version"
 )
 
 type sizeEntry struct {
@@ -194,6 +193,7 @@ const loginTemplate = `
             content: ''; position: absolute; bottom: -2px; right: -2px;
             width: 15px; height: 15px; border-bottom: 2px solid var(--neon-yellow); border-right: 2px solid var(--neon-yellow);
         }
+        .login-logo { width: 92px; height: auto; margin: 0 auto 18px; display: block; filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.35)); }
         h1 { color: var(--neon-pink); margin-top: 0; letter-spacing: 2px; text-shadow: 0 0 5px var(--neon-pink); }
         input[type="password"] {
             width: 85%; padding: 12px; margin: 25px 0; background: #000;
@@ -212,6 +212,40 @@ const loginTemplate = `
 </head>
 <body>
     <div class="login-box">
+        <svg class="login-logo" viewBox="-100 -100 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+                <linearGradient id="orbit1" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#00F0FF" />
+                    <stop offset="100%" stop-color="#5773FF" />
+                </linearGradient>
+                <linearGradient id="orbit2" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#5773FF" />
+                    <stop offset="100%" stop-color="#FF007A" />
+                </linearGradient>
+                <linearGradient id="orbit3" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#FF007A" />
+                    <stop offset="100%" stop-color="#00F0FF" />
+                </linearGradient>
+                <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                    <feGaussianBlur stdDeviation="4" result="blur" />
+                    <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
+            <ellipse cx="0" cy="0" rx="80" ry="30" fill="none" stroke="url(#orbit1)" stroke-width="4" transform="rotate(-30)" opacity="0.8" />
+            <ellipse cx="0" cy="0" rx="80" ry="30" fill="none" stroke="url(#orbit2)" stroke-width="4" transform="rotate(30)" opacity="0.8" />
+            <ellipse cx="0" cy="0" rx="80" ry="30" fill="none" stroke="url(#orbit3)" stroke-width="4" transform="rotate(90)" opacity="0.8" />
+            <circle cx="69" cy="-40" r="6" fill="#00F0FF" filter="url(#glow)" />
+            <circle cx="69" cy="40" r="6" fill="#FF007A" filter="url(#glow)" />
+            <circle cx="0" cy="80" r="6" fill="#5773FF" filter="url(#glow)" />
+            <circle cx="-69" cy="40" r="4" fill="#00F0FF" opacity="0.6" />
+            <circle cx="-69" cy="-40" r="4" fill="#FF007A" opacity="0.6" />
+            <circle cx="0" cy="-80" r="4" fill="#5773FF" opacity="0.6" />
+            <circle cx="0" cy="0" r="14" fill="#FFFFFF" filter="url(#glow)" />
+            <circle cx="0" cy="0" r="6" fill="#090A0F" />
+        </svg>
         <h1>ORBITRON</h1>
         <div class="error-msg">[ ACCESS DENIED: INVALID TOKEN ]</div>
         <form method="POST" action="/ui/login">
@@ -333,10 +367,46 @@ const htmlTemplate = `
 
         .blink { animation: blinker 1.5s linear infinite; }
         @keyframes blinker { 50% { opacity: 0; } }
+
+        /* Secret mode (type "orbitron") */
+        #orbitron-secret {
+            display: none; position: fixed; inset: 0; z-index: 9998;
+            pointer-events: none; color: var(--neon-pink);
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #orbitron-secret.show { display: block; animation: secret-fade 4s ease forwards; }
+        #orbitron-secret pre {
+            margin: 0; padding: 14px 18px; text-align: center;
+            font-size: 2.2em; font-weight: bold; letter-spacing: 4px;
+            color: var(--neon-yellow); text-shadow: 0 0 12px var(--neon-pink), 0 0 32px rgba(0,240,255,0.6);
+        }
+        #orbitron-secret .secret-sub {
+            display: block; margin-top: 10px; font-size: 0.55em; letter-spacing: 6px;
+            color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0,240,255,0.8);
+        }
+        @keyframes secret-fade {
+            0%   { opacity: 0; filter: blur(4px); }
+            1%   { opacity: 1; filter: blur(0); }
+            75%  { opacity: 1; filter: blur(0); }
+            100% { opacity: 0; filter: blur(8px); }
+        }
+        @keyframes secret-shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translate(-4px, 2px); }
+            40% { transform: translate(4px, -2px); }
+            60% { transform: translate(-3px, -2px); }
+            80% { transform: translate(3px, 2px); }
+        }
+        .app-layout.shaking { animation: secret-shake 0.35s ease; }
     </style>
 </head>
 <body>
     <div class="app-layout">
+        <div id="orbitron-secret">
+            <pre>&lt; O R B I T R O N /&gt;
+                <span class="secret-sub">// IT'S ORBITRONING TIME - CHRIS VAN MEER</span>
+            </pre>
+        </div>
         <div class="header-bar">
             <h1>Orbitron // Cache Matrix<span class="blink">_</span></h1>
             <div class="header-actions">
@@ -346,7 +416,7 @@ const htmlTemplate = `
         </div>
 
         <!-- Fullscreen Local Cache Matrix -->
-        <div class="main-workspace" hx-get="/ui/storage" hx-trigger="load, every 30s">
+        <div class="main-workspace" hx-get="/ui/storage" hx-trigger="load, every 10s">
             <h2>[ Scanning Cache Matrix... ]</h2>
         </div>
 
@@ -415,6 +485,80 @@ const htmlTemplate = `
                 btn.innerText = '▲ LOG STREAM';
             }
         }
+
+        // Secret mode: typing "orbitron" (in quick succession) fires the easter egg.
+        (function () {
+            var seq = 'orbitron';
+            var pos = 0;
+            var lastTs = 0;
+            document.addEventListener('keydown', function (e) {
+                var now = Date.now();
+                if (now - lastTs > 1200) pos = 0;
+                lastTs = now;
+                var ch = (e.key || String.fromCharCode(e.keyCode)).toLowerCase();
+                if (ch !== seq[pos]) {
+                    pos = (ch === seq[0]) ? 1 : 0;
+                } else {
+                    pos++;
+                }
+                if (pos >= seq.length) {
+                    pos = 0;
+                    var page = document.querySelector('.app-layout');
+                    var box = document.getElementById('orbitron-secret');
+                    if (page) {
+                        page.classList.remove('shaking');
+                        void page.offsetWidth;
+                        page.classList.add('shaking');
+                    }
+                    if (box) {
+                        box.classList.remove('show');
+                        void box.offsetWidth;
+                        box.classList.add('show');
+                        setTimeout(function () { box.classList.remove('show'); }, 4200);
+                    }
+                }
+                var title = document.querySelector('h1');
+                if (title && pos > 0 && pos < seq.length) {
+                    title.innerHTML = 'Orbitron // Cache Matrix<span class="blink">_' + ch.toUpperCase() + '</span>';
+                    setTimeout(function () {
+                        title.innerHTML = 'Orbitron // Cache Matrix<span class="blink">_</span>';
+                    }, 600);
+                }
+            });
+        })();
+
+        // Tail -f: keep log viewer anchored to the bottom on each refresh,
+        // unless the user has scrolled up to read history.
+        (function () {
+            const container = document.getElementById('log-container');
+            if (!container) return;
+            let pinned = true;
+            const bottomOf = () => container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+            container.addEventListener('scroll', function () {
+                pinned = bottomOf();
+            });
+            var logContainer = document.getElementById('log-container');
+            const rePin = function () {
+                if (pinned || bottomOf()) {
+                    container.scrollTop = container.scrollHeight;
+                    pinned = true;
+                }
+            };
+            if (window.htmx && window.htmx.on) {
+                // htmx 1.x fires "htmx:after:swap"; htmx 2.x fires "htmx:afterSwap".
+                window.htmx.on(container, 'htmx:after:swap', rePin);
+                window.htmx.on(container, 'htmx:afterSwap', rePin);
+            } else {
+                document.addEventListener('htmx:after:swap', rePin);
+                document.addEventListener('htmx:afterSwap', rePin);
+            }
+            if (typeof MutationObserver !== 'undefined') {
+                new MutationObserver(function () {
+                    if (!pinned) { pinned = bottomOf(); }
+                    if (pinned || bottomOf()) { container.scrollTop = container.scrollHeight; }
+                }).observe(container, { childList: true, characterData: true, subtree: true });
+            }
+        })();
     </script>
 </body>
 </html>
@@ -448,11 +592,22 @@ func (d *Dashboard) handleFavicon(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
-	activeVersions, _ := getManifestStats(d.cfg.StoragePath)
+	rec := access.New(d.cfg.StoragePath)
+	snapshot := rec.Snapshot()
 
 	var html strings.Builder
 	html.WriteString("<h2 style='color:var(--neon-yellow); margin-top:0;'>LOCAL CACHE MATRIX</h2>")
-	html.WriteString("<table><tr><th>Type</th><th>Name</th><th>Version</th><th>Disk Usage</th></tr>")
+	html.WriteString(`<div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+		<input id="storage-search" type="text" placeholder="SEARCH TYPE / NAME / VERSION..." style="flex:1; background:rgba(0,0,0,0.55); border:1px solid var(--neon-cyan); border-radius:4px; color:var(--neon-yellow); padding:8px 12px; font-family:inherit; font-size:0.9em; outline:none;">
+		<span id="storage-search-count" style="color:var(--text-dim); font-size:0.8em;">0 entries</span>
+		</div>`)
+	html.WriteString(`<table id="storage-matrix"><thead><tr>
+		<th class="matrix-head" data-sort="type" title="SORT">TYPE <span class="sort-caret"></span></th>
+		<th class="matrix-head" data-sort="name" title="SORT">NAME <span class="sort-caret"></span></th>
+		<th class="matrix-head" data-sort="version" title="SORT">VERSION <span class="sort-caret"></span></th>
+		<th class="matrix-head" data-sort="lastaccess" title="SORT">LAST ACCESS <span class="sort-caret"></span></th>
+		<th class="matrix-head" data-sort="disk" title="SORT">DISK USAGE <span class="sort-caret"></span></th>
+	</tr></thead><tbody>`)
 
 	hasEntries := false
 
@@ -481,25 +636,20 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 			verPath := filepath.Join(versionsDir, version)
 			size := d.dirSize(verPath)
 
-			verInManifest, declared := activeVersions[roleName]
-			normVerInManifest := strings.TrimPrefix(verInManifest, "v")
-			normVerOnDisk := strings.TrimPrefix(version, "v")
-
-			legacyActive := verInManifest == "main" ||
-				verInManifest == "master" ||
-				verInManifest == "HEAD"
-			isActive := declared && (ver.ShouldKeep(verInManifest, versions, version) ||
-				legacyActive ||
-				(normVerInManifest != "" && normVerInManifest == normVerOnDisk))
-
-			var verHTML string
-			if isActive {
-				verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, version)
+			lastAccess := snapshot[access.RoleKey(roleName, version)]
+			var lastAccessStr string
+			var lastAccessEpoch int64
+			if lastAccess.IsZero() {
+				lastAccessStr = `<span class="last-access" data-iso="N/A" style="color:var(--text-dim);">NEVER</span>`
 			} else {
-				verHTML = fmt.Sprintf(`<span style="color:var(--text-dim);">%s</span>`, version)
+				lastAccessEpoch = lastAccess.Unix()
+				lastAccessStr = fmt.Sprintf(`<span class="last-access" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, lastAccess.Format(time.RFC3339), humanizeLastAccess(lastAccess))
 			}
 
-			fmt.Fprintf(&html, "<tr><td><span style='color:var(--neon-pink);'>ROLE</span></td><td>%s</td><td>%s</td><td>%s</td></tr>", roleName, verHTML, formatSize(size))
+			fmt.Fprintf(&html, `<tr data-search="ROLE %s %s" data-type="role" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d"><td><span style='color:var(--neon-pink);'>ROLE</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+				strings.ToLower(roleName), strings.ToLower(version),
+				roleName, version, lastAccessEpoch, size,
+				roleName, version, lastAccessStr, formatSize(size))
 		}
 	}
 
@@ -553,44 +703,186 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 				hasEntries = true
 				size := sizeMap[fullName+"@"+version]
 
-				verInManifest, declared := activeVersions[fullName]
-				normVerInManifest := strings.TrimPrefix(verInManifest, "v")
-				normVerOnDisk := strings.TrimPrefix(version, "v")
-
-				legacyActive := verInManifest == "main" ||
-					verInManifest == "master" ||
-					verInManifest == "HEAD"
-				isActive := declared && (ver.ShouldKeep(verInManifest, versions, version) ||
-					legacyActive ||
-					(normVerInManifest != "" && normVerInManifest == normVerOnDisk))
-
-				var verHTML string
-				if isActive {
-					verHTML = fmt.Sprintf(`<span style="color:var(--neon-yellow); font-weight:bold;">%s &nbsp;<span style="font-size:0.8em; color:var(--neon-pink);">[ACTIVE]</span></span>`, version)
+				lastAccess := snapshot[access.CollectionKey(fullName, version)]
+				var lastAccessStr string
+				var lastAccessEpoch int64
+				if lastAccess.IsZero() {
+					lastAccessStr = `<span class="last-access" data-iso="N/A" style="color:var(--text-dim);">NEVER</span>`
 				} else {
-					verHTML = fmt.Sprintf(`<span style="color:var(--text-dim);">%s</span>`, version)
+					lastAccessEpoch = lastAccess.Unix()
+					lastAccessStr = fmt.Sprintf(`<span class="last-access" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, lastAccess.Format(time.RFC3339), humanizeLastAccess(lastAccess))
 				}
 
-				fmt.Fprintf(&html, "<tr><td><span style='color:var(--neon-cyan);'>COLLECTION</span></td><td>%s</td><td>%s</td><td>%s</td></tr>", fullName, verHTML, formatSize(size))
+				fmt.Fprintf(&html, `<tr data-search="COLLECTION %s %s" data-type="collection" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d"><td><span style='color:var(--neon-cyan);'>COLLECTION</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+					strings.ToLower(fullName), strings.ToLower(version),
+					fullName, version, lastAccessEpoch, size,
+					fullName, version, lastAccessStr, formatSize(size))
 			}
 		}
 	}
 
 	if !hasEntries {
-		html.WriteString("<tr><td colspan='4' style='text-align:center; color:var(--text-dim); padding: 30px;'>[ NO ROLES OR COLLECTIONS CACHED YET ]</td></tr>")
+		html.WriteString("<tr><td colspan='5' style='text-align:center; color:var(--text-dim); padding: 30px;'>[ NO ROLES OR COLLECTIONS CACHED YET ]</td></tr>")
 	}
 
-	html.WriteString("</table>")
+	html.WriteString("</tbody></table>")
+	html.WriteString(`<div id="iso-tooltip"></div>`)
+	html.WriteString(`<style>
+.storage-matrix-wrap { overflow-x: auto; }
+table#storage-matrix { width: 100%; border-collapse: collapse; }
+#storage-matrix th.matrix-head { cursor: pointer; user-select: none; text-align: left; color: var(--neon-cyan); }
+#storage-matrix th.matrix-head:hover { color: var(--neon-yellow); }
+#storage-matrix th.matrix-head .sort-caret { display: inline-block; width: 0.9em; color: var(--neon-pink); }
+#storage-matrix td, #storage-matrix th { padding: 7px 10px; border-bottom: 1px solid rgba(128,128,128,0.25); }
+#iso-tooltip {
+    position: fixed; z-index: 9999; pointer-events: none; opacity: 0;
+    transform: translateY(4px); transition: opacity 0.12s ease, transform 0.12s ease;
+    background: rgba(2, 6, 10, 0.96); border: 1px solid var(--neon-yellow);
+    box-shadow: 0 0 12px rgba(255, 220, 0, 0.25), 0 4px 16px rgba(0,0,0,0.6);
+    padding: 7px 11px; font-size: 0.95em; color: var(--neon-yellow);
+    font-family: 'Courier New', Courier, monospace; letter-spacing: 0.5px;
+    border-radius: 3px; white-space: nowrap;
+}
+#iso-tooltip .tt-meta { display: block; color: var(--neon-pink); font-size: 0.78em; letter-spacing: 1px; }
+#iso-tooltip.show { opacity: 1; transform: translateY(0); }
+.last-access { border-bottom: 1px dashed rgba(255, 220, 0, 0.5); cursor: help; }
+</style>
+<script>
+(function () {
+	var table = document.getElementById('storage-matrix');
+	var input = document.getElementById('storage-search');
+	var count = document.getElementById('storage-search-count');
+	if (!table) return;
+	if (!table.tBodies[0]) return;
+	var rows = Array.prototype.slice.call(table.tBodies[0].rows);
+	var state = window.storageSortState = window.storageSortState || { col: null, dir: 1 };
+	var lastCol = state.col;
+	var lastDir = state.dir;
+	var inputValue = '';
+
+	function applyFilter() {
+		var q = inputValue.trim().toLowerCase();
+		var shown = 0;
+		for (var i = 0; i < rows.length; i++) {
+			var tr = rows[i];
+			var search = tr.getAttribute('data-search');
+			if (search === null) { tr.style.display = ''; continue; }
+			var match = !q || search.toLowerCase().indexOf(q) !== -1;
+			tr.style.display = match ? '' : 'none';
+			if (match) shown++;
+		}
+		if (count) count.textContent = shown + ' entries';
+	}
+
+	function doSort() {
+		if (!lastCol) return;
+		var col = lastCol;
+		var numeric = (col === 'lastaccess' || col === 'disk');
+		var dir = lastDir;
+		rows.sort(function (a, b) {
+			var av = a.getAttribute('data-' + col);
+			var bv = b.getAttribute('data-' + col);
+			if (numeric) {
+				av = parseInt(av || '0', 10);
+				bv = parseInt(bv || '0', 10);
+				return (av - bv) * dir;
+			}
+			return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+		});
+		var tbody = table.tBodies[0];
+		for (var i = 0; i < rows.length; i++) tbody.appendChild(rows[i]);
+		var heads = table.querySelectorAll('th.matrix-head');
+		for (var h = 0; h < heads.length; h++) {
+			var caret = heads[h].querySelector('.sort-caret');
+			if (!caret) continue;
+			if (heads[h].getAttribute('data-sort') === col) {
+				caret.textContent = dir === 1 ? '▲' : '▼';
+			} else {
+				caret.textContent = '';
+			}
+		}
+	}
+
+	function sortBy(col) {
+		if (lastCol === col) {
+			lastDir = -lastDir;
+		} else {
+			lastCol = col;
+			lastDir = 1;
+		}
+		state.col = lastCol;
+		state.dir = lastDir;
+		doSort();
+		applyFilter();
+	}
+
+	var heads = table.querySelectorAll('th.matrix-head');
+	for (var h = 0; h < heads.length; h++) {
+		heads[h].addEventListener('click', function () {
+			sortBy(this.getAttribute('data-sort'));
+		});
+	}
+	if (input) {
+		input.addEventListener('input', function () {
+			inputValue = input.value || '';
+			applyFilter();
+		});
+		inputValue = input.value || '';
+	}
+	doSort();
+	applyFilter();
+
+	// ISO popunder tooltip for .last-access cells.
+	var tip = document.getElementById('iso-tooltip');
+	if (tip) {
+		document.removeEventListener('mousemove', window.__isoTipMove);
+		var moveHandler = function (evt) {
+			tip.style.left = (evt.clientX + 14) + 'px';
+			tip.style.top = (evt.clientY + 16) + 'px';
+		};
+		window.__isoTipMove = moveHandler;
+		document.addEventListener('mousemove', moveHandler);
+
+		document.addEventListener('mouseover', function (evt) {
+			var el = evt.target;
+			while (el && !el.classList) el = el.parentElement;
+			if (!el || !el.classList.contains('last-access')) return;
+			var iso = el.getAttribute('data-iso');
+			tip.innerHTML = (iso && iso !== 'N/A')
+				? '<span class="tt-meta">LAST ACCESS (ISO 8601)</span>' + el.textContent + ' // ' + iso
+				: '<span class="tt-meta">LAST ACCESS</span>NEVER ACCESSED';
+			tip.style.left = (evt.clientX + 14) + 'px';
+			tip.style.top = (evt.clientY + 16) + 'px';
+			tip.classList.add('show');
+			clearTimeout(window.__isoTipTimer);
+		});
+		document.addEventListener('mouseout', function (evt) {
+			var el = evt.target;
+			while (el && !el.classList) el = el.parentElement;
+			if (!el || !el.classList.contains('last-access')) return;
+			clearTimeout(window.__isoTipTimer);
+			window.__isoTipTimer = setTimeout(function () {
+				tip.classList.remove('show');
+			}, 120);
+		});
+	}
+})();
+</script>`)
 	w.Header().Set("Content-Type", "text/html")
 	_, _ = w.Write([]byte(html.String()))
 }
 
 func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
-	_, lastSync := getManifestStats(d.cfg.StoragePath)
+	lastSync := time.Time{}
+	for _, ts := range access.New(d.cfg.StoragePath).Snapshot() {
+		if ts.After(lastSync) {
+			lastSync = ts
+		}
+	}
 
 	status := "ONLINE"
 	if lastSync.IsZero() {
-		status = "NO MANIFEST INGESTED"
+		status = "NO CACHE ACTIVITY"
 	} else if time.Since(lastSync) > 24*time.Hour {
 		status = "WARNING: STALE DATA"
 	}
@@ -617,7 +909,7 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 		<div class="stat-label">Uplink Status</div>
 		<div class="stat-value" style="color:var(--neon-cyan);">%s</div>
 
-		<div class="stat-label">Last Manifest Ingest</div>
+		<div class="stat-label">Last Cache Activity</div>
 		<div class="stat-value">%s</div>
 
 		<div class="stat-label">System Time</div>
@@ -661,60 +953,6 @@ func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Metrics & System Helpers ---
-
-func extractRoleName(name, src string) string {
-	target := strings.TrimSpace(name)
-	if target == "" {
-		target = strings.TrimSpace(src)
-	}
-	if target == "" {
-		return ""
-	}
-	target = strings.TrimSuffix(target, ".git")
-	if idx := strings.LastIndexAny(target, "/:"); idx != -1 {
-		target = target[idx+1:]
-	}
-	return strings.Trim(target, "\"'")
-}
-
-func getManifestStats(storagePath string) (map[string]string, time.Time) {
-	active := make(map[string]string)
-	var lastSync time.Time
-
-	_ = filepath.Walk(storagePath, func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && strings.HasSuffix(info.Name(), "_requirements.yml") {
-			if info.ModTime().After(lastSync) {
-				lastSync = info.ModTime()
-			}
-
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil
-			}
-
-			reqs, err := fetcher.ParseRequirements(data)
-			if err == nil {
-				for _, r := range reqs.Roles {
-					roleName := extractRoleName(r.Name, r.Src)
-					if roleName != "" {
-						ver := strings.Trim(strings.TrimSpace(r.Version), "\"'")
-						active[roleName] = ver
-					}
-				}
-				for _, c := range reqs.Collections {
-					name := strings.Trim(strings.TrimSpace(c.Name), "\"'")
-					if name != "" {
-						ver := strings.Trim(strings.TrimSpace(c.Version), "\"'")
-						active[name] = ver
-					}
-				}
-			}
-		}
-		return nil
-	})
-
-	return active, lastSync
-}
 
 func getOSDetails() (string, string, string) {
 	file, err := os.Open("/etc/os-release")
@@ -844,6 +1082,44 @@ func computeDirSize(path string) int64 {
 		return nil
 	})
 	return size
+}
+
+func humanizeLastAccess(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		minutes := int(d / time.Minute)
+		if minutes == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d mins ago", minutes)
+	case d < 24*time.Hour:
+		hours := int(d / time.Hour)
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	case d < 30*24*time.Hour:
+		days := int(d / (24 * time.Hour))
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	case d < 365*24*time.Hour:
+		months := int(d / (30 * 24 * time.Hour))
+		if months == 1 {
+			return "1 month ago"
+		}
+		return fmt.Sprintf("%d months ago", months)
+	default:
+		years := int(d / (365 * 24 * time.Hour))
+		if years == 1 {
+			return "1 year ago"
+		}
+		return fmt.Sprintf("%d years ago", years)
+	}
 }
 
 func formatSize(b int64) string {
