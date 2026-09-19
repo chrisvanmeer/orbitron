@@ -198,13 +198,9 @@ jobs:
           YAML
 
           count_gluster() {
-            curl -fsS -H "Authorization: Bearer $ORBITRON_TEST_TOKEN" \
-              "http://127.0.0.1:${ORBITRON_TEST_PORT}/api/v1/storage" \
-              | python3 - <<'PY'
-          import json, sys
-          d = json.load(sys.stdin)
-          print(sum(len(i['versions']) for i in d['collections'] if i['name'] == 'gluster.gluster'))
-          PY
+            body="$(curl -fsS -H "Authorization: Bearer $ORBITRON_TEST_TOKEN" \
+              "http://127.0.0.1:${ORBITRON_TEST_PORT}/api/v1/storage")"
+            python3 -c 'import json, sys; d = json.loads(sys.argv[1]); print(sum(len(i["versions"]) for i in d["collections"] if i["name"] == "gluster.gluster"))' "$body"
           }
 
           ansible-playbook "$SCRATCH/mirror_all.yml" > "$SCRATCH/run6.log" 2>&1
