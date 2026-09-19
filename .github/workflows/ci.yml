@@ -193,34 +193,34 @@ jobs:
                   orbitron_mirror_url: http://127.0.0.1:${ORBITRON_TEST_PORT}
                   orbitron_mirror_token: "{{ lookup('env', 'ORBITRON_TEST_TOKEN') }}"
                   orbitron_mirror_collections:
-                    - name: ansible.posix
+                    - name: gluster.gluster
                       version: all
           YAML
 
-          count_posix() {
+          count_gluster() {
             curl -fsS -H "Authorization: Bearer $ORBITRON_TEST_TOKEN" \
               "http://127.0.0.1:${ORBITRON_TEST_PORT}/api/v1/storage" \
               | python3 - <<'PY'
           import json, sys
           d = json.load(sys.stdin)
-          print(sum(len(i['versions']) for i in d['collections'] if i['name'] == 'ansible.posix'))
+          print(sum(len(i['versions']) for i in d['collections'] if i['name'] == 'gluster.gluster'))
           PY
           }
 
           ansible-playbook "$SCRATCH/mirror_all.yml" > "$SCRATCH/run6.log" 2>&1
           check_sync_result "$SCRATCH/run6.log" changed "run 6 (mirror all)"
-          before="$(count_posix)"
+          before="$(count_gluster)"
           if [ "$before" -eq 0 ]; then
-            echo "no ansible.posix versions mirrored for version 'all'"
+            echo "no gluster.gluster versions mirrored for version 'all'"
             cat "$SCRATCH/run6.log"
             exit 1
           fi
 
           ansible-playbook "$SCRATCH/mirror_all.yml" > "$SCRATCH/run7.log" 2>&1
           check_sync_result "$SCRATCH/run7.log" changed "run 7 (mirror all rerun)"
-          after="$(count_posix)"
+          after="$(count_gluster)"
           if [ "$before" != "$after" ]; then
-            echo "rerun re-downloaded content: ansible.posix versions before=$before after=$after"
+            echo "rerun re-downloaded content: gluster.gluster versions before=$before after=$after"
             exit 1
           fi
-          echo "no re-download on rerun (ansible.posix artifacts: $after)"
+          echo "no re-download on rerun (gluster.gluster artifacts: $after)"
