@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"orbitron/internal/access"
 	"orbitron/internal/auth"
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
@@ -33,6 +34,7 @@ type Server struct {
 	cfg      *config.Config
 	fetcher  *fetcher.Fetcher
 	httpSrv  *http.Server
+	rec      *access.Recorder
 	shaMu    sync.Mutex
 	shaCache map[string]shaEntry
 }
@@ -41,6 +43,7 @@ func NewServer(cfg *config.Config) *Server {
 	return &Server{
 		cfg:      cfg,
 		fetcher:  fetcher.NewFetcher(cfg.StoragePath, cfg.MaxConcurrency),
+		rec:      access.New(cfg.StoragePath),
 		shaCache: make(map[string]shaEntry),
 	}
 }
@@ -457,6 +460,11 @@ func (s *Server) HandleRoleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-gzip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-%s.tar.gz", roleName, version))
 
+	roleNameOut := strings.TrimSuffix(roleName, ".git")
+	if s.rec != nil {
+		s.rec.Touch(access.RoleKey(roleNameOut, version))
+	}
+
 	if err := tarDirectory(targetDir, w); err != nil {
 		logger.Error("Failed to stream role archive for %s: %v", roleName, err)
 	}
@@ -515,6 +523,18 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/x-gzip")
+
+			artifactId := strings.TrimSuffix(filename, ".tar.gz")
+			rest := strings.TrimPrefix(artifactId, namespace+"-")
+			if nIdx := strings.LastIndex(rest, "-"); nIdx >= 0 {
+				name := rest[:nIdx]
+				version := rest[nIdx+1:]
+				if s.rec != nil {
+					fullName := namespace + "." + name
+					s.rec.Touch(access.CollectionKey(fullName, version))
+				}
+			}
+
 			http.ServeFile(w, r, filePath)
 			return
 		}

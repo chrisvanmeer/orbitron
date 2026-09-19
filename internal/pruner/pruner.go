@@ -1,3 +1,18 @@
+// Package pruner removes cached role and collection versions that have not
+// been accessed by any client within a configurable retention window. It is
+// fully access-based: every download served by the mirror records a timestamp
+// (see internal/access), and prune deletes only versions that were never
+// resolved into a download within the last N days, or that were never touched
+// after being mirrored more than N days ago.
+//
+// The on-disk layout that the pruner understands is:
+//
+//	<storage>/roles/<name>/<version>/
+//	<storage>/collections/<namespace>/<namespace>-<name>-<version>.tar.gz
+//
+// A role version that is never touched (its directory was freshly mirrored but
+// never downloaded) is still kept up to the first prune pass to avoid
+// immediately deleting data that mirrors are still population.
 package pruner
 
 import (
@@ -7,21 +22,22 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
-	"orbitron/internal/fetcher"
-	ver "orbitron/internal/version"
+	"orbitron/internal/access"
 )
 
+// Pruner scans the storage tree and reports which role/collection versions are
+// safe to remove given the access history recorded for each stored version.
 type Pruner struct {
-	storagePath  string
-	manifestPath string
+	storagePath string
 }
 
+// NewPruner creates a pruner rooted at the given storage path. The recorder's
+// access index lives at <storagePath>/.access.json and is shared with the
+// server so that downloads update the same timeline the pruner reads.
 func NewPruner(storagePath string) *Pruner {
-	return &Pruner{
-		storagePath:  storagePath,
-		manifestPath: filepath.Join(storagePath, "manifests"),
-	}
+	return &Pruner{storagePath: storagePath}
 }
 
 // parseCollectionArtifact extracts the collection name and version from a
@@ -43,70 +59,6 @@ func parseCollectionArtifact(namespace, filename string) (string, string, bool) 
 	return remainder[:lastHyphen], remainder[lastHyphen+1:], true
 }
 
-// collectDeclared parses every stored manifest and returns the declared
-// version requirements (exact versions, "latest", or specifier sets) for
-// each role and collection name.
-func (p *Pruner) collectDeclared() (map[string][]string, map[string][]string) {
-	roles := make(map[string][]string)
-	collections := make(map[string][]string)
-
-	manifestFiles, err := os.ReadDir(p.manifestPath)
-	if err != nil {
-		return roles, collections
-	}
-
-	for _, mf := range manifestFiles {
-		if mf.IsDir() {
-			continue
-		}
-
-		data, err := os.ReadFile(filepath.Join(p.manifestPath, mf.Name()))
-		if err != nil {
-			continue
-		}
-
-		reqs, err := fetcher.ParseRequirements(data)
-		if err != nil {
-			continue
-		}
-
-		for _, role := range reqs.Roles {
-			name := role.Name
-			if name == "" && role.Src != "" {
-				name = strings.TrimSuffix(filepath.Base(role.Src), ".git")
-			}
-			if name != "" {
-				roles[name] = append(roles[name], role.Version)
-			}
-		}
-
-		for _, col := range reqs.Collections {
-			name := col.Name
-			if name == "" && col.Src != "" {
-				name = strings.TrimSuffix(filepath.Base(col.Src), ".git")
-			}
-			if name != "" {
-				collections[name] = append(collections[name], col.Version)
-			}
-		}
-	}
-
-	return roles, collections
-}
-
-// keepVersion reports whether the on-disk candidate version of a role or
-// collection should be kept given any of the declared requirements. Each
-// requirement is checked with the full set of on-disk versions so that
-// "latest" and constraint requirements only retain the highest match.
-func keepVersion(declarations []string, diskVersions []string, candidate string) bool {
-	for _, declared := range declarations {
-		if ver.ShouldKeep(declared, diskVersions, candidate) {
-			return true
-		}
-	}
-	return false
-}
-
 // computeDirSize returns the recursive, block-aware size of a path so freed
 // disk space can be reported accurately for directories and files alike.
 func computeDirSize(path string) int64 {
@@ -124,22 +76,29 @@ func computeDirSize(path string) int64 {
 	return size
 }
 
-// PruneResult is a structured outcome of a prune operation, used by programmatic
-// callers (e.g., the HTTP prune endpoint) rather than the interactive CLI.
+// PruneResult is a structured outcome of a prune operation, used by
+// programmatic callers (e.g., the HTTP prune endpoint) rather than the
+// interactive CLI.
 type PruneResult struct {
 	Items      []string `json:"items"`
 	FreedBytes int64    `json:"freed_bytes"`
 	Executed   bool     `json:"executed"`
 }
 
-// Scan returns the absolute paths of every role/collection version that is no
-// longer referenced by any stored requirements manifest. It never deletes.
-func (p *Pruner) Scan() []string {
-	activeRoles, activeCollections := p.collectDeclared()
-
+// Scan returns the absolute paths of every role/collection version candidate
+// for pruning given the access retention window in days. It never deletes.
+//
+// A version is a candidate when the shared access recorder says it should not
+// be kept for the window (i.e. it was last accessed more than maxAge ago, or
+// was never accessed). Versions that have never been touched are never
+// returned in the first pass, since a freshly mirrored artifact has not yet
+// had a chance to be served.
+func (p *Pruner) Scan(days int) []string {
+	maxAge := time.Duration(days) * 24 * time.Hour
+	rec := access.New(p.storagePath)
 	var toDelete []string
 
-	// Scan roles storage directory.
+	// 1. Scan roles storage directory.
 	rolesDir := filepath.Join(p.storagePath, "roles")
 	roleEntries, err := os.ReadDir(rolesDir)
 	if err == nil {
@@ -154,56 +113,41 @@ func (p *Pruner) Scan() []string {
 				continue
 			}
 
-			var diskVersions []string
-			for _, vEntry := range verEntries {
-				if vEntry.IsDir() {
-					diskVersions = append(diskVersions, vEntry.Name())
-				}
-			}
-
 			for _, vEntry := range verEntries {
 				if !vEntry.IsDir() {
 					continue
 				}
 				version := vEntry.Name()
-				if !keepVersion(activeRoles[roleName], diskVersions, version) {
+				if !rec.ShouldKeep(access.RoleKey(roleName, version), maxAge) {
 					toDelete = append(toDelete, filepath.Join(versionsDir, version))
 				}
 			}
 		}
 	}
 
-	// Scan collections storage directory (.tar.gz files and git folders).
+	// 2. Scan collections storage directory (.tar.gz artifact files).
 	collectionsDir := filepath.Join(p.storagePath, "collections")
 	colEntries, err := os.ReadDir(collectionsDir)
 	if err == nil {
 		for _, cEntry := range colEntries {
-			if cEntry.IsDir() && cEntry.Name() != "git" {
-				nsDir := filepath.Join(collectionsDir, cEntry.Name())
-				files, err := os.ReadDir(nsDir)
-				if err != nil {
+			if !cEntry.IsDir() {
+				continue
+			}
+			namespace := cEntry.Name()
+			nsDir := filepath.Join(collectionsDir, namespace)
+			files, err := os.ReadDir(nsDir)
+			if err != nil {
+				continue
+			}
+
+			for _, f := range files {
+				colName, colVer, ok := parseCollectionArtifact(namespace, f.Name())
+				if !ok {
 					continue
 				}
-
-				colVersionMap := make(map[string][]string) // fullName -> on-disk versions
-				for _, f := range files {
-					colName, colVer, ok := parseCollectionArtifact(cEntry.Name(), f.Name())
-					if !ok {
-						continue
-					}
-					fullName := cEntry.Name() + "." + colName
-					colVersionMap[fullName] = append(colVersionMap[fullName], colVer)
-				}
-
-				for _, f := range files {
-					colName, colVer, ok := parseCollectionArtifact(cEntry.Name(), f.Name())
-					if !ok {
-						continue
-					}
-					fullName := cEntry.Name() + "." + colName
-					if !keepVersion(activeCollections[fullName], colVersionMap[fullName], colVer) {
-						toDelete = append(toDelete, filepath.Join(nsDir, f.Name()))
-					}
+				fullName := namespace + "." + colName
+				if !rec.ShouldKeep(access.CollectionKey(fullName, colVer), maxAge) {
+					toDelete = append(toDelete, filepath.Join(nsDir, f.Name()))
 				}
 			}
 		}
@@ -214,15 +158,15 @@ func (p *Pruner) Scan() []string {
 
 // RunPruneDryRun returns the candidate paths for pruning without deleting or
 // prompting, mirroring the read-only scan used by RunPrune.
-func (p *Pruner) RunPruneDryRun() ([]string, error) {
-	return p.Scan(), nil
+func (p *Pruner) RunPruneDryRun(days int) ([]string, error) {
+	return p.Scan(days), nil
 }
 
 // RunPruneAPI prunes the unreferenced versions, optionally as a dry run, and
 // returns a structured result. It is the programmatic counterpart of the
-// interactive RunPrune and backs the (currently gated) HTTP prune endpoint.
-func (p *Pruner) RunPruneAPI(dryRun bool) (*PruneResult, error) {
-	toDelete := p.Scan()
+// interactive RunPrune and backs the HTTP prune endpoint.
+func (p *Pruner) RunPruneAPI(dryRun bool, days int) (*PruneResult, error) {
+	toDelete := p.Scan(days)
 
 	result := &PruneResult{
 		Items:    toDelete,
@@ -244,31 +188,31 @@ func (p *Pruner) RunPruneAPI(dryRun bool) (*PruneResult, error) {
 	return result, nil
 }
 
-// RunPrune scans manifests, finds orphaned versions on disk, prompts, and removes them
-func (p *Pruner) RunPrune() error {
-	fmt.Println("🔍 Scanning manifests and storage for orphaned versions...")
+// RunPrune scans the access timeline, finds stale versions, prompts, and
+// removes them. The retention window is configurable through days.
+func (p *Pruner) RunPrune(days int) error {
+	fmt.Println("🔍 Scanning access timeline and storage for stale versions...")
 
-	toDelete := p.Scan()
+	toDelete := p.Scan(days)
 
 	if len(toDelete) == 0 {
-		fmt.Println("✨ Storage is clean. No unreferenced or older versions found.")
+		fmt.Println("✨ Storage is clean. No versions outside the access window found.")
 		return nil
 	}
 
-	// 4. Print summary
-	fmt.Printf("\nFound %d unreferenced role/collection version(s) to prune:\n\n", len(toDelete))
+	fmt.Printf("\nFound %d version(s) to prune (older than %d days):\n\n", len(toDelete), days)
 	for _, path := range toDelete {
 		fmt.Printf("  ❌ %s\n", path)
 	}
 
-	// 5. Prompt for user confirmation
+	// Prompt for user confirmation
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("\nDo you want to permanently delete these items? [y/N]: ")
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(strings.ToLower(input))
 
 	if input == "y" || input == "yes" {
-		fmt.Println("\n🧹 Deleting unreferenced items...")
+		fmt.Println("\n🧹 Deleting stale versions...")
 		for _, path := range toDelete {
 			if err := os.RemoveAll(path); err != nil {
 				fmt.Printf("  ⚠️ Failed to remove %s: %v\n", path, err)

@@ -34,7 +34,8 @@ func main() {
 	doUninstall := flag.Bool("uninstall", false, "Uninstall Orbitron service, user, and data")
 	genToken := flag.Bool("generate-token", false, "Generate an administrative Bearer token")
 	revokeToken := flag.String("revoke-token", "", "Revoke a Bearer token")
-	doPrune := flag.Bool("prune", false, "Clean up unreferenced roles and collections")
+	doPrune := flag.Bool("prune", false, "Clean up roles and collections not accessed in the last N days")
+	pruneDays := flag.Int("days", 90, "Retention window in days used by --prune")
 
 	quiet := flag.Bool("quiet", false, "Output raw token only")
 	flag.BoolVar(quiet, "q", false, "Output raw token only (shorthand)")
@@ -107,7 +108,7 @@ func main() {
 		}
 
 		p := pruner.NewPruner(cfg.StoragePath)
-		if err := p.RunPrune(); err != nil {
+		if err := p.RunPrune(*pruneDays); err != nil {
 			logger.Error("Pruning failed: %v", err)
 			os.Exit(1)
 		}

@@ -587,25 +587,33 @@ func TestExpiredTokenRejectedByAPI(t *testing.T) {
 	}
 }
 
-func TestPruneEndpointForFutureUse(t *testing.T) {
+// TestPruneEndpointEnabled verifies that the prune API is live and performs a
+// real dry-run prune: the endpoint answers 200 with a structured result whose
+// Executed flag is true (only a candidate report is produced, nothing is
+// deleted until prune_api=true with dry_run=false).
+func TestPruneEndpointEnabled(t *testing.T) {
 	s, _ := newTestServer(t)
 	mux := registerAdminMux(s)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/prune", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/prune", strings.NewReader(`{"dry_run":true,"days":90}`))
 	req.Header.Set("Authorization", "Bearer valid-admin-token")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("expected 501, got %d (body=%s)", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", rec.Code, rec.Body.String())
 	}
 
-	var body map[string]string
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["status"] != "for_future_use" {
-		t.Errorf("expected status for_future_use, got %q", body["status"])
+	executed, ok := body["executed"].(bool)
+	if !ok || executed {
+		t.Errorf("expected executed=false for a dry run, got %#v", body["executed"])
+	}
+	if _, ok := body["items"]; !ok {
+		t.Errorf("expected items field in response: %v", body)
 	}
 }
 

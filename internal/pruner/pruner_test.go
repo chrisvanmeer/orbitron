@@ -1,23 +1,31 @@
 package pruner
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"orbitron/internal/access"
 )
+
+// seedAccess writes a synthetic access index into <storage>/.access.json so
+// tests can exercise the pruner against both freshly-accessed and stale
+// role/collection versions without depending on wall-clock timing.
+func seedAccess(t *testing.T, storage string, entries []access.Entry) {
+	t.Helper()
+	data, err := json.Marshal(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storage, ".access.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestRunPruneDryRunReportsWithoutDeleting(t *testing.T) {
 	storage := t.TempDir()
-	manifestDir := filepath.Join(storage, "manifests")
-	if err := os.MkdirAll(manifestDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-
-	manifest := []byte("roles:\n  - name: foo.role\n    version: 1.0.0\n")
-	if err := os.WriteFile(filepath.Join(manifestDir, "roles_abc123_requirements.yml"), manifest, 0640); err != nil {
-		t.Fatal(err)
-	}
-
 	activeDir := filepath.Join(storage, "roles", "foo.role", "1.0.0")
 	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
 	for _, d := range []string{activeDir, orphanDir} {
@@ -26,8 +34,13 @@ func TestRunPruneDryRunReportsWithoutDeleting(t *testing.T) {
 		}
 	}
 
+	seedAccess(t, storage, []access.Entry{
+		{Key: access.RoleKey("foo.role", "1.0.0"), LastAccess: time.Now()},
+		{Key: access.RoleKey("foo.role", "9.9.9"), LastAccess: time.Now().Add(-400 * 24 * time.Hour)},
+	})
+
 	p := NewPruner(storage)
-	items, err := p.RunPruneDryRun()
+	items, err := p.RunPruneDryRun(90)
 	if err != nil {
 		t.Fatalf("RunPruneDryRun: %v", err)
 	}
@@ -35,24 +48,17 @@ func TestRunPruneDryRunReportsWithoutDeleting(t *testing.T) {
 		t.Fatalf("expected exactly orphan dir %s, got %v", orphanDir, items)
 	}
 
-	// Nothing may be deleted on a dry run.
+	// A dry run must never touch the filesystem.
 	if _, err := os.Stat(orphanDir); err != nil {
 		t.Errorf("dry run must not delete: %v", err)
+	}
+	if _, err := os.Stat(activeDir); err != nil {
+		t.Errorf("freshly accessed version must be preserved: %v", err)
 	}
 }
 
 func TestRunPruneAPIDeletesUnreferenced(t *testing.T) {
 	storage := t.TempDir()
-	manifestDir := filepath.Join(storage, "manifests")
-	if err := os.MkdirAll(manifestDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-
-	manifest := []byte("roles:\n  - name: foo.role\n    version: 1.0.0\n")
-	if err := os.WriteFile(filepath.Join(manifestDir, "roles_abc123_requirements.yml"), manifest, 0640); err != nil {
-		t.Fatal(err)
-	}
-
 	activeDir := filepath.Join(storage, "roles", "foo.role", "1.0.0")
 	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
 	for _, d := range []string{activeDir, orphanDir} {
@@ -61,8 +67,13 @@ func TestRunPruneAPIDeletesUnreferenced(t *testing.T) {
 		}
 	}
 
+	seedAccess(t, storage, []access.Entry{
+		{Key: access.RoleKey("foo.role", "1.0.0"), LastAccess: time.Now()},
+		{Key: access.RoleKey("foo.role", "9.9.9"), LastAccess: time.Now().Add(-400 * 24 * time.Hour)},
+	})
+
 	p := NewPruner(storage)
-	result, err := p.RunPruneAPI(false)
+	result, err := p.RunPruneAPI(false, 90)
 	if err != nil {
 		t.Fatalf("RunPruneAPI: %v", err)
 	}
@@ -82,21 +93,21 @@ func TestRunPruneAPIDeletesUnreferenced(t *testing.T) {
 
 func TestRunPruneAPIDryRunSkippedDelete(t *testing.T) {
 	storage := t.TempDir()
-	manifestDir := filepath.Join(storage, "manifests")
-	if err := os.MkdirAll(manifestDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-	manifest := []byte("roles:\n  - name: foo.role\n    version: 1.0.0\n")
-	if err := os.WriteFile(filepath.Join(manifestDir, "roles_abc123_requirements.yml"), manifest, 0640); err != nil {
-		t.Fatal(err)
-	}
+	activeDir := filepath.Join(storage, "roles", "foo.role", "1.0.0")
 	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
-	if err := os.MkdirAll(orphanDir, 0750); err != nil {
-		t.Fatal(err)
+	for _, d := range []string{activeDir, orphanDir} {
+		if err := os.MkdirAll(d, 0750); err != nil {
+			t.Fatal(err)
+		}
 	}
 
+	seedAccess(t, storage, []access.Entry{
+		{Key: access.RoleKey("foo.role", "1.0.0"), LastAccess: time.Now()},
+		{Key: access.RoleKey("foo.role", "9.9.9"), LastAccess: time.Now().Add(-400 * 24 * time.Hour)},
+	})
+
 	p := NewPruner(storage)
-	result, err := p.RunPruneAPI(true)
+	result, err := p.RunPruneAPI(true, 90)
 	if err != nil {
 		t.Fatalf("RunPruneAPI(dry): %v", err)
 	}
@@ -108,6 +119,47 @@ func TestRunPruneAPIDryRunSkippedDelete(t *testing.T) {
 	}
 	if _, err := os.Stat(orphanDir); err != nil {
 		t.Errorf("dry run must not delete the orphan: %v", err)
+	}
+}
+
+func TestRunPruneOrphanDetectionRespectsDecline(t *testing.T) {
+	storage := t.TempDir()
+	activeDir := filepath.Join(storage, "roles", "foo.role", "1.0.0")
+	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
+	for _, d := range []string{activeDir, orphanDir} {
+		if err := os.MkdirAll(d, 0750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	seedAccess(t, storage, []access.Entry{
+		{Key: access.RoleKey("foo.role", "1.0.0"), LastAccess: time.Now()},
+		{Key: access.RoleKey("foo.role", "9.9.9"), LastAccess: time.Now().Add(-400 * 24 * time.Hour)},
+	})
+
+	// Answer "n" to the confirmation prompt.
+	origStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString("n\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+	os.Stdin = r
+	defer func() { os.Stdin = origStdin }()
+
+	p := NewPruner(storage)
+	if err := p.RunPrune(90); err != nil {
+		t.Fatalf("RunPrune returned error: %v", err)
+	}
+
+	if _, err := os.Stat(orphanDir); err != nil {
+		t.Errorf("orphan directory should remain when prune is declined: %v", err)
+	}
+	if _, err := os.Stat(activeDir); err != nil {
+		t.Errorf("active directory must never be removed: %v", err)
 	}
 }
 
@@ -134,83 +186,6 @@ func TestParseCollectionArtifact(t *testing.T) {
 		}
 		if name != tt.wantName || ver != tt.wantVer {
 			t.Errorf("%s: got (%q,%q), want (%q,%q)", tt.filename, name, ver, tt.wantName, tt.wantVer)
-		}
-	}
-}
-
-func TestRunPruneOrphanDetectionRespectsDecline(t *testing.T) {
-	storage := t.TempDir()
-	manifestDir := filepath.Join(storage, "manifests")
-	if err := os.MkdirAll(manifestDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-
-	// Active manifest declares foo.role@1.0.0 only.
-	manifest := []byte("roles:\n  - name: foo.role\n    version: 1.0.0\n")
-	if err := os.WriteFile(filepath.Join(manifestDir, "roles_abc123_requirements.yml"), manifest, 0640); err != nil {
-		t.Fatal(err)
-	}
-
-	activeDir := filepath.Join(storage, "roles", "foo.role", "1.0.0")
-	orphanDir := filepath.Join(storage, "roles", "foo.role", "9.9.9")
-	for _, d := range []string{activeDir, orphanDir} {
-		if err := os.MkdirAll(d, 0750); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Answer "n" to the confirmation prompt.
-	origStdin := os.Stdin
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.WriteString("n\n"); err != nil {
-		t.Fatal(err)
-	}
-	_ = w.Close()
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
-
-	p := NewPruner(storage)
-	if err := p.RunPrune(); err != nil {
-		t.Fatalf("RunPrune returned error: %v", err)
-	}
-
-	if _, err := os.Stat(orphanDir); err != nil {
-		t.Errorf("orphan directory should remain when prune is declined: %v", err)
-	}
-	if _, err := os.Stat(activeDir); err != nil {
-		t.Errorf("active directory must never be removed: %v", err)
-	}
-}
-
-func TestKeepVersionConstraintAware(t *testing.T) {
-	disk := []string{"0.9.0", "1.0.0", "1.5.0", "2.0.0"}
-
-	tests := []struct {
-		declarations []string
-		candidate    string
-		want         bool
-	}{
-		{[]string{"1.0.0"}, "1.0.0", true},
-		{[]string{"1.0.0"}, "1.5.0", false},
-		{[]string{">=1.0.0"}, "2.0.0", true},
-		{[]string{">=1.0.0"}, "1.5.0", false},
-		{[]string{"<2.0.0"}, "1.5.0", true},
-		{[]string{"<2.0.0"}, "1.0.0", false},
-		{[]string{"latest"}, "2.0.0", true},
-		{[]string{"latest"}, "1.5.0", false},
-		{[]string{""}, "2.0.0", true},
-		{[]string{"main"}, "main", true},
-		{[]string{"main"}, "2.0.0", false},
-		{[]string{">=1.4.5,<2.0.0", "1.0.0"}, "1.0.0", true},
-		{[]string{">9.0.0"}, "2.0.0", false},
-	}
-
-	for _, tt := range tests {
-		if got := keepVersion(tt.declarations, disk, tt.candidate); got != tt.want {
-			t.Errorf("keepVersion(%v, disk, %q) = %v, want %v", tt.declarations, tt.candidate, got, tt.want)
 		}
 	}
 }
