@@ -14,6 +14,7 @@
     that:
       - orbitron_mirror_token != ""
       - _orbitron_mirror_has_requirements
+    quiet: true
     fail_msg: >-
       Configure orbitron_mirror_roles, orbitron_mirror_collections, or a
       requirements file path, and set orbitron_mirror_token.

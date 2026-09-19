@@ -1,5 +1,67 @@
 ---
 releases:
+  1.3.0:
+    changes:
+      release_summary: |
+        Orbitron 1.3.0 replaces the manifest-derived prune logic with real
+        access-based retention and reworks the dashboard into a live storage
+        matrix.
+
+        Every role and collection version now records the exact moment it was
+        last served to a client. The dashboard exposes it as a sortable,
+        searchable LAST ACCESS column, and the daemon prunes versions that have
+        not been served within a configurable window (``days``, default 90).
+        Versions that were never requested are always kept, so freshly mirrored
+        content is never removed before it can be used. The prune HTTP endpoint
+        is now live (no longer a 501 placeholder) and accepts a
+        ``{"dry_run": true, "days": N}`` preview payload; the ``orbitron_prune``
+        module and ``--prune --days N`` CLI flag wrap the same contract.
+      minor_features:
+        - >-
+          The pruner is now access-based: instead of inferring activity from
+          stale manifests, Orbitron records the last time each cached version
+          was actually served and only prunes versions whose last access falls
+          outside the ``days`` retention window. Never-requested versions are
+          always kept, so freshly mirrored objects are protected from immediate
+          pruning.
+        - >-
+          Access timestamps persist to ``<storage>/.access.json`` and are shared
+          by the dashboard, the prune API, and the CLI pruner, so a dry run and
+          a real prune always agree on what is stale.
+        - >-
+          The prune API is live: ``POST /api/v1/prune`` accepts
+          ``{"days": N, "dry_run": true}`` to preview candidates without
+          deleting (response ``executed: false``), and ``{"dry_run": false}``
+          to delete for real. A dropped or omitted ``days`` uses the 90-day
+          default; values shorter than one day are clamped up.
+        - >-
+          ``orbitron_prune`` and the ``--prune --days N`` CLI flag now perform
+          real retention pruning. The module exposes ``days`` and ``dry_run``
+          (default ``true``) and reports the pruned ``items``, ``freed_bytes``,
+          and whether the delete ``executed``.
+        - >-
+          The storage dashboard is a live, sortable matrix: click the TYPE /
+          NAME / VERSION / LAST ACCESS / DISK USAGE headers to sort, narrow
+          rows with the always-on SEARCH filter, and hover a Last Access cell
+          for the full ISO 8601 timestamp. Sort order and search text survive
+          the automatic 10-second refresh.
+        - >-
+          The dashboard LOG STREAM is a tail-f drawer pinned to the newest
+          lines; the pin is released only when you scroll up to read history.
+          The System Metrics drawer now reports OS distribution, architecture,
+          and last boot time, and the login screen gained an Orbitron logo and
+          a hidden easter egg for the curious.
+      bugfixes:
+        - >-
+          The dashboard no longer infers "active" versions by re-parsing stored
+          manifests; the matrix instead shows a LAST ACCESS column based on the
+          real access index, so it reflects what clients actually pulled rather
+          than what a manifest once declared.
+        - >-
+          Re-running the mirror role after reverting to an already-mirrored
+          version is idempotent (reports ``ok``) again: the sync decision now
+          compares the declared manifest against what the mirror actually holds
+          instead of forcing a pointless re-download.
   1.0.0:
     changes:
       release_summary: |

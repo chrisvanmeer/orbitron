@@ -13,7 +13,7 @@ ansible-galaxy collection install chrisvanmeer.orbitron
 Pin a specific version with:
 
 ```bash
-ansible-galaxy collection install chrisvanmeer.orbitron:1.2.1
+ansible-galaxy collection install chrisvanmeer.orbitron:1.3.0
 ```
 
 ## Requirements
@@ -32,7 +32,7 @@ ansible-galaxy collection install chrisvanmeer.orbitron:1.2.1
 | `orbitron_manifest` | Store role/collection requirements manifests (idempotent by content hash) |
 | `orbitron_sync` | Trigger a full sync and optionally wait for completion |
 | `orbitron_purge` | Remove one cached role/collection version |
-| `orbitron_prune` | Invoke the gated prune API and surface its `for_future_use` state cleanly |
+| `orbitron_prune` | Prune unserved cached versions via the access-based prune API (`days` retention window, dry-run by default) |
 
 All HTTP modules accept `url` (default `http://127.0.0.1:8080`), `token`
 (also via `ORBITRON_TOKEN`), `validate_certs`, and `timeout`.

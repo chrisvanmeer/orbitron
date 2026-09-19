@@ -23,8 +23,10 @@ enterprise environments to cache, store, and serve Ansible roles and collections
   supporting Bearer tokens and HTTP Basic Auth.
 * **Automated Lifecycle Management**: Integrated CLI commands for user creation (`orbitron:orbitron`),
   systemd service registration, logrotate configuration, and full uninstallation cleanup.
-* **Storage Pruner**: Built-in CLI flag (`--prune`) to scan manifests, detect orphaned versions, and clean up
-  disk usage.
+* **Access-Based Storage Pruner**: Built-in CLI flags (`--prune --days N`) that remove role/collection versions
+  which have not been served to a client within the retention window, using an atomic per-storage access index
+  (`.access.json`). Never-requested versions are always kept. Use the HTTP endpoint
+  (`POST /api/v1/prune` with `{"dry_run": true, "days": N}`) to preview candidates non-interactively.
 * **Liveness Probe (`/healthz`)**: Unauthenticated health endpoint for orchestrators, load balancers, and uptime
   monitors; reports `200` when the storage path is writable and `503` otherwise.
 * **Async Sync Status API**: `GET /api/v1/sync/status` exposes the currently running sync job (kind, progress,
@@ -48,17 +50,23 @@ Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real
 
 ### Dashboard Features
 
-* **Local Cache Matrix**: Fullscreen view of all cached roles and collections. Actively declared versions from
-  ingested manifests are highlighted with an `[ACTIVE]` tag alongside precise physical block-level disk usage.
+* **Local Cache Matrix**: Fullscreen view of all cached roles and collections — sortable columns
+  (click the TYPE / NAME / VERSION / LAST ACCESS / DISK USAGE headers), an always-on `SEARCH TYPE / NAME / VERSION`
+  filter, precise physical block-level disk usage, and an access-based **LAST ACCESS** column showing exactly when
+  each version was last served to a client. Hovering a relative timestamp (`4 mins ago`) opens a cyan/yellow
+  popunder with the full ISO 8601 timestamp. The matrix auto-refreshes every 10 seconds and keeps your sort order and
+  search text intact across refreshes.
 * **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only 8-hour cookie session using any
-  valid administrative token.
-* **Collapsible Log Drawer**: Bottom sliding drawer (`▲ LOG STREAM`) providing a live feed of
-  `/var/log/orbitron/orbitron.log` (automatically filtered to suppress HTTP polling noise).
-* **Collapsible System Metrics Drawer**: Right sliding sidebar (`◄ SYS METRICS`) displaying uplink sync status,
-  last manifest ingest timestamp, cache disk usage, mount free space, normalized OS distribution/version,
-  system architecture (e.g., `AMD64`, `ARM64`), and last boot time.
-* **Air-Gapped / Island-Mode Ready**: Embedded HTMX 4.0.0 served directly from memory, eliminating external
-  CDN calls or outbound network dependencies.
+  valid administrative token, gated behind an Orbitron SVG logo.
+* **Tail-F Live Log Drawer**: Bottom sliding drawer (`▲ LOG STREAM`) that streams the tail of
+  `/var/log/orbitron/orbitron.log` like `tail -f` — it stays pinned to the newest lines on every refresh, only
+  releasing the pin when you scroll up to read history. Polls every 5 seconds.
+* **Collapsible System Metrics Drawer**: Right sliding sidebar (`◄ SYS METRICS`, auto-refreshing every 10 seconds)
+  displaying uplink status, last cache activity (access-index based), cache disk usage, mount free space, normalized
+  OS distribution/version, system architecture (e.g., `AMD64`, `ARM64`), and last boot time.
+* **Air-Gapped / Island-Mode Ready**: Embedded HTMX served directly from memory, eliminating external CDN calls
+  or outbound network dependencies.
+* **Hidden Feature**: Something happens when you type the mirror's name into the dashboard. Try it.
 
 ---
 
@@ -132,7 +140,8 @@ orbitron --version
 | `--generate-token` |           | Generates a new administrative Bearer token.                            |
 | `--quiet`          | `-q`      | Suppresses verbose log formatting and prints the raw token string only. |
 | `--revoke-token`   |           | Revokes an existing Bearer token by string value.                       |
-| `--prune`          |           | Interactively deletes unused roles and collection archives.             |
+| `--prune`          |           | Deletes roles/collections not served within the retention window.       |
+| `--days`           |           | Retention window in days for `--prune` (default `90`).                  |
 | `--version`        |           | Prints the version (e.g. `v0.5.0` or `dev`).                            |
 
 ---
@@ -165,7 +174,7 @@ Content is mirrored by posting YAML requirement manifests to Orbitron via cURL.
 Orbitron stores the manifests and immediately triggers a background parallel download worker.
 Each manifest is persisted under a content hash, so distinct manifests coexist on disk while
 identical re-submissions are deduplicated. All stored manifests are replayed on full re-sync
-(`/api/v1/sync`) and considered by `--prune`.
+(`/api/v1/sync`).
 
 ### 1. Mirroring Roles
 
@@ -591,8 +600,27 @@ curl -H "Authorization: Bearer $ORBITRON_TOKEN" http://127.0.0.1:8080/api/v1/sto
 
 ### 6. Prune API (`POST /api/v1/prune`)
 
-Reserved for a future storage pruning endpoint. Until it is enabled, the route answers with
-`501 {"status":"for_future_use"}` and performs no action.
+Drops role/collection versions that have not been served to a client for at least `days` days, based on the
+access index (`.access.json`). Versions that were never accessed are always kept.
+
+A JSON body of `{"dry_run": true, "days": N}` reports what would be pruned without deleting; `{"dry_run": false}`
+(or omitted) deletes for real. If `days` is omitted the default retention window of 90 days is used.
+
+```bash
+# Preview the candidates (nothing is deleted)
+curl -X POST http://127.0.0.1:8080/api/v1/prune \
+  -H "Authorization: Bearer $ORBITRON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true, "days": 90}'
+```
+
+```json
+{
+  "items": ["/var/lib/orbitron/storage/roles/geerlingguy.nginx/2.0.1"],
+  "freed_bytes": 40960,
+  "executed": false
+}
+```
 
 ---
 

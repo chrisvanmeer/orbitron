@@ -4,6 +4,7 @@
     that:
       - ansible_system | lower == "linux"
       - ansible_architecture in ["x86_64", "aarch64"]
+    quiet: true
     fail_msg: >-
       The orbitron role supports Linux on amd64 (x86_64) or arm64 (aarch64)
       with systemd.
@@ -230,6 +231,7 @@
   ansible.builtin.assert:
     that:
       - orbitron_admin_token != ""
+    quiet: true
     fail_msg: Failed to obtain an admin token for the orbitron daemon.
   when: orbitron_state == "present"
 

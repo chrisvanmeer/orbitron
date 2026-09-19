@@ -169,11 +169,11 @@ jobs:
           ansible-playbook "$SCRATCH/mirror_test_bump.yml" > "$SCRATCH/run3.log" 2>&1
           check_sync_result "$SCRATCH/run3.log" changed "run 3 (version bumped)"
 
-          # Run 4: reverting to an already mirrored version must still report
-          # the change; the sync started by the new manifest must never be
-          # suppressed (v1.2.5 regression).
+          # Run 4: reverting to an already mirrored version is idempotent.
+          # The mirror already holds the exact pinned version (it was fetched
+          # on run 1), so the sync task has no work and reports ok.
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run4.log" 2>&1
-          check_sync_result "$SCRATCH/run4.log" changed "run 4 (manifest reverted)"
+          check_sync_result "$SCRATCH/run4.log" ok "run 4 (manifest reverted)"
 
           # Run 5: back to an unchanged, fully mirrored playbook: ok again.
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run5.log" 2>&1
@@ -200,7 +200,12 @@ jobs:
           count_posix() {
             curl -fsS -H "Authorization: Bearer $ORBITRON_TEST_TOKEN" \
               "http://127.0.0.1:${ORBITRON_TEST_PORT}/api/v1/storage" \
-              | python3 -c "import json,sys; d=json.load(sys.stdin); c=[i for i in d['collections'] if i['name']=='ansible.posix']; print(sum(len(i['versions']) for i in c))"
+              | python3 -c "
+                  import json, sys
+                  d = json.load(sys.stdin)
+                  hits = sum(len(i['versions']) for i in d['collections'] if i['name'] == 'ansible.posix')
+                  print(hits)
+              "
           }
 
           ansible-playbook "$SCRATCH/mirror_all.yml" > "$SCRATCH/run6.log" 2>&1
