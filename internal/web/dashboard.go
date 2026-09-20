@@ -591,6 +591,70 @@ func (d *Dashboard) handleFavicon(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(FaviconSVG)
 }
 
+// cachedRow is a single cached role/collection version rendered in the cache
+// matrix; it carries the values shown in one table row.
+type cachedRow struct {
+	version   string
+	accessStr string
+	epoch     int64
+	size      int64
+}
+
+// lastAccessCell renders the LAST ACCESS cell (display string + sort epoch) for
+// a cached version, showing "NEVER" when it has no recorded access.
+func lastAccessCell(snapshot map[access.Key]time.Time, key access.Key) (string, int64) {
+	ts := snapshot[key]
+	if ts.IsZero() {
+		return `<span class="last-access" data-iso="N/A" style="color:var(--text-dim);">NEVER</span>`, 0
+	}
+	return fmt.Sprintf(`<span class="last-access" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, ts.Format(time.RFC3339), humanizeLastAccess(ts)), ts.Unix()
+}
+
+// renderMatrixRow writes a plain, non-collapsible row for a role/collection
+// that has exactly one cached version.
+func renderMatrixRow(w *strings.Builder, typeLabel, color, name string, r cachedRow) {
+	fmt.Fprintf(w, `<tr data-search="%s %s %s" data-type="%s" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d"><td></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+		strings.ToLower(typeLabel), strings.ToLower(name), strings.ToLower(r.version),
+		strings.ToLower(typeLabel), name, r.version, r.epoch, r.size,
+		color, typeLabel, name, r.version, r.accessStr, formatSize(r.size))
+}
+
+// renderGroupRows writes a collapsible group row (expand caret, version count,
+// most recent access, total disk usage) followed by one hidden sub-row per
+// cached version, so that multi-version roles/collections stay collapsed by
+// default and unfold in place on click.
+func renderGroupRows(w *strings.Builder, typeLabel, color, name string, rows []cachedRow) {
+	var search strings.Builder
+	search.WriteString(strings.ToLower(typeLabel))
+	search.WriteString(" ")
+	search.WriteString(strings.ToLower(name))
+	for _, r := range rows {
+		search.WriteString(" ")
+		search.WriteString(strings.ToLower(r.version))
+	}
+
+	var maxEpoch, totalSize int64
+	best := rows[0]
+	for _, r := range rows {
+		if r.epoch > maxEpoch {
+			maxEpoch = r.epoch
+			best = r
+		}
+		totalSize += r.size
+	}
+
+	groupKey := strings.ToLower(typeLabel) + ":" + name
+	fmt.Fprintf(w, `<tr class="group-row" data-search="%s" data-type="%s" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d" data-group="%s"><td><button class="expand-caret" aria-expanded="false" title="Toggle versions">▶</button></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%d VERSIONS</td><td>%s</td><td>%s</td></tr>`,
+		search.String(), strings.ToLower(typeLabel), name, rows[0].version, maxEpoch, totalSize, groupKey,
+		color, typeLabel, name, len(rows), best.accessStr, formatSize(totalSize))
+
+	for _, r := range rows {
+		fmt.Fprintf(w, `<tr class="version-row" data-group="%s" data-search="%s %s %s" style="display:none"><td></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+			groupKey, strings.ToLower(typeLabel), strings.ToLower(name), strings.ToLower(r.version),
+			color, typeLabel, name, r.version, r.accessStr, formatSize(r.size))
+	}
+}
+
 func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 	rec := access.New(d.cfg.StoragePath)
 	snapshot := rec.Snapshot()
@@ -600,13 +664,15 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 	html.WriteString(`<div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
 		<input id="storage-search" type="text" placeholder="SEARCH TYPE / NAME / VERSION..." style="flex:1; background:rgba(0,0,0,0.55); border:1px solid var(--neon-cyan); border-radius:4px; color:var(--neon-yellow); padding:8px 12px; font-family:inherit; font-size:0.9em; outline:none;">
 		<span id="storage-search-count" style="color:var(--text-dim); font-size:0.8em;">0 entries</span>
+		<span style="color:var(--text-dim); font-size:0.75em; white-space:nowrap;">CLICK COLUMN HEADERS TO SORT (↕)</span>
 		</div>`)
 	html.WriteString(`<table id="storage-matrix"><thead><tr>
-		<th class="matrix-head" data-sort="type" title="SORT">TYPE <span class="sort-caret"></span></th>
-		<th class="matrix-head" data-sort="name" title="SORT">NAME <span class="sort-caret"></span></th>
-		<th class="matrix-head" data-sort="version" title="SORT">VERSION <span class="sort-caret"></span></th>
-		<th class="matrix-head" data-sort="lastaccess" title="SORT">LAST ACCESS <span class="sort-caret"></span></th>
-		<th class="matrix-head" data-sort="disk" title="SORT">DISK USAGE <span class="sort-caret"></span></th>
+		<th style="width:36px;"></th>
+		<th class="matrix-head" data-sort="type" title="SORT BY TYPE">TYPE <span class="sort-caret">↕</span></th>
+		<th class="matrix-head" data-sort="name" title="SORT BY NAME">NAME <span class="sort-caret">↕</span></th>
+		<th class="matrix-head" data-sort="version" title="SORT BY VERSION">VERSION <span class="sort-caret">↕</span></th>
+		<th class="matrix-head" data-sort="lastaccess" title="SORT BY LAST ACCESS">LAST ACCESS <span class="sort-caret">↕</span></th>
+		<th class="matrix-head" data-sort="disk" title="SORT BY DISK USAGE">DISK USAGE <span class="sort-caret">↕</span></th>
 	</tr></thead><tbody>`)
 
 	hasEntries := false
@@ -622,35 +688,29 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 		versionsDir := filepath.Join(rolesDir, roleName)
 		verEntries, _ := os.ReadDir(versionsDir)
 
-		var versions []string
+		var rows []cachedRow
 		for _, vEntry := range verEntries {
-			if vEntry.IsDir() {
-				versions = append(versions, vEntry.Name())
+			if !vEntry.IsDir() {
+				continue
 			}
-		}
-
-		sort.Sort(sort.Reverse(sort.StringSlice(versions)))
-
-		for _, version := range versions {
-			hasEntries = true
+			version := vEntry.Name()
 			verPath := filepath.Join(versionsDir, version)
-			size := d.dirSize(verPath)
-
-			lastAccess := snapshot[access.RoleKey(roleName, version)]
-			var lastAccessStr string
-			var lastAccessEpoch int64
-			if lastAccess.IsZero() {
-				lastAccessStr = `<span class="last-access" data-iso="N/A" style="color:var(--text-dim);">NEVER</span>`
-			} else {
-				lastAccessEpoch = lastAccess.Unix()
-				lastAccessStr = fmt.Sprintf(`<span class="last-access" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, lastAccess.Format(time.RFC3339), humanizeLastAccess(lastAccess))
-			}
-
-			fmt.Fprintf(&html, `<tr data-search="ROLE %s %s" data-type="role" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d"><td><span style='color:var(--neon-pink);'>ROLE</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-				strings.ToLower(roleName), strings.ToLower(version),
-				roleName, version, lastAccessEpoch, size,
-				roleName, version, lastAccessStr, formatSize(size))
+			accessStr, epoch := lastAccessCell(snapshot, access.RoleKey(roleName, version))
+			rows = append(rows, cachedRow{version: version, accessStr: accessStr, epoch: epoch, size: d.dirSize(verPath)})
 		}
+
+		sort.Slice(rows, func(i, j int) bool { return rows[i].version > rows[j].version })
+
+		if len(rows) == 0 {
+			continue
+		}
+		hasEntries = true
+
+		if len(rows) == 1 {
+			renderMatrixRow(&html, "ROLE", "var(--neon-pink)", roleName, rows[0])
+			continue
+		}
+		renderGroupRows(&html, "ROLE", "var(--neon-pink)", roleName, rows)
 	}
 
 	// 2. Process Collections
@@ -699,30 +759,23 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 		for fullName, versions := range colMap {
 			sort.Sort(sort.Reverse(sort.StringSlice(versions)))
 
+			var rows []cachedRow
 			for _, version := range versions {
-				hasEntries = true
-				size := sizeMap[fullName+"@"+version]
-
-				lastAccess := snapshot[access.CollectionKey(fullName, version)]
-				var lastAccessStr string
-				var lastAccessEpoch int64
-				if lastAccess.IsZero() {
-					lastAccessStr = `<span class="last-access" data-iso="N/A" style="color:var(--text-dim);">NEVER</span>`
-				} else {
-					lastAccessEpoch = lastAccess.Unix()
-					lastAccessStr = fmt.Sprintf(`<span class="last-access" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, lastAccess.Format(time.RFC3339), humanizeLastAccess(lastAccess))
-				}
-
-				fmt.Fprintf(&html, `<tr data-search="COLLECTION %s %s" data-type="collection" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d"><td><span style='color:var(--neon-cyan);'>COLLECTION</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-					strings.ToLower(fullName), strings.ToLower(version),
-					fullName, version, lastAccessEpoch, size,
-					fullName, version, lastAccessStr, formatSize(size))
+				accessStr, epoch := lastAccessCell(snapshot, access.CollectionKey(fullName, version))
+				rows = append(rows, cachedRow{version: version, accessStr: accessStr, epoch: epoch, size: sizeMap[fullName+"@"+version]})
 			}
+
+			hasEntries = true
+			if len(rows) == 1 {
+				renderMatrixRow(&html, "COLLECTION", "var(--neon-cyan)", fullName, rows[0])
+				continue
+			}
+			renderGroupRows(&html, "COLLECTION", "var(--neon-cyan)", fullName, rows)
 		}
 	}
 
 	if !hasEntries {
-		html.WriteString("<tr><td colspan='5' style='text-align:center; color:var(--text-dim); padding: 30px;'>[ NO ROLES OR COLLECTIONS CACHED YET ]</td></tr>")
+		html.WriteString("<tr><td colspan='6' style='text-align:center; color:var(--text-dim); padding: 30px;'>[ NO ROLES OR COLLECTIONS CACHED YET ]</td></tr>")
 	}
 
 	html.WriteString("</tbody></table>")
@@ -732,8 +785,19 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 table#storage-matrix { width: 100%; border-collapse: collapse; }
 #storage-matrix th.matrix-head { cursor: pointer; user-select: none; text-align: left; color: var(--neon-cyan); }
 #storage-matrix th.matrix-head:hover { color: var(--neon-yellow); }
-#storage-matrix th.matrix-head .sort-caret { display: inline-block; width: 0.9em; color: var(--neon-pink); }
+#storage-matrix th.matrix-head .sort-caret { display: inline-block; width: 0.9em; color: var(--text-dim); transition: color 0.15s ease, text-shadow 0.15s ease; }
+#storage-matrix th.matrix-head:hover .sort-caret { color: var(--neon-yellow); }
+#storage-matrix th.matrix-head.sorted .sort-caret { color: var(--neon-pink); text-shadow: 0 0 6px rgba(255, 0, 60, 0.6); }
 #storage-matrix td, #storage-matrix th { padding: 7px 10px; border-bottom: 1px solid rgba(128,128,128,0.25); }
+#storage-matrix tr.group-row { cursor: pointer; }
+#storage-matrix tr.group-row:hover { background: rgba(0,240,255,0.09); }
+#storage-matrix .expand-caret {
+    background: transparent; border: 1px solid var(--neon-cyan); color: var(--neon-yellow);
+    width: 22px; height: 20px; font-size: 0.7em; line-height: 1; padding: 0; cursor: pointer;
+    font-family: inherit; border-radius: 3px;
+}
+#storage-matrix .expand-caret:hover { background: var(--neon-yellow); color: #000; }
+#storage-matrix tr.version-row td:nth-child(3) { padding-left: 26px; }
 #iso-tooltip {
     position: fixed; z-index: 9999; pointer-events: none; opacity: 0;
     transform: translateY(4px); transition: opacity 0.12s ease, transform 0.12s ease;
@@ -754,7 +818,30 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 	var count = document.getElementById('storage-search-count');
 	if (!table) return;
 	if (!table.tBodies[0]) return;
-	var rows = Array.prototype.slice.call(table.tBodies[0].rows);
+
+	var tbody = table.tBodies[0];
+	var allRows = Array.prototype.slice.call(tbody.rows);
+	// Top-level rows are the collapsed group rows plus the plain single-version
+	// rows; version sub-rows follow their group and fold in/out on demand.
+	var rows = allRows.filter(function (tr) {
+		return !(tr.classList && tr.classList.contains('version-row'));
+	});
+
+	var groups = {};
+	var topFor = {};
+	allRows.forEach(function (tr) {
+		var g = tr.getAttribute('data-group');
+		if (!g) return;
+		if (tr.classList && tr.classList.contains('version-row')) {
+			(groups[g] = groups[g] || []).push(tr);
+		} else {
+			topFor[g] = tr;
+		}
+	});
+
+	// Expand state survives the 10s htmx re-renders via window.
+	var expanded = window.storageExpandState = window.storageExpandState || {};
+
 	var state = window.storageSortState = window.storageSortState || { col: null, dir: 1 };
 	var lastCol = state.col;
 	var lastDir = state.dir;
@@ -766,41 +853,73 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 		for (var i = 0; i < rows.length; i++) {
 			var tr = rows[i];
 			var search = tr.getAttribute('data-search');
-			if (search === null) { tr.style.display = ''; continue; }
+			if (search === null) { tr.style.display = ''; shown++; continue; }
 			var match = !q || search.toLowerCase().indexOf(q) !== -1;
 			tr.style.display = match ? '' : 'none';
 			if (match) shown++;
 		}
+		for (var g in groups) {
+			var open = !!expanded[g];
+			var top = topFor[g];
+			var visible = !!(open && top && top.style.display !== 'none');
+			var vs = groups[g];
+			for (var j = 0; j < vs.length; j++) {
+				vs[j].style.display = visible ? '' : 'none';
+			}
+			if (top) {
+				var btn = top.querySelector('.expand-caret');
+				if (btn) {
+					btn.textContent = open ? '▼' : '▶';
+					btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+				}
+			}
+		}
 		if (count) count.textContent = shown + ' entries';
 	}
 
-	function doSort() {
-		if (!lastCol) return;
-		var col = lastCol;
-		var numeric = (col === 'lastaccess' || col === 'disk');
-		var dir = lastDir;
-		rows.sort(function (a, b) {
-			var av = a.getAttribute('data-' + col);
-			var bv = b.getAttribute('data-' + col);
-			if (numeric) {
-				av = parseInt(av || '0', 10);
-				bv = parseInt(bv || '0', 10);
-				return (av - bv) * dir;
-			}
-			return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
-		});
-		var tbody = table.tBodies[0];
-		for (var i = 0; i < rows.length; i++) tbody.appendChild(rows[i]);
+	function syncCarets() {
 		var heads = table.querySelectorAll('th.matrix-head');
 		for (var h = 0; h < heads.length; h++) {
 			var caret = heads[h].querySelector('.sort-caret');
 			if (!caret) continue;
-			if (heads[h].getAttribute('data-sort') === col) {
-				caret.textContent = dir === 1 ? '▲' : '▼';
+			if (heads[h].getAttribute('data-sort') === lastCol) {
+				heads[h].classList.add('sorted');
+				caret.textContent = lastDir === 1 ? '▲' : '▼';
 			} else {
-				caret.textContent = '';
+				heads[h].classList.remove('sorted');
+				caret.textContent = '↕';
 			}
 		}
+	}
+
+	function reorderBySort() {
+		var sorted = rows.slice();
+		if (lastCol) {
+			var col = lastCol;
+			var numeric = (col === 'lastaccess' || col === 'disk');
+			var dir = lastDir;
+			sorted.sort(function (a, b) {
+				var av = a.getAttribute('data-' + col);
+				var bv = b.getAttribute('data-' + col);
+				if (numeric) {
+					av = parseInt(av || '0', 10);
+					bv = parseInt(bv || '0', 10);
+					return (av - bv) * dir;
+				}
+				return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+			});
+		}
+		for (var i = 0; i < sorted.length; i++) {
+			var tr = sorted[i];
+			tbody.appendChild(tr);
+			var g = tr.getAttribute('data-group');
+			if (g && groups[g]) {
+				var vs = groups[g];
+				for (var j = 0; j < vs.length; j++) tbody.appendChild(vs[j]);
+			}
+		}
+		syncCarets();
+		applyFilter();
 	}
 
 	function sortBy(col) {
@@ -812,8 +931,7 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 		}
 		state.col = lastCol;
 		state.dir = lastDir;
-		doSort();
-		applyFilter();
+		reorderBySort();
 	}
 
 	var heads = table.querySelectorAll('th.matrix-head');
@@ -829,8 +947,21 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 		});
 		inputValue = input.value || '';
 	}
-	doSort();
-	applyFilter();
+
+	// Clicking a group row (or its caret) folds all of its versions in or out.
+	tbody.addEventListener('click', function (evt) {
+		var el = evt.target;
+		while (el && el !== tbody && !(el.tagName === 'TR' && el.getAttribute('data-group'))) {
+			el = el.parentElement;
+		}
+		if (!el || el === tbody) return;
+		if (el.classList && el.classList.contains('version-row')) return;
+		var g = el.getAttribute('data-group');
+		expanded[g] = !expanded[g];
+		applyFilter();
+	});
+
+	reorderBySort();
 
 	// ISO popunder tooltip for .last-access cells.
 	var tip = document.getElementById('iso-tooltip');

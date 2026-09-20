@@ -54,3 +54,14 @@ orbitron_state: present
 # the orbitron CLI and persist it to orbitron_token_path (mode 0600).
 orbitron_token: ""
 orbitron_token_path: /root/.orbitron_token
+
+# --- Storage pruning -------------------------------------------------------
+# Access-based retention window in days. Set to a value > 0 to run an
+# orbitron_prune against the daemon after it is installed, removing cached
+# role/collection versions that have not been served to a client within the
+# window. 0 (the default) disables pruning in this role.
+orbitron_prune_days: 0
+
+# When true (the default), pruning only previews the candidate versions and
+# never deletes anything. Set to false to actually remove the stale versions.
+orbitron_prune_dry_run: true

@@ -56,6 +56,9 @@ generates (or reuses) an initial admin token.
         orbitron_version: v1.3.2
         orbitron_listen_addr: 0.0.0.0:8080
         orbitron_token_ttl_days: 90
+        # Optionally prune versions not served within 60 days (dry-run preview
+        # by default; set orbitron_prune_dry_run: false to delete for real).
+        orbitron_prune_days: 60
 ```
 
 After the run:
@@ -70,6 +73,9 @@ Key variables: `orbitron_version` (`latest` or exact tag), `orbitron_binary_src`
 keys, the forward-proxy keys `orbitron_http_proxy`, `orbitron_https_proxy`,
 and `orbitron_no_proxy` (see the main README's "Forward Proxy" section),
 `orbitron_state` (`present`/`absent`), and the token bootstrap variables.
+Access-based storage pruning is optional via `orbitron_prune_days` (retention
+window; `0` disables it) and `orbitron_prune_dry_run` (defaults to `true`, so
+only the candidates are previewed).
 
 ### `orbitron_mirror`
 

@@ -26,17 +26,24 @@ Galaxy mirror daemon on a Linux host with `systemd`.
 | `orbitron_require_auth_pull` | `false`                          | Require a token for client pulls.                        |
 | `orbitron_max_concurrency`   | `4`                              | Parallel sync workers.                                   |
 | `orbitron_token_ttl_days`    | `0`                              | Default token lifetime in days (`0` = never).            |
-| `orbitron_http_proxy`        | `""`                             | Forward proxy for outbound `http://` traffic (e.g. Squid). |
+| `orbitron_http_proxy`        | `""`                             | Forward proxy for outbound `http://` (e.g. Squid).       |
 | `orbitron_https_proxy`       | `""`                             | Forward proxy for outbound `https://` traffic.           |
-| `orbitron_no_proxy`          | `""`                             | Comma-separated proxy exclusions (hostnames, suffixes, CIDR). |
+| `orbitron_no_proxy`          | `""`                             | Comma-separated proxy exclusions (host, domain, CIDR).   |
 | `orbitron_token`             | `""`                             | Pre-set admin token (else generated).                    |
 | `orbitron_token_path`        | `/root/.orbitron_token`          | Where a generated token is persisted (0600).             |
+| `orbitron_prune_days`        | `0`                              | Retention window in days; `> 0` enables pruning.         |
+| `orbitron_prune_dry_run`     | `true`                           | Preview candidates only instead of deleting.             |
 
 The role stages the binary in `orbitron_stage_dir` before running `--install`
 and removes the staging directory again afterwards. Because the staged binary
 is executed, the directory must be located on a mount that permits execution.
 If your `/var` (or `/var/tmp`) filesystem is mounted with `noexec`, point
 `orbitron_stage_dir` elsewhere, for example `/opt/orbitron/stage`.
+
+Set `orbitron_prune_days` to a value above `0` to prune cached versions that
+have not been served to a client within that retention window, right after the
+daemon is installed. Pruning runs as a dry run by default (it only previews the
+candidate versions); set `orbitron_prune_dry_run: false` to delete them for real.
 
 ## Exposed facts
 
@@ -59,6 +66,9 @@ If your `/var` (or `/var/tmp`) filesystem is mounted with `noexec`, point
         orbitron_http_proxy: http://squid.internal:3128
         orbitron_https_proxy: http://squid.internal:3128
         orbitron_no_proxy: "localhost,127.0.0.1,.internal"
+        # Prune versions not served within 60 days (dry-run preview by default).
+        orbitron_prune_days: 60
+        orbitron_prune_dry_run: true
 ```
 
 ## License

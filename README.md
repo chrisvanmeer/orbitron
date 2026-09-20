@@ -54,8 +54,10 @@ Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real
   (click the TYPE / NAME / VERSION / LAST ACCESS / DISK USAGE headers), an always-on `SEARCH TYPE / NAME / VERSION`
   filter, precise physical block-level disk usage, and an access-based **LAST ACCESS** column showing exactly when
   each version was last served to a client. Hovering a relative timestamp (`4 mins ago`) opens a cyan/yellow
-  popunder with the full ISO 8601 timestamp. The matrix auto-refreshes every 10 seconds and keeps your sort order and
-  search text intact across refreshes.
+  popunder with the full ISO 8601 timestamp. Roles and collections with multiple cached versions are collapsed
+  into a single row (version count, most recent access, and total disk usage) that unfolds on click to reveal every
+  version with its own **LAST ACCESS** date. The matrix auto-refreshes every 10 seconds and keeps your sort order,
+  search text, and expanded groups intact across refreshes.
 * **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only 8-hour cookie session using any
   valid administrative token, gated behind an Orbitron SVG logo.
 * **Tail-F Live Log Drawer**: Bottom sliding drawer (`▲ LOG STREAM`) that streams the tail of
@@ -414,7 +416,9 @@ declarative mirroring, and day-two operations such as purging cached versions.
   resolves and downloads the release binary, runs `orbitron --install` to
   bootstrap the system user/dirs/systemd/logrotate, renders
   `/etc/orbitron/config.yml`, ensures the service is healthy, and generates (or
-  reuses) an initial admin token. The binary is staged in `orbitron_stage_dir`
+  reuses) an initial admin token. Optionally prunes stale cached versions via
+  `orbitron_prune_days` (retention window; dry-run preview by default through
+  `orbitron_prune_dry_run`). The binary is staged in `orbitron_stage_dir`
   (default `/var/tmp/orbitron-ansible`) and that directory is removed again
   afterwards; because the staged binary is executed, the path must not be on a
   `noexec` mount (override it, e.g. with `/opt/orbitron/stage`, when `/var` is
@@ -467,6 +471,9 @@ it as `orbitron_admin_token`; the `orbitron_mirror` role consumes it through
         orbitron_http_proxy: http://squid.example.com:3128
         orbitron_https_proxy: http://squid.example.com:3128
         orbitron_no_proxy: "localhost,127.0.0.1,.example.com"
+        # Optional: prune versions not served for 60+ days. Dry-run preview by
+        # default; set orbitron_prune_dry_run: false to delete for real.
+        orbitron_prune_days: 60
     - role: chrisvanmeer.orbitron.orbitron_mirror
       vars:
         orbitron_mirror_token: "{{ orbitron_admin_token | default(vault_orbitron_token) }}"

@@ -235,6 +235,16 @@
     fail_msg: Failed to obtain an admin token for the orbitron daemon.
   when: orbitron_state == "present"
 
+- name: Prune unserved cached versions
+  chrisvanmeer.orbitron.orbitron_prune:
+    url: "http://{{ orbitron_listen_addr }}"
+    token: "{{ orbitron_admin_token }}"
+    days: "{{ orbitron_prune_days }}"
+    dry_run: "{{ orbitron_prune_dry_run }}"
+  when:
+    - orbitron_state == "present"
+    - orbitron_prune_days > 0
+
 - name: Ensure orbitron is uninstalled via the bundled uninstaller
   ansible.builtin.command: /usr/local/bin/orbitron --uninstall
   register: _orbitron_uninstall
