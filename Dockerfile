@@ -1,3 +1,22 @@
+# -- Stage 0: Pre-populate the Go build cache --------------------------
+# Compiles the same package closure as the real build (same CGO/trimpath
+# flags, no version stamp) so /root/.cache/go-build is warm. This stage's
+# layers only invalidate when source actually changes, and are persisted in
+# CI via the GHA build cache (mode=max), so tagging a release or updating
+# docs re-runs the final `go build` in seconds instead of minutes.
+FROM golang:1.26-alpine AS buildcache
+
+WORKDIR /src
+
+# Copy dependency manifests first to leverage Docker layer caching.
+COPY go.mod go.sum* ./
+RUN go mod download
+
+COPY main.go ./main.go
+COPY internal ./internal
+
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /dev/null .
+
 # -- Stage 1: Build the static binary --
 FROM golang:1.26-alpine AS builder
 
@@ -5,12 +24,18 @@ ARG VERSION=dev
 
 WORKDIR /src
 
-# Copy dependency manifests first to leverage Docker layer caching
+# Reuse the warm Go build and module caches instead of compiling on a cold
+# cache for every version stamp / docs commit.
+COPY --from=buildcache /root/.cache/go-build /root/.cache/go-build
+COPY --from=buildcache /go/pkg/mod /go/pkg/mod
+
+# Copy dependency manifests first to leverage Docker layer caching.
 COPY go.mod go.sum* ./
 RUN go mod download
 
-# Copy the remaining source code
-COPY . .
+# Copy the remaining source code.
+COPY main.go ./main.go
+COPY internal ./internal
 
 # Build the static binary, stamping the release version so
 # `orbitron --version` reports e.g. "orbitron v1.4.1".

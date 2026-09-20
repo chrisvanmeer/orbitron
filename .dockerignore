@@ -5,6 +5,7 @@ bin/
 # Git internals
 .git/
 .gitignore
+.gitattributes
 
 # Local runtime data & secrets
 storage/
@@ -25,3 +26,19 @@ config.local.yml
 .ansible/
 *.test
 *.out
+*_test.go
+
+# Not needed for the image build; keeps source changes from invalidating the
+# Go build layer in CI and shrinks the build context.
+.github/
+.markdownlint.json
+ansible_collections/
+assets/
+docker-compose.yml
+docs/
+grafana/
+LICENSE
+Makefile
+orbitron.nomad.hcl
+README.md
+*.md
