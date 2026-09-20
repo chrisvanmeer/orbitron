@@ -1,5 +1,28 @@
 ---
 releases:
+  1.3.1:
+    changes:
+      release_summary: |
+        Idempotent syncs and a quieter mirror daemon.
+      bugfixes:
+        - >-
+          The ``orbitron_sync`` module polls the daemon's ``/api/v1/sync/status``
+          endpoint with exponential backoff (1 s, then doubling up to a 10 s cap,
+          all bounded by the module timeout) while waiting for a running mirror job,
+          instead of hammering the endpoint once per second. Long syncs no longer
+          flood the daemon access log with one status request per second.
+        - >-
+          Re-running ``orbitron_sync`` over content that is already fully mirrored
+          no longer reports ``changed``. The module now snapshots the mirrored
+          inventory before triggering a job and compares a canonical, order
+          independent fingerprint of every stored (role/collection, version) pair
+          against the storage after the job settles. A rerun that mirrored nothing
+          new reports ``ok`` (``changed=false``, ``state=completed``) instead of
+          advertising a change every single time, so a playbook that consistently
+          calls the module stops falsely marking the run as changed on every poll
+          loop. Forced runs (``force: true``) and runs observed to actually mirror
+          new content still report ``changed=true``.
+    release_date: '2026-09-20'
   1.3.0:
     changes:
       release_summary: |

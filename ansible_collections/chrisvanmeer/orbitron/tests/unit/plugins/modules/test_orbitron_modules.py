@@ -226,16 +226,6 @@ class SyncClient(object):
         return 202, {"status": "full_sync_triggered"}
 
 
-def test_sync_triggers_when_pending(monkeypatch):
-    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
-    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=SyncClient)
-    _run(orbitron_sync.main)
-
-    assert fake.result["changed"] is True
-    assert fake.result["state"] == "completed"
-    assert fake.result["pending"] == [{"kind": "collections", "name": "community.general", "version": "8.5.0"}]
-
-
 def test_sync_idle_when_up_to_date(monkeypatch):
     class UpToDateClient(SyncClient):
         def get(self, path):
@@ -278,7 +268,65 @@ def test_sync_running_reports_changed(monkeypatch):
     assert RunningClient.posted == []
 
 
-def test_sync_running_with_wait_polls_to_completion(monkeypatch):
+def test_sync_wait_reports_ok_when_nothing_new_mirrored(monkeypatch):
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=SyncClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is False
+    assert fake.result["state"] == "completed"
+    assert fake.result["pending"] == [{"kind": "collections", "name": "community.general", "version": "8.5.0"}]
+
+
+def test_sync_wait_reports_changed_when_new_content_mirrored(monkeypatch):
+    class FillingClient(object):
+        def __init__(self, module, token_required=True):
+            self.storage = {"roles": [], "collections": []}
+
+        def get(self, path):
+            if path == "/api/v1/sync/status":
+                return 200, {"current": None, "history": []}
+            if path == "/api/v1/manifests":
+                return 200, {"roles": [], "collections": [COLLECTION_META]}
+            if path == "/api/v1/storage":
+                return 200, self.storage
+            return 200, {"roles": [], "collections": []}
+
+        def post(self, path, payload=None):
+            self.storage = {
+                "roles": [],
+                "collections": [{"type": "collections", "name": "community.general", "versions": [{"version": "8.5.0"}]}],
+            }
+            return 202, {"status": "full_sync_triggered"}
+
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=FillingClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is True
+    assert fake.result["state"] == "completed"
+    assert fake.result["pending"] == [{"kind": "collections", "name": "community.general", "version": "8.5.0"}]
+
+
+def test_sync_wait_force_reports_changed(monkeypatch):
+    class UpToDateClient(SyncClient):
+        def get(self, path):
+            if path == "/api/v1/storage":
+                return 200, {
+                    "roles": [],
+                    "collections": [{"type": "collections", "name": "community.general", "versions": [{"version": "8.5.0"}]}],
+                }
+            return super(UpToDateClient, self).get(path)
+
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=True)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=UpToDateClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is True
+    assert fake.result["state"] == "completed"
+
+
+def test_sync_running_with_wait_reports_ok_when_job_mirrors_nothing(monkeypatch):
     class DrainingClient(object):
         def __init__(self, module, token_required=True):
             self.polls = 0
@@ -298,6 +346,37 @@ def test_sync_running_with_wait_polls_to_completion(monkeypatch):
 
     params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
     fake = _patch(monkeypatch, orbitron_sync, params, client_impl=DrainingClient)
+    _run(orbitron_sync.main)
+
+    assert fake.result["changed"] is False
+    assert fake.result["state"] == "completed"
+
+
+def test_sync_running_with_wait_reports_changed_when_job_mirrors_content(monkeypatch):
+    class DrainingFillingClient(object):
+        def __init__(self, module, token_required=True):
+            self.polls = 0
+
+        def get(self, path):
+            if path == "/api/v1/sync/status":
+                self.polls += 1
+                if self.polls == 1:
+                    return 200, {"current": {"id": "3", "kind": "full", "status": "running"}, "history": []}
+                return 200, {"current": None, "history": [{"id": "3", "status": "done"}]}
+            if path == "/api/v1/manifests":
+                return 200, {"roles": [], "collections": [COLLECTION_META]}
+            if path == "/api/v1/storage" and self.polls > 1:
+                return 200, {
+                    "roles": [],
+                    "collections": [{"type": "collections", "name": "community.general", "versions": [{"version": "8.5.0"}]}],
+                }
+            return 200, {"roles": [], "collections": []}
+
+        def post(self, path, payload=None):
+            raise AssertionError("must not POST a second sync while one runs")
+
+    params = dict(BASE_PARAMS, wait=True, timeout=5, skip_if_running=True, force=False)
+    fake = _patch(monkeypatch, orbitron_sync, params, client_impl=DrainingFillingClient)
     _run(orbitron_sync.main)
 
     assert fake.result["changed"] is True

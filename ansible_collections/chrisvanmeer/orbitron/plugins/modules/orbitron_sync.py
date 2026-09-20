@@ -21,11 +21,13 @@ description:
     (e.g. C(>=2.0.0)) never match a stored version exactly, so they always
     warrant a re-check and trigger a sync.
   - Set C(force=true) to trigger a full re-sync even when the mirror already
-    looks complete.
+    looks complete, and to always report changed=true.
   - When a sync is already running and C(skip_if_running=true) (the default),
-    the module starts no second job but still reports changed=true, because a
-    sync triggered by a recent manifest submission is already doing the work.
-    With C(wait=true) it waits for that job to finish first.
+    the module starts no second job. With C(wait=true) it waits for that job
+    to settle and then reports changed only when the mirror actually gained
+    new content; a rerun over an already-complete mirror is idempotent and
+    reports changed=false. Without C(wait=true) it reports changed=true
+    because sync work from this play is already in flight.
 requirements:
   - ansible >= 2.16
 author:
@@ -61,8 +63,10 @@ options:
   skip_if_running:
     description:
       - Do not start a new sync while one is already running.
-      - The run still reports changed=true in that case, since the sync
-        requested by this (or a recent) run is already in flight.
+      - With C(wait=true) the run then reports changed only when the in-flight
+        job actually mirrored something new; without C(wait=true) it still
+        reports changed=true since sync work from this play is already in
+        flight.
     type: bool
     default: true
   validate_certs:
@@ -163,6 +167,26 @@ def _mirrored_versions(inventory, kind, name):
     return []
 
 
+def _version_fingerprint(inventory):
+    """Return a canonical, order-independent fingerprint of the mirrored
+    inventory: every stored (name, version) pair for roles and collections.
+
+    Used to detect whether a completed sync actually mirrored anything new,
+    so a rerun over already-complete content reports C(changed=false).
+    """
+    pairs = set()
+    for kind in ("roles", "collections"):
+        for entry in inventory.get(kind) or []:
+            name = (entry.get("name") or "").strip()
+            if not name:
+                continue
+            for stored in entry.get("versions") or []:
+                version = _norm_version(stored.get("version"))
+                if version:
+                    pairs.add((kind, name, version))
+    return frozenset(pairs)
+
+
 def plan_sync(manifests, inventory, force=False):
     """Decide whether a sync should run.
 
@@ -190,8 +214,14 @@ def plan_sync(manifests, inventory, force=False):
 
 
 def wait_for_idle(client, module, deadline):
-    """Poll /api/v1/sync/status until no job is running anymore."""
+    """Poll /api/v1/sync/status until no job is running anymore.
+
+    The poll interval backs off exponentially (1s → 2s → 4s → … up to 10s) so
+    a long-running mirror job does not hammer the daemon's sync/status endpoint
+    once per second and flood the access log."""
+
     start = time.time()
+    delay = 1.0
     while True:
         snapshot = client.get("/api/v1/sync/status")[1]
         current_job = snapshot.get("current")
@@ -203,7 +233,8 @@ def wait_for_idle(client, module, deadline):
                 state="running",
                 sync_status=snapshot,
             )
-        time.sleep(1)
+        module.sleep(min(delay, max(0.1, start + deadline - time.time())))
+        delay = min(delay * 2, 10.0)
 
 
 def main():
@@ -227,18 +258,27 @@ def main():
         current = snapshot.get("current") or {}
         running = current.get("status") == "running"
 
+        manifests = client.get("/api/v1/manifests")[1]
+        inventory = client.get("/api/v1/storage")[1]
+        before_fp = _version_fingerprint(inventory)
+
         # A previous manifest submission already started a background sync.
-        # Report the run as changed (it has sync work in flight) but do not
-        # pile another full sync on top of the running one.
+        # Do not pile another full sync on top of the running one. When waiting
+        # is requested, observe the outcome and only report the rerun as
+        # changed when the in-flight job actually mirrored something new.
         if running and skip_if_running:
             state = "running"
             if wait:
                 snapshot = wait_for_idle(client, module, deadline)
                 state = "completed"
-            module.exit_json(changed=True, state=state, pending=[], sync_status=snapshot)
+                after_inventory = client.get("/api/v1/storage")[1]
+                changed = force or _version_fingerprint(after_inventory) != before_fp
+            else:
+                # Cannot observe the outcome without waiting; report the rerun
+                # as changed because work is in flight from this play.
+                changed = True
+            module.exit_json(changed=changed, state=state, pending=[], sync_status=snapshot)
 
-        manifests = client.get("/api/v1/manifests")[1]
-        inventory = client.get("/api/v1/storage")[1]
         pending, should_sync = plan_sync(manifests, inventory, force=force)
 
         if not (should_sync or (running and not skip_if_running)):
@@ -249,11 +289,19 @@ def main():
 
         body = client.post("/api/v1/sync")[1]
         state = body.get("status", "triggered")
+        changed = True
         if wait:
             snapshot = wait_for_idle(client, module, deadline)
             state = "completed"
+            after_inventory = client.get("/api/v1/storage")[1]
+            # A sync that mirrored nothing new (every declared requirement was
+            # already cached at its exact artifact) is an idempotent rerun and
+            # must report ok, not changed. The daemon still re-checks the
+            # declared requirements, so new upstream content is still picked up
+            # on later runs without ever re-downloading what is already there.
+            changed = force or _version_fingerprint(after_inventory) != before_fp
 
-        module.exit_json(changed=True, state=state, pending=pending, sync_status=snapshot)
+        module.exit_json(changed=changed, state=state, pending=pending, sync_status=snapshot)
     except OrbitronError as exc:
         fail_orbitron(module, exc, "sync operation")
 

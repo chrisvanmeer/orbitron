@@ -213,7 +213,7 @@ jobs:
           fi
 
           ansible-playbook "$SCRATCH/mirror_all.yml" > "$SCRATCH/run7.log" 2>&1
-          check_sync_result "$SCRATCH/run7.log" changed "run 7 (mirror all rerun)"
+          check_sync_result "$SCRATCH/run7.log" ok "run 7 (mirror all rerun)"
           after="$(count_gluster)"
           if [ "$before" != "$after" ]; then
             echo "rerun re-downloaded content: gluster.gluster versions before=$before after=$after"
