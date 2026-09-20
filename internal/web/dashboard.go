@@ -1081,10 +1081,10 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if d.cfg.LogPath == "" {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(fmt.Sprintf(
+		_, _ = fmt.Fprintf(w,
 			"> File logging is disabled (log_path: \"\"): logs go to %s via the container runtime.<br>"+
 				">&nbsp; Live view: <code>nomad alloc logs &lt;alloc-id&gt;</code> or <code>docker compose logs -f</code>.",
-			stdoutLogLabel)))
+			stdoutLogLabel)
 		return
 	}
 
