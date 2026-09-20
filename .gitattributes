@@ -1,0 +1,5 @@
+# Ensure YAML files are counted in GitHub's language statistics.
+# Previously the workflow, Ansible role/collection and changelog YAML
+# files were not attributed, so the language breakdown missed YAML.
+*.yaml linguist-language=YAML
+*.yml  linguist-language=YAML
