@@ -1,5 +1,19 @@
 ---
 releases:
+  1.3.2:
+    changes:
+      release_summary: |
+        Orbitron 1.3.2 fixes the sync-status backoff that crashed the
+        orbitron_sync module released in 1.3.1.
+      bugfixes:
+        - >-
+          The ``orbitron_sync`` module now sleeps with ``time.sleep()`` between
+          sync-status polls. The 1.3.1 rewrite used a non-existent
+          ``AnsibleModule.sleep`` method, so any run that had to wait for a
+          running or still-in-flight mirror job failed with
+          ``'AnsibleModule' object has no attribute 'sleep'`` and the play
+          aborted on the "Sync the mirror" task.
+    release_date: '2026-09-20'
   1.3.1:
     changes:
       release_summary: |
