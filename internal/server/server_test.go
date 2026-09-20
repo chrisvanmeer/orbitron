@@ -29,7 +29,7 @@ func newTestServer(t *testing.T) (*Server, string) {
 		TokensFile:  writeTestTokensFile(t, "valid-admin-token"),
 	}
 	s := &Server{cfg: cfg}
-	s.fetcher = fetcher.NewFetcher(storage, cfg.MaxConcurrency)
+	s.fetcher = fetcher.NewFetcher(storage, cfg.MaxConcurrency, fetcher.ProxyConfig{})
 	return s, storage
 }
 

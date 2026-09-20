@@ -6,3 +6,6 @@ tokens_file: "{{ orbitron_tokens_file }}"
 require_auth_pull: {{ orbitron_require_auth_pull | lower }}
 max_concurrency: {{ orbitron_max_concurrency }}
 token_ttl_days: {{ orbitron_token_ttl_days }}
+http_proxy: "{{ orbitron_http_proxy }}"
+https_proxy: "{{ orbitron_https_proxy }}"
+no_proxy: "{{ orbitron_no_proxy }}"

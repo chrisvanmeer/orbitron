@@ -164,7 +164,38 @@ max_concurrency: 4
 # 0 disables expiry so tokens never expire. Per-token TTLs can be
 # overridden with the HTTP token API.
 token_ttl_days: 0
+
+# Optional forward proxy for outbound Galaxy API calls, collection downloads
+# and git clones (e.g. a Squid proxy). Leave empty to fall back to the
+# process HTTP_PROXY / HTTPS_PROXY / NO_PROXY environment variables.
+http_proxy: ""
+https_proxy: ""
+no_proxy: ""
 ```
+
+### Forward Proxy (Squid & co.)
+
+When the mirror host has no direct internet route — or you want Galaxy traffic
+to leave through a single choke point — point `http_proxy` / `https_proxy` at
+your forward proxy. Git-backed roles and `git clone`/`fetch` operations use the
+same settings, so every outbound hop honors the proxy.
+
+```yaml
+http_proxy: "http://squid.example.com:3128"
+https_proxy: "http://squid.example.com:3128"
+no_proxy: "localhost,127.0.0.1,.example.com"
+```
+
+* `http_proxy` proxies plain `http://` Galaxy/download requests.
+* `https_proxy` proxies `https://` requests; if unset, `http_proxy` is used as
+  a fallback (and vice versa).
+* `no_proxy` is a comma-separated list of exclusions: exact hostnames,
+  `.domain` / `*.domain` suffixes, a bare `*` to bypass everything, or CIDR
+  ranges (e.g. `10.0.0.0/8`).
+
+All three are optional. When left empty, Orbitron falls back to the standard
+`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` environment variables of the daemon
+process.
 
 ---
 
@@ -427,9 +458,15 @@ it as `orbitron_admin_token`; the `orbitron_mirror` role consumes it through
   roles:
     - role: chrisvanmeer.orbitron.orbitron
       vars:
-        orbitron_version: v0.5.0
+        # Leave orbitron_version unset to install the latest release.
+        orbitron_version: v1.3.2
         orbitron_listen_addr: 127.0.0.1:8080
         orbitron_token_ttl_days: 365
+        # Optional: route outbound Galaxy / git traffic via a forward proxy
+        # (e.g. Squid). Leave unset to fall back to environment proxies.
+        orbitron_http_proxy: http://squid.example.com:3128
+        orbitron_https_proxy: http://squid.example.com:3128
+        orbitron_no_proxy: "localhost,127.0.0.1,.example.com"
     - role: chrisvanmeer.orbitron.orbitron_mirror
       vars:
         orbitron_mirror_token: "{{ orbitron_admin_token | default(vault_orbitron_token) }}"

@@ -16,6 +16,13 @@ type Config struct {
 	// TokenTTLDays is the default lifetime for newly generated administrative
 	// tokens, in days. 0 disables expiry so tokens never expire.
 	TokenTTLDays int `yaml:"token_ttl_days"`
+	// HTTPProxy, HTTPSProxy and NoProxy configure the forward proxy used for
+	// outbound Galaxy API calls, collection downloads and git clones (e.g. a
+	// Squid proxy). Empty values fall back to the process HTTP_PROXY /
+	// HTTPS_PROXY / NO_PROXY environment variables.
+	HTTPProxy  string `yaml:"http_proxy"`
+	HTTPSProxy string `yaml:"https_proxy"`
+	NoProxy    string `yaml:"no_proxy"`
 }
 
 func GetDefaultConfigYML() string {
@@ -35,6 +42,13 @@ max_concurrency: 4
 # 0 disables expiry so tokens never expire. Per-token TTLs can be
 # overridden when creating tokens via the HTTP token API.
 token_ttl_days: 0
+
+# Optional forward proxy for outbound Galaxy API calls, collection downloads
+# and git clones (e.g. a Squid proxy). Leave empty to fall back to the
+# process HTTP_PROXY / HTTPS_PROXY / NO_PROXY environment variables.
+http_proxy: ""
+https_proxy: ""
+no_proxy: ""
 `
 }
 

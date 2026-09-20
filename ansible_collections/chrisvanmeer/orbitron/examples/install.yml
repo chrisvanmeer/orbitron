@@ -5,8 +5,13 @@
   become: true
 
   vars:
-    orbitron_version: v0.5.0
+    # Leave orbitron_version unset to install the latest release.
+    orbitron_version: v1.3.2
     orbitron_listen_addr: 0.0.0.0:8080
+    # Optional: route outbound Galaxy / git traffic via a forward proxy (Squid).
+    orbitron_http_proxy: http://squid.internal:3128
+    orbitron_https_proxy: http://squid.internal:3128
+    orbitron_no_proxy: "localhost,127.0.0.1,.internal"
 
   roles:
     - role: chrisvanmeer.orbitron.orbitron

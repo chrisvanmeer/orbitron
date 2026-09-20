@@ -41,8 +41,12 @@ type Server struct {
 
 func NewServer(cfg *config.Config) *Server {
 	return &Server{
-		cfg:      cfg,
-		fetcher:  fetcher.NewFetcher(cfg.StoragePath, cfg.MaxConcurrency),
+		cfg: cfg,
+		fetcher: fetcher.NewFetcher(cfg.StoragePath, cfg.MaxConcurrency, fetcher.ProxyConfig{
+			HTTPProxy:  cfg.HTTPProxy,
+			HTTPSProxy: cfg.HTTPSProxy,
+			NoProxy:    cfg.NoProxy,
+		}),
 		rec:      access.New(cfg.StoragePath),
 		shaCache: make(map[string]shaEntry),
 	}

@@ -42,15 +42,25 @@ type RequirementsYML struct {
 	Roles       []RoleItem       `yaml:"roles"`
 }
 
+// ProxyConfig carries optional forward-proxy settings for outbound Galaxy
+// API calls, collection downloads and git clones. Empty values fall back to
+// the process HTTP_PROXY / HTTPS_PROXY / NO_PROXY environment variables.
+type ProxyConfig struct {
+	HTTPProxy  string
+	HTTPSProxy string
+	NoProxy    string
+}
+
 type Fetcher struct {
 	storagePath    string
 	manifestPath   string
 	httpClient     *http.Client
 	maxConcurrency int
 	tracker        *SyncTracker
+	proxy          ProxyConfig
 }
 
-func NewFetcher(storagePath string, maxConcurrency int) *Fetcher {
+func NewFetcher(storagePath string, maxConcurrency int, proxy ProxyConfig) *Fetcher {
 	manifestPath := filepath.Join(storagePath, "manifests")
 	collectionsPath := filepath.Join(storagePath, "collections")
 	rolesPath := filepath.Join(storagePath, "roles")
@@ -66,13 +76,19 @@ func NewFetcher(storagePath string, maxConcurrency int) *Fetcher {
 		maxConcurrency = 4
 	}
 
+	proxyFunc, err := proxy.proxyFunc()
+	if err != nil {
+		logger.Warn("Invalid proxy configuration (%v); falling back to environment proxies", err)
+		proxyFunc = http.ProxyFromEnvironment
+	}
+
 	dialer := &net.Dialer{
 		Timeout:   3 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
 
 	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 proxyFunc,
 		DialContext:           dialer.DialContext,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
@@ -83,11 +99,174 @@ func NewFetcher(storagePath string, maxConcurrency int) *Fetcher {
 		manifestPath:   manifestPath,
 		maxConcurrency: maxConcurrency,
 		tracker:        NewSyncTracker(),
+		proxy:          proxy,
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   30 * time.Second,
 		},
 	}
+}
+
+// configured reports whether any forward proxy is explicitly set.
+func (p ProxyConfig) configured() bool {
+	return p.HTTPProxy != "" || p.HTTPSProxy != ""
+}
+
+// proxyFunc returns the http.Transport Proxy function honoring the configured
+// http_proxy / https_proxy / no_proxy settings. When nothing is configured it
+// defers to the standard environment-based ProxyFromEnvironment.
+func (p ProxyConfig) proxyFunc() (func(*http.Request) (*url.URL, error), error) {
+	if !p.configured() {
+		return http.ProxyFromEnvironment, nil
+	}
+
+	// Prefer the scheme-specific proxy, falling back to the other scheme and
+	// finally to the process environment.
+	httpURL, err := parseProxyURL(p.HTTPProxyOr(p.HTTPSProxy))
+	if err != nil {
+		return nil, err
+	}
+	httpsURL, err := parseProxyURL(p.HTTPSProxyOr(p.HTTPProxy))
+	if err != nil {
+		return nil, err
+	}
+
+	exclusions := parseNoProxy(p.NoProxy)
+
+	return func(req *http.Request) (*url.URL, error) {
+		if req.URL == nil || req.URL.Hostname() == "" {
+			return http.ProxyFromEnvironment(req)
+		}
+		if matchesNoProxy(exclusions, req.URL.Hostname()) {
+			return nil, nil
+		}
+
+		switch req.URL.Scheme {
+		case "https":
+			if httpsURL != nil {
+				return httpsURL, nil
+			}
+			if httpURL != nil {
+				return httpURL, nil
+			}
+		case "http":
+			if httpURL != nil {
+				return httpURL, nil
+			}
+			if httpsURL != nil {
+				return httpsURL, nil
+			}
+		}
+		return http.ProxyFromEnvironment(req)
+	}, nil
+}
+
+// HTTPProxyOr returns the http proxy URL when set, otherwise the given fallback.
+func (p ProxyConfig) HTTPProxyOr(fallback string) string {
+	if p.HTTPProxy != "" {
+		return p.HTTPProxy
+	}
+	return fallback
+}
+
+// HTTPSProxyOr returns the https proxy URL when set, otherwise the given fallback.
+func (p ProxyConfig) HTTPSProxyOr(fallback string) string {
+	if p.HTTPSProxy != "" {
+		return p.HTTPSProxy
+	}
+	return fallback
+}
+
+// parseProxyURL parses a proxy URL, returning nil when the value is empty.
+func parseProxyURL(value string) (*url.URL, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy URL %q: %w", value, err)
+	}
+	return parsed, nil
+}
+
+// noProxyEntry is a pre-parsed no_proxy exclusion.
+type noProxyEntry struct {
+	host   string
+	cidr   *net.IPNet
+	all    bool
+	suffix bool
+}
+
+// parseNoProxy splits a comma-separated no_proxy list into matchers.
+func parseNoProxy(noProxy string) []noProxyEntry {
+	var entries []noProxyEntry
+	for _, raw := range strings.Split(noProxy, ",") {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		if entry == "*" {
+			entries = append(entries, noProxyEntry{all: true})
+			continue
+		}
+		if _, ipnet, err := net.ParseCIDR(entry); err == nil {
+			entries = append(entries, noProxyEntry{cidr: ipnet})
+			continue
+		}
+		host := strings.ToLower(entry)
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		suffix := strings.HasPrefix(host, "*.") || strings.HasPrefix(host, ".")
+		if strings.HasPrefix(host, "*.") {
+			host = "." + strings.TrimPrefix(host, "*.")
+		}
+		entries = append(entries, noProxyEntry{host: host, suffix: suffix})
+	}
+	return entries
+}
+
+// matchesNoProxy reports whether the given hostname matches any no_proxy rule.
+func matchesNoProxy(entries []noProxyEntry, hostname string) bool {
+	hostname = strings.ToLower(hostname)
+	for _, e := range entries {
+		if e.all {
+			return true
+		}
+		if e.cidr != nil {
+			if ip := net.ParseIP(strings.Trim(hostname, "[]")); ip != nil && e.cidr.Contains(ip) {
+				return true
+			}
+			continue
+		}
+		if e.suffix {
+			if hostname == strings.TrimPrefix(e.host, ".") || strings.HasSuffix(hostname, e.host) {
+				return true
+			}
+			continue
+		}
+		if hostname == e.host {
+			return true
+		}
+	}
+	return false
+}
+
+// gitEnv returns the subprocess environment with any configured forward proxy
+// exported so git clone/fetch also traverses it. The uppercase variants are
+// set alongside the lowercase ones because git and libcurl accept both.
+func (f *Fetcher) gitEnv() []string {
+	env := os.Environ()
+	if f.proxy.HTTPProxy != "" {
+		env = append(env, "http_proxy="+f.proxy.HTTPProxy, "HTTP_PROXY="+f.proxy.HTTPProxy)
+	}
+	if f.proxy.HTTPSProxy != "" {
+		env = append(env, "https_proxy="+f.proxy.HTTPSProxy, "HTTPS_PROXY="+f.proxy.HTTPSProxy)
+	}
+	if f.proxy.NoProxy != "" {
+		env = append(env, "no_proxy="+f.proxy.NoProxy, "NO_PROXY="+f.proxy.NoProxy)
+	}
+	return env
 }
 
 // ParseRequirements parses YAML byte streams into RequirementsYML struct,
@@ -425,7 +604,7 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 	if _, err := os.Stat(filepath.Join(targetDir, ".git")); err == nil {
 		logger.Info("Git repo exists at %s. Fetching updates...", targetDir)
 		cmdFetch := exec.Command("git", "-C", targetDir, "fetch", "--all", "--tags")
-		cmdFetch.Env = os.Environ()
+		cmdFetch.Env = f.gitEnv()
 		if err := cmdFetch.Run(); err != nil {
 			logger.Warn("Git fetch failed (%v), re-cloning...", err)
 			if rmErr := os.RemoveAll(targetDir); rmErr != nil {
@@ -434,7 +613,7 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 		} else {
 			if version != "" {
 				cmdCheckout := exec.Command("git", "-C", targetDir, "checkout", version)
-				cmdCheckout.Env = os.Environ()
+				cmdCheckout.Env = f.gitEnv()
 				return cmdCheckout.Run()
 			}
 			return nil
@@ -449,7 +628,7 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 	args = append(args, gitURL, targetDir)
 
 	cmd := exec.Command("git", args...)
-	cmd.Env = os.Environ()
+	cmd.Env = f.gitEnv()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git clone failed (%v): %s", err, string(output))

@@ -1,6 +1,6 @@
 ---
 # --- Installation -----------------------------------------------------------
-# Which orbitron release to install: "latest", or an exact tag such as v0.5.0.
+# Which orbitron release to install: "latest", or an exact tag such as v1.3.2.
 orbitron_version: latest
 
 # Local path to a pre-downloaded orbitron binary (air-gapped installs). Takes
@@ -35,6 +35,12 @@ orbitron_max_concurrency: 4
 
 # Default lifetime of newly generated admin tokens in days (0 = never expire).
 orbitron_token_ttl_days: 0
+
+# Optional forward proxy for outbound Galaxy / git synchronization (e.g. Squid).
+# Leave empty to use the daemon process environment HTTP(S)_PROXY/NO_PROXY.
+orbitron_http_proxy: ""
+orbitron_https_proxy: ""
+orbitron_no_proxy: ""
 
 # --- Service layout --------------------------------------------------------
 orbitron_config_file: /etc/orbitron/config.yml

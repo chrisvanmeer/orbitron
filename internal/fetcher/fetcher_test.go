@@ -74,7 +74,7 @@ func TestParseRequirements(t *testing.T) {
 
 func TestNewFetcherCreatesStorageTree(t *testing.T) {
 	dir := t.TempDir()
-	f := NewFetcher(dir, 0)
+	f := NewFetcher(dir, 0, ProxyConfig{})
 
 	if f.maxConcurrency != 4 {
 		t.Errorf("expected default maxConcurrency 4, got %d", f.maxConcurrency)
@@ -88,7 +88,7 @@ func TestNewFetcherCreatesStorageTree(t *testing.T) {
 }
 
 func TestSaveManifestDeduplicatesByContent(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 2)
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
 	data := []byte("roles:\n  - name: geerlingguy.nginx\n    version: 3.2.0\n")
 
 	for i := 0; i < 3; i++ {
@@ -143,7 +143,7 @@ func TestDirExistsNonEmpty(t *testing.T) {
 // TestSyncGitRepoSkipsExistingVersion proves the no-re-download guarantee
 // without needing git: a version directory that already exists is skipped.
 func TestSyncGitRepoSkipsExistingVersion(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 2)
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
 	target := filepath.Join(f.storagePath, "roles", "geerlingguy.nginx", "3.3.1")
 	if err := os.MkdirAll(target, 0750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -161,7 +161,7 @@ func TestSyncGitRepoSkipsExistingVersion(t *testing.T) {
 // for galaxy collections: an existing artifact file is trusted and never fetched
 // again, even with a fake galaxy host.
 func TestDownloadCollectionArtifactSkipsCached(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 2)
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
 	targetDir := filepath.Join(f.storagePath, "collections", "community")
 	targetFile := filepath.Join(targetDir, "community-general-8.5.0.tar.gz")
 	if err := os.MkdirAll(targetDir, 0750); err != nil {

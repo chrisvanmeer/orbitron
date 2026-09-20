@@ -1,5 +1,36 @@
 ---
 releases:
+  1.4.0:
+    changes:
+      release_summary: |
+        Configurable forward proxy support. Orbitron now honours
+        ``http_proxy``, ``https_proxy`` and ``no_proxy`` keys in
+        ``config.yml`` so the daemon can synchronize Ansible content through a
+        forward proxy such as Squid. The settings cover outbound Galaxy API
+        calls, collection tarball downloads AND git clones/fetches, so git
+        backed roles mirror over the same proxy. When the keys are left empty
+        Orbitron falls back to the process ``HTTP_PROXY``/``HTTPS_PROXY``/
+        ``NO_PROXY`` environment variables, preserving the previous behaviour.
+      features:
+        - >-
+          The daemon config gains three optional keys: ``http_proxy`` (for
+          ``http://`` requests), ``https_proxy`` (for ``https://`` requests,
+          falling back to ``http_proxy`` when unset and vice versa), and
+          ``no_proxy``, a comma-separated list of exclusions supporting exact
+          hostnames, ``.domain``/``*.domain`` suffixes, a bare ``*``, and CIDR
+          ranges (e.g. ``10.0.0.0/8``).
+        - >-
+          Git-backed roles and collections clone and fetch through the
+          configured proxy: the ``http_proxy``/``https_proxy``/``no_proxy``
+          environment (upper- and lowercase) is exported to every ``git``
+          subprocess the fetcher spawns.
+        - >-
+          The ``chrisvanmeer.orbitron`` role renders the new keys into
+          ``/etc/orbitron/config.yml`` via ``orbitron_http_proxy``,
+          ``orbitron_https_proxy`` and ``orbitron_no_proxy`` (default empty,
+          meaning environment fallback), documented with examples in the role,
+          collection, and playbook documentation.
+    release_date: '2026-09-20'
   1.3.2:
     changes:
       release_summary: |

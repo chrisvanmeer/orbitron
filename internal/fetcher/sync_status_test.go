@@ -91,7 +91,7 @@ func TestSyncTrackerConcurrentAccess(t *testing.T) {
 }
 
 func TestProcessRolesReportsToTracker(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 4)
+	f := NewFetcher(t.TempDir(), 4, ProxyConfig{})
 
 	// Two galaxy-style roles. Both will fail to reach galaxy.ansible.com in
 	// tests, which is exactly what we want: the tracker must count done items

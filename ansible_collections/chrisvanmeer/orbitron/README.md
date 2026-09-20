@@ -52,7 +52,8 @@ generates (or reuses) an initial admin token.
   roles:
     - role: chrisvanmeer.orbitron.orbitron
       vars:
-        orbitron_version: v0.5.0
+        # Leave orbitron_version unset to install the latest release.
+        orbitron_version: v1.3.2
         orbitron_listen_addr: 0.0.0.0:8080
         orbitron_token_ttl_days: 90
 ```
@@ -66,7 +67,9 @@ After the run:
 
 Key variables: `orbitron_version` (`latest` or exact tag), `orbitron_binary_src`
 (air-gapped installs), `orbitron_checksum`, the `orbitron_*` daemon config
-keys, `orbitron_state` (`present`/`absent`), and the token bootstrap variables.
+keys, the forward-proxy keys `orbitron_http_proxy`, `orbitron_https_proxy`,
+and `orbitron_no_proxy` (see the main README's "Forward Proxy" section),
+`orbitron_state` (`present`/`absent`), and the token bootstrap variables.
 
 ### `orbitron_mirror`
 

@@ -26,6 +26,9 @@ Galaxy mirror daemon on a Linux host with `systemd`.
 | `orbitron_require_auth_pull` | `false`                          | Require a token for client pulls.                        |
 | `orbitron_max_concurrency`   | `4`                              | Parallel sync workers.                                   |
 | `orbitron_token_ttl_days`    | `0`                              | Default token lifetime in days (`0` = never).            |
+| `orbitron_http_proxy`        | `""`                             | Forward proxy for outbound `http://` traffic (e.g. Squid). |
+| `orbitron_https_proxy`       | `""`                             | Forward proxy for outbound `https://` traffic.           |
+| `orbitron_no_proxy`          | `""`                             | Comma-separated proxy exclusions (hostnames, suffixes, CIDR). |
 | `orbitron_token`             | `""`                             | Pre-set admin token (else generated).                    |
 | `orbitron_token_path`        | `/root/.orbitron_token`          | Where a generated token is persisted (0600).             |
 
@@ -53,6 +56,9 @@ If your `/var` (or `/var/tmp`) filesystem is mounted with `noexec`, point
         orbitron_version: v1.2.0
         orbitron_listen_addr: 0.0.0.0:8080
         orbitron_token_ttl_days: 90
+        orbitron_http_proxy: http://squid.internal:3128
+        orbitron_https_proxy: http://squid.internal:3128
+        orbitron_no_proxy: "localhost,127.0.0.1,.internal"
 ```
 
 ## License
