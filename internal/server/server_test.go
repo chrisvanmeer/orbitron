@@ -383,7 +383,7 @@ func TestLoggingMiddlewareSuppressesRoutinePaths(t *testing.T) {
 	logger.SetOutput(&buf)
 	defer logger.SetOutput(os.Stdout)
 
-	for _, suppressed := range []string{"/healthz", "/favicon.ico", "/ui/"} {
+	for _, suppressed := range []string{"/healthz", "/favicon.ico", "/ui/", "/metrics?format=prometheus"} {
 		buf.Reset()
 		req := httptest.NewRequest(http.MethodGet, suppressed, nil)
 		rec := httptest.NewRecorder()

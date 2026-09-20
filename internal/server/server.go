@@ -146,10 +146,10 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 
 func (s *Server) LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Suppress routine UI polling + favicon + liveness probe requests from
-		// log output
+		// Suppress routine UI polling, favicon, liveness probe and Prometheus
+		// scrape requests from log output.
 		path := r.URL.Path
-		if !strings.HasPrefix(path, "/ui") && path != "/favicon.ico" && path != "/favicon.svg" && path != "/healthz" {
+		if !strings.HasPrefix(path, "/ui") && path != "/favicon.ico" && path != "/favicon.svg" && path != "/healthz" && path != "/metrics" {
 			logger.Info("HTTP %s %s (from %s)", r.Method, r.URL.RequestURI(), r.RemoteAddr)
 		}
 		next.ServeHTTP(w, r)
