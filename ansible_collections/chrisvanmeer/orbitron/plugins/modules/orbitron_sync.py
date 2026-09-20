@@ -233,7 +233,7 @@ def wait_for_idle(client, module, deadline):
                 state="running",
                 sync_status=snapshot,
             )
-        module.sleep(min(delay, max(0.1, start + deadline - time.time())))
+        time.sleep(min(delay, max(0.1, start + deadline - time.time())))
         delay = min(delay * 2, 10.0)
 
 
