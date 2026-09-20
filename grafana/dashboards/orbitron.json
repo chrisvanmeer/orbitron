@@ -551,7 +551,6 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "sum by (instance) (orbitron_storage_bytes)",
-          "instant": true,
           "legendFormat": "total {{instance}}",
           "refId": "A"
         },
@@ -561,7 +560,6 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "sum by (instance) (orbitron_roles_bytes)",
-          "instant": true,
           "legendFormat": "roles {{instance}}",
           "refId": "B"
         },
@@ -571,7 +569,6 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "sum by (instance) (orbitron_collections_bytes)",
-          "instant": true,
           "legendFormat": "collections {{instance}}",
           "refId": "C"
         }
@@ -659,7 +656,6 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "sum by (instance) (orbitron_role_versions_total)",
-          "instant": true,
           "legendFormat": "roles {{instance}}",
           "refId": "A"
         },
@@ -669,7 +665,6 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "sum by (instance) (orbitron_collection_versions_total)",
-          "instant": true,
           "legendFormat": "collections {{instance}}",
           "refId": "B"
         }
