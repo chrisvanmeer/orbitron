@@ -881,6 +881,22 @@ scrape_configs:
       - targets: ['127.0.0.1:8080']
 ```
 
+### Grafana Dashboard
+
+A ready-made dashboard for the metrics above lives in `grafana/dashboards/orbitron.json`.
+
+* **Import:** Dashboards → Import → upload the JSON file. During import Grafana
+  asks which Prometheus **data source** to bind the dashboard to — pick the one
+  that scrapes your Orbitron instance(s). Every panel reads from that source.
+* **Multi-daemon:** the `Orbitron instance` template variable (default `All`)
+  is built from the `instance` label of the scraped targets, so a single
+  dashboard follows every Orbitron daemon behind the same Prometheus.
+* **Contents:** overview stats (uptime, disk usage, roles, collections, cached
+  versions, namespaces, tokens), storage and version growth over time, plus
+  top-item bar gauge and item/version size tables.
+* Remember the `/metrics` endpoint requires token auth — see the scrape
+  configuration above.
+
 ---
 
 ## Author
