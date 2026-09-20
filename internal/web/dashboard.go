@@ -565,16 +565,23 @@ const htmlTemplate = `
 `
 
 func (d *Dashboard) handleIndex(w http.ResponseWriter, r *http.Request) {
-	logPath := strings.Replace(htmlTemplate, "{{LOG_PATH}}", d.logLabel(), 1)
+	logPath := strings.Replace(htmlTemplate, "{{LOG_PATH}}", d.logSource(), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(logPath))
 }
 
-func (d *Dashboard) logLabel() string {
+// stdoutLogLabel is shown in the SYSTEM LOGS panel when the daemon writes its
+// logs to stdout instead of a file (empty log_path, e.g. under Docker/Nomad).
+const stdoutLogLabel = "STDOUT (container logs)"
+
+// logSource describes where the daemon writes its logs for the SYSTEM LOGS
+// panel. With a configured log_path that path is returned; otherwise it labels
+// stdout honestly instead of inventing a file path that does not exist.
+func (d *Dashboard) logSource() string {
 	if d.cfg.LogPath != "" {
 		return d.cfg.LogPath
 	}
-	return "/var/log/orbitron/orbitron.log"
+	return stdoutLogLabel
 }
 
 func (d *Dashboard) handleHtmx(w http.ResponseWriter, r *http.Request) {
@@ -1072,7 +1079,16 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
-	content, err := tailFile(d.logLabel(), 20)
+	if d.cfg.LogPath == "" {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			"> File logging is disabled (log_path: \"\"): logs go to %s via the container runtime.<br>"+
+				">&nbsp; Live view: <code>nomad alloc logs &lt;alloc-id&gt;</code> or <code>docker compose logs -f</code>.",
+			stdoutLogLabel)))
+		return
+	}
+
+	content, err := tailFile(d.cfg.LogPath, 20)
 	if err != nil {
 		content = []string{fmt.Sprintf("> ERROR READING LOGS: %v", err)}
 	}

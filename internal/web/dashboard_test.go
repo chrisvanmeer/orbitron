@@ -81,3 +81,20 @@ func TestHandleStorageCollapsesMultiVersionItems(t *testing.T) {
 		t.Fatalf("single-version items must not get a collapsible group row\n%s", body)
 	}
 }
+
+// TestLogSourceReflectsConfig verifies that the SYSTEM LOGS panel shows the
+// configured log path when set, and an explicit stdout label (never a
+// hardcoded file path) when log_path is empty such as under Docker/Nomad.
+func TestLogSourceReflectsConfig(t *testing.T) {
+	d := NewDashboard(&config.Config{})
+
+	if got, want := d.logSource(), stdoutLogLabel; got != want {
+		t.Fatalf("empty log_path: logSource()=%q, want %q", got, want)
+	}
+
+	const custom = "/var/log/orbitron/orbitron.log"
+	d.cfg.LogPath = custom
+	if got := d.logSource(); got != custom {
+		t.Fatalf("set log_path: logSource()=%q, want %q", got, custom)
+	}
+}
