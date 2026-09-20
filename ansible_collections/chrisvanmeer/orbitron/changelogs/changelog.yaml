@@ -1,5 +1,37 @@
 ---
 releases:
+  1.4.1:
+    changes:
+      release_summary: |
+        Orbitron 1.4.1 makes multi-version caching easier to scan and gives
+        the ``orbitron`` Ansible role optional access-based storage pruning.
+
+        Roles and collections with multiple cached versions now collapse into
+        a single, sortable row in the web dashboard that unfolds on click to
+        reveal every version with its own LAST ACCESS date, and the sortable
+        column headers are clearly signposted. On the automation side, the
+        ``orbitron`` role can prune versions that have not been served within
+        a retention window after installation, running a dry-run preview first
+        by default.
+      minor_features:
+        - >-
+          The web dashboard cache matrix collapses roles and collections with
+          more than one cached version into a single row showing the version
+          count, the most recent access, and the total disk usage; an expand
+          caret unfolds all versions with their individual LAST ACCESS dates.
+          Expanded groups survive the automatic refresh.
+        - >-
+          Sortable column headers are now signposted: every sortable header
+          shows a persistent up-down arrow indicator, highlights the active
+          sort column with an up or down triangle, and a hint below the search
+          box announces that column headers are clickable for sorting.
+        - >-
+          The ``orbitron`` role can now prune unserved cached versions after
+          install via ``orbitron_prune_days`` (retention window in days; the
+          default ``0`` disables pruning). Pruning runs as a dry run by
+          default; set ``orbitron_prune_dry_run: false`` to delete candidates
+          for real.
+    release_date: '2026-09-20'
   1.4.0:
     changes:
       release_summary: |
