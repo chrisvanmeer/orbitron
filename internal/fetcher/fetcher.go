@@ -312,7 +312,7 @@ func (f *Fetcher) SaveManifest(manifestType string, data []byte) error {
 // SaveManifestReplacing stores a requirements manifest, first removing any
 // previously stored manifest of the same type that declares an overlapping
 // role or collection name, so only the newest declaration for each name
-// governs (mirrors the ACTIVE badge's per-name identity).
+// governs (per CanonicalRoleName identity).
 func (f *Fetcher) SaveManifestReplacing(manifestType string, data []byte) error {
 	declared := fetcherDeclaredNames(manifestType, data)
 
@@ -337,7 +337,7 @@ func (f *Fetcher) SaveManifestReplacing(manifestType string, data []byte) error 
 }
 
 // fetcherDeclaredNames returns the identity names declared by a requirements
-// manifest, using the same normalization as the dashboard's ACTIVE badge.
+// manifest, canonically normalized for cross-manifest deduplication.
 func fetcherDeclaredNames(manifestType string, data []byte) map[string]bool {
 	names := make(map[string]bool)
 	reqs, err := ParseRequirements(data)
@@ -346,7 +346,7 @@ func fetcherDeclaredNames(manifestType string, data []byte) map[string]bool {
 	}
 	if manifestType == "roles" {
 		for _, r := range reqs.Roles {
-			if n := extractFetcherRoleName(r); n != "" {
+			if n := CanonicalRoleName(r); n != "" {
 				names[n] = true
 			}
 		}
@@ -360,9 +360,12 @@ func fetcherDeclaredNames(manifestType string, data []byte) map[string]bool {
 	return names
 }
 
-// extractFetcherRoleName mirrors dashboard extractRoleName (name or src, drop
-// .git, keep trailing path segment, trim quotes).
-func extractFetcherRoleName(r RoleItem) string {
+// CanonicalRoleName resolves the canonical identity of a role item: the name
+// itself, or the trailing path segment of src (with .git dropped) when the
+// name is empty, with surrounding quotes trimmed. This single normalization is
+// shared by manifest deduplication, storage inventory grouping and role
+// downloads.
+func CanonicalRoleName(r RoleItem) string {
 	target := strings.TrimSpace(r.Name)
 	if target == "" {
 		target = strings.TrimSpace(r.Src)
@@ -477,7 +480,7 @@ func (f *Fetcher) roleItemName(item RoleItem) string {
 	if n := strings.TrimSpace(item.Name); n != "" {
 		return n
 	}
-	return extractFetcherRoleName(item)
+	return CanonicalRoleName(item)
 }
 
 func (f *Fetcher) ProcessRoles(items []RoleItem) {

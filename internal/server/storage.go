@@ -49,23 +49,6 @@ func collectionArtifactName(namespace, filename string) (name, version string, o
 	return remainder[:lastHyphen], remainder[lastHyphen+1:], true
 }
 
-// manifestRoleName resolves the canonical role identity the way the fetcher and
-// dashboard index it: the name, or the basename of src with .git stripped.
-func manifestRoleName(item fetcher.RoleItem) string {
-	target := strings.TrimSpace(item.Name)
-	if target == "" {
-		target = strings.TrimSpace(item.Src)
-	}
-	if target == "" {
-		return ""
-	}
-	target = strings.TrimSuffix(target, ".git")
-	if idx := strings.LastIndexAny(target, "/:"); idx != -1 {
-		target = target[idx+1:]
-	}
-	return strings.Trim(target, "\"'")
-}
-
 // declaredVersionsFromManifests collects every version requirement declared
 // per role and collection identity across the stored manifests.
 func declaredVersionsFromManifests(metas []fetcher.ManifestMeta) (roles, collections map[string][]string) {
@@ -74,7 +57,7 @@ func declaredVersionsFromManifests(metas []fetcher.ManifestMeta) (roles, collect
 
 	for _, m := range metas {
 		for _, item := range m.Roles {
-			if name := manifestRoleName(item); name != "" {
+			if name := fetcher.CanonicalRoleName(item); name != "" {
 				roles[name] = append(roles[name], strings.Trim(strings.TrimSpace(item.Version), "\"'"))
 			}
 		}
