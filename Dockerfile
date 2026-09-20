@@ -1,5 +1,5 @@
 # -- Stage 1: Build the static binary --
-FROM golang:1.22-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 ARG VERSION=dev
 
@@ -31,8 +31,9 @@ RUN adduser -D -H -g 'orbitron daemon' -s /sbin/nologin orbitron
 
 COPY --from=builder /orbitron /usr/local/bin/orbitron
 COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY docker-healthcheck.sh /usr/local/bin/orbitron-healthcheck
 
-RUN chmod 0755 /docker-entrypoint.sh && \
+RUN chmod 0755 /docker-entrypoint.sh /usr/local/bin/orbitron-healthcheck && \
     mkdir -p /data && chown orbitron:orbitron /data
 
 USER root
@@ -43,5 +44,7 @@ VOLUME ["/data"]
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 
+# The port is taken from ORBITRON_LISTEN_ADDR at runtime so the check follows
+# a custom listen address (see docker-healthcheck.sh).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1
+    CMD /usr/local/bin/orbitron-healthcheck
