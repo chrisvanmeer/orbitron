@@ -108,7 +108,11 @@ job "orbitron" {
       env {
         ORBITRON_LISTEN_ADDR       = "0.0.0.0:8080"
         ORBITRON_STORAGE_PATH      = "/data"
-        ORBITRON_LOG_PATH          = ""
+        # File logs land on the persistent host volume so the SYSTEM LOGS
+        # panel in the web UI works. Use "local/orbitron.log" for ephemeral
+        # logs tied to the alloc dir, or "" to log only to stdout
+        # (nomad alloc logs <alloc-id>; the UI then shows a stdout hint).
+        ORBITRON_LOG_PATH          = "/data/orbitron.log"
         ORBITRON_TOKENS_FILE       = "/data/tokens.json"
         ORBITRON_REQUIRE_AUTH_PULL = "false"
         ORBITRON_MAX_CONCURRENCY   = "4"
