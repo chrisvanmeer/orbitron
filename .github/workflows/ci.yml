@@ -186,9 +186,29 @@ jobs:
             return 1
           }
 
-          # Run 1: first ingest must trigger a sync (changed).
+          # Run 1: first ingest must mirror the collection. The manifest task
+          # queues a background sync in the daemon that may already store the
+          # version before the orbitron_sync module reads the inventory, so the
+          # sync task can legitimately report 'ok' (see run 3 below). Fail only
+          # if the version never lands on the mirror.
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run1.log" 2>&1
-          check_sync_result "$SCRATCH/run1.log" changed "run 1 (fresh content)"
+          if wait_for_version community.general 8.5.0 120; then
+            sync_line="$(awk '/Sync the mirror/ {found=1; next} found && /^(ok|changed|skipping):/ {print; exit}' "$SCRATCH/run1.log")"
+            case "$sync_line" in
+              changed:*|ok:*)
+                echo "run 1 (fresh content): sync reported ${sync_line%: *}, community.general 8.5.0 mirrored"
+                ;;
+              *)
+                echo "run 1: mirror holds community.general 8.5.0 but sync task reported: $sync_line"
+                cat "$SCRATCH/run1.log"
+                exit 1
+                ;;
+            esac
+          else
+            echo "run 1: community.general 8.5.0 was never mirrored (sync may have failed)"
+            cat "$SCRATCH/run1.log"
+            exit 1
+          fi
 
           # Run 2: an unchanged, fully mirrored playbook must be idempotent:
           # the sync task reports ok and queues no new sync.
