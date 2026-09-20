@@ -157,6 +157,35 @@ jobs:
             esac
           }
 
+          wait_for_version() {
+            # Returns true once a collection at name==version is stored on the
+            # mirror, polling the storage API up to ${3} seconds. Declaring a
+            # new version triggers a background sync in the daemon; that may
+            # finish before the orbitron_sync module reads the inventory, so
+            # the sync task can legitimately report 'ok'. What matters is that
+            # the version actually lands on the mirror.
+            name="$1"; version="$2"; timeout="${3:-120}"
+            for _ in $(seq 1 "$timeout"); do
+              body="$(curl -fsS -H "Authorization: Bearer $ORBITRON_TEST_TOKEN" \
+                "http://127.0.0.1:${ORBITRON_TEST_PORT}/api/v1/storage" || true)"
+              if python3 -c '
+          import json, sys
+          name, version = sys.argv[1], sys.argv[2]
+          d = json.loads(sys.argv[3])
+          for e in d.get("collections", []):
+              if e.get("name") == name and any(
+                  v.get("version") == version for v in e.get("versions", [])
+              ):
+                  raise SystemExit(0)
+          raise SystemExit(1)
+          ' "$name" "$version" "$body"; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
           # Run 1: first ingest must trigger a sync (changed).
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run1.log" 2>&1
           check_sync_result "$SCRATCH/run1.log" changed "run 1 (fresh content)"
@@ -166,10 +195,30 @@ jobs:
           ansible-playbook "$SCRATCH/mirror_test.yml" > "$SCRATCH/run2.log" 2>&1
           check_sync_result "$SCRATCH/run2.log" ok "run 2 (unchanged, complete)"
 
-          # Run 3: declaring a new version must trigger a sync again.
+          # Run 3: declaring a new version must mirror it. The sync task may
+          # report 'ok' when the manifest-triggered background sync already
+          # stored the new version before the module read the inventory (timing
+          # race), so accept changed|ok and fail only when the version never
+          # actually lands on the mirror.
           sed 's/"8.5.0"/"8.6.0"/' "$SCRATCH/mirror_test.yml" > "$SCRATCH/mirror_test_bump.yml"
           ansible-playbook "$SCRATCH/mirror_test_bump.yml" > "$SCRATCH/run3.log" 2>&1
-          check_sync_result "$SCRATCH/run3.log" changed "run 3 (version bumped)"
+          if wait_for_version community.general 8.6.0 120; then
+            sync_line="$(awk '/Sync the mirror/ {found=1; next} found && /^(ok|changed|skipping):/ {print; exit}' "$SCRATCH/run3.log")"
+            case "$sync_line" in
+              changed:*|ok:*)
+                echo "run 3 (version bumped): sync reported ${sync_line%: *}, community.general 8.6.0 mirrored"
+                ;;
+              *)
+                echo "run 3: mirror holds community.general 8.6.0 but sync task reported: $sync_line"
+                cat "$SCRATCH/run3.log"
+                exit 1
+                ;;
+            esac
+          else
+            echo "run 3: community.general 8.6.0 was never mirrored (sync may have failed)"
+            cat "$SCRATCH/run3.log"
+            exit 1
+          fi
 
           # Run 4: reverting to an already mirrored version is idempotent.
           # The mirror already holds the exact pinned version (it was fetched
