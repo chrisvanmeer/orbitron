@@ -724,6 +724,108 @@ server {
 
 ---
 
+## Docker & Docker Compose
+
+Orbitron ships an official container image published to GHCR on every release
+tag: `ghcr.io/chrisvanmeer/orbitron:<version>` (also tagged `<major>.<minor>`
+and `latest`). The image is multi-architecture (`linux/amd64`, `linux/arm64`),
+runs the daemon as a non-root user, and bundles `git`/`openssh-client` so
+git-backed roles and collections keep mirroring inside a container.
+
+The image renders `config.yml` from environment variables at startup, so no
+config file needs to be mounted. A fresh admin token is generated and printed
+to the container logs on first start.
+
+### Getting the admin token
+
+```bash
+docker compose logs orbitron | grep "ADMIN TOKEN"
+```
+
+Or without Compose: `docker logs <container> | grep "ADMIN TOKEN"`. The token
+is persisted in `<storage>/tokens.json`, so it only appears once.
+
+### Docker Compose example
+
+```bash
+docker compose up -d --build   # build locally
+docker compose up -d           # or pull the pre-built image
+docker compose logs -f
+```
+
+Then point Ansible at `http://localhost:8080`:
+
+```ini
+# ansible.cfg
+[galaxy_client]
+galaxy_server = http://localhost:8080
+# token = YOUR_ORBITRON_TOKEN   # uncomment if require_auth_pull is true
+```
+
+### Container environment variables
+
+| Variable                     | Default                  | Description                                                      |
+| ---------------------------- | ------------------------ | ---------------------------------------------------------------- |
+| `ORBITRON_LISTEN_ADDR`       | `0.0.0.0:8080`           | Address the daemon binds inside the container.                   |
+| `ORBITRON_STORAGE_PATH`      | `/data`                  | Storage root for roles, collections and manifests.               |
+| `ORBITRON_LOG_PATH`          | *stdout*                 | Log file inside the container; empty logs to stdout.             |
+| `ORBITRON_TOKENS_FILE`       | `${STORAGE}/tokens.json` | Token registry file.                                             |
+| `ORBITRON_REQUIRE_AUTH_PULL` | `false`                  | Require a token to pull/download cached content.                 |
+| `ORBITRON_MAX_CONCURRENCY`   | `4`                      | Concurrent download/clone workers during syncs.                  |
+| `ORBITRON_TOKEN_TTL_DAYS`    | `0`                      | Lifetime of generated admin tokens in days (`0` = never expire). |
+| `ORBITRON_HTTP_PROXY`        | *empty*                  | Forward proxy for `http://` outbound requests.                   |
+| `ORBITRON_HTTPS_PROXY`       | *empty*                  | Forward proxy for `https://` outbound requests.                  |
+| `ORBITRON_NO_PROXY`          | *empty*                  | Comma-separated proxy exclusions.                                |
+| `ORBITRON_AUTO_TOKEN`        | `true`                   | Generate an admin token on first start if none exists.           |
+
+### Persistence
+
+Mount a volume at `/data` (the Compose file uses the named volume
+`orbitron-data`). It holds the mirrored roles/collections, the access-recording
+data (`.access.json`), and the admin token, so a container rebuild never
+wipes the cache.
+
+---
+
+## HashiCorp Nomad
+
+Deploy the daemon on Nomad with the included job specification:
+
+```bash
+nomad job validate orbitron.nomad.hcl
+nomad job plan   orbitron.nomad.hcl
+nomad job run    orbitron.nomad.hcl
+```
+
+The jobspec (`orbitron.nomad.hcl`) registers an HTTP service with an
+`/healthz` check, uses the GHCR image with `force_pull`, and persists the
+mirror cache through a dedicated **host volume** (`orbitron-data`) so the cache
+survives redeploys and node restarts. Register that volume on the target client
+before running the job:
+
+```hcl
+client {
+  host_volume "orbitron-data" {
+    path      = "/srv/orbitron-data"
+    read_only = false
+  }
+}
+```
+
+The container auto-generates the admin token on first start; retrieve it from
+the alloc logs:
+
+```bash
+nomad alloc logs <alloc-id> | grep "ADMIN TOKEN"
+```
+
+Optional Traefik routing tags and Vault Workload Identity templates are
+included as commented sections in the jobspec. The bundle also runs fine with
+the `-bind-allocation` Docker networking modes; port `http` maps onto the
+container's `:8080`.
+
+---
+
 ## Prometheus Telemetry & Metrics
 
 Orbitron exposes daemon and storage metrics at `/metrics` using standard Prometheus exposition format
@@ -731,13 +833,27 @@ Orbitron exposes daemon and storage metrics at `/metrics` using standard Prometh
 
 ### Exposed Metrics
 
-| Metric                         | Type    | Description                                         |
-| :----------------------------- | :------ | :-------------------------------------------------- |
-| `orbitron_uptime_seconds`      | Counter | Total daemon uptime in seconds.                     |
-| `orbitron_roles_total`         | Gauge   | Total number of stored Ansible role directories.    |
-| `orbitron_collections_total`   | Gauge   | Total number of stored Ansible collection archives. |
-| `orbitron_manifests_total`     | Gauge   | Total number of stored requirement manifests.       |
-| `orbitron_active_tokens_total` | Gauge   | Total number of registered Bearer tokens.           |
+| Metric                                              | Type    | Description                                                                  |
+| :-------------------------------------------------- | :------ | :--------------------------------------------------------------------------- |
+| `orbitron_uptime_seconds`                           | Counter | Total daemon uptime in seconds.                                              |
+| `orbitron_roles_total`                              | Gauge   | Number of distinct cached role names (as listed in the dashboard).           |
+| `orbitron_collections_total`                        | Gauge   | Number of distinct cached collection names (as listed in the dashboard).     |
+| `orbitron_role_versions_total`                      | Gauge   | Number of cached role versions across all roles.                             |
+| `orbitron_collection_versions_total`                | Gauge   | Number of cached collection versions across all collections.                 |
+| `orbitron_cached_versions_total`                    | Gauge   | Number of cached versions of roles and collections combined.                 |
+| `orbitron_namespaces_total`                         | Gauge   | Number of distinct collection namespaces in the cache.                       |
+| `orbitron_storage_bytes`                            | Gauge   | Block-allocated disk usage of all cached roles and collections in bytes.     |
+| `orbitron_roles_bytes`                              | Gauge   | Block-allocated disk usage of cached role versions in bytes.                 |
+| `orbitron_collections_bytes`                        | Gauge   | Block-allocated disk usage of cached collection archives in bytes.           |
+| `orbitron_cached_item_bytes{type,name}`             | Gauge   | Disk usage of one cached role or collection across all of its versions.      |
+| `orbitron_cached_version_bytes{type,name,version}`  | Gauge   | Disk usage of a single cached role or collection version.                    |
+| `orbitron_active_tokens_total`                      | Gauge   | Number of registered Bearer tokens.                                          |
+
+Byte values follow the dashboard's DISK USAGE column: block-allocated size
+(`st_blocks * 512`), falling back to the logical file size on filesystems
+without block accounting. Counts follow the cache matrix exactly — a role only
+counts once it holds at least one cached version, and collection archives are
+parsed from `<namespace>-<name>-<version>.tar.gz` filenames.
 
 ### Scraping Metrics
 
