@@ -2,10 +2,142 @@ package fetcher
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// buildTaggedBareRepo creates a bare git repository offline advertising the
+// given lightweight tags, used to exercise tag resolution without network.
+func buildTaggedBareRepo(t *testing.T, tags []string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	work := t.TempDir()
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	run(work, "init", "-q")
+	run(work, "config", "user.email", "test@example.invalid")
+	run(work, "config", "user.name", "orbitron test")
+	if err := os.WriteFile(filepath.Join(work, "f"), []byte("x"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "add", ".")
+	run(work, "commit", "-qm", "one")
+	for _, tg := range tags {
+		run(work, "tag", tg)
+	}
+	bare := filepath.Join(t.TempDir(), "repo.git")
+	run(work, "clone", "-q", "--bare", work, bare)
+	return bare
+}
+
+func TestRoleVersionStringPrefersTagName(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{"v1.0.1", "1.0.1", "v1.0.1"},
+		{"3.3.1", "3.3.1", "3.3.1"},
+		{"", "1.0.1", "1.0.1"},
+		{"v1.0.1", "", "v1.0.1"},
+		{"", "", ""},
+	}
+	for _, tt := range tests {
+		if got := roleVersionString(tt.name, tt.version); got != tt.want {
+			t.Errorf("roleVersionString(%q, %q) = %q, want %q", tt.name, tt.version, got, tt.want)
+		}
+	}
+}
+
+func TestResolveGitTag(t *testing.T) {
+	vRepo := buildTaggedBareRepo(t, []string{"v1.0.0", "v1.0.1"})
+	plainRepo := buildTaggedBareRepo(t, []string{"3.3.0", "3.3.1"})
+
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+
+	tests := []struct {
+		repo    string
+		version string
+		want    string
+		wantErr bool
+	}{
+		{vRepo, "1.0.1", "v1.0.1", false},
+		{vRepo, "v1.0.1", "v1.0.1", false},
+		{vRepo, "", "", false},
+		{vRepo, "2.0.0", "", true},
+		{plainRepo, "3.3.0", "3.3.0", false},
+		{plainRepo, "v3.3.0", "3.3.0", false},
+		{plainRepo, "9.9.9", "", true},
+	}
+
+	for _, tt := range tests {
+		got, err := f.resolveGitTag(tt.repo, tt.version)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("resolveGitTag(%s, %q): expected error, got %q", tt.repo, tt.version, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("resolveGitTag(%s, %q): unexpected error: %v", tt.repo, tt.version, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("resolveGitTag(%s, %q) = %q, want %q", tt.repo, tt.version, got, tt.want)
+		}
+	}
+}
+
+func TestSyncGitRepoClonesResolvedTag(t *testing.T) {
+	repo := buildTaggedBareRepo(t, []string{"v1.0.1"})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+
+	target := filepath.Join(f.storagePath, "roles", "chrisvanmeer.containerlab", "v1.0.1")
+	if err := f.SyncGitRepo(repo, "1.0.1", target); err != nil {
+		t.Fatalf("SyncGitRepo with v-prefixed tag failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "f")); err != nil {
+		t.Fatalf("cloned tag content missing: %v", err)
+	}
+
+	// Re-running the same version on an existing checkout must keep working.
+	if err := f.SyncGitRepo(repo, "1.0.1", target); err != nil {
+		t.Fatalf("SyncGitRepo on existing checkout failed: %v", err)
+	}
+}
+
+func TestMirrorAllRoleVersionsSkipsMissingTags(t *testing.T) {
+	repo := buildTaggedBareRepo(t, []string{"v1.0.0", "v1.0.1"})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+
+	published := []string{"v1.0.0", "9.9.9", "v1.0.1"}
+	if err := f.mirrorAllRoleVersions(repo, "chrisvanmeer.containerlab", published); err != nil {
+		t.Fatalf("mirrorAllRoleVersions with one stale version should still succeed: %v", err)
+	}
+
+	for _, want := range []string{"v1.0.0", "v1.0.1"} {
+		if _, err := os.Stat(filepath.Join(f.storagePath, "roles", "chrisvanmeer.containerlab", want)); err != nil {
+			t.Errorf("expected version %s to be mirrored: %v", want, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.storagePath, "roles", "chrisvanmeer.containerlab", "9.9.9")); err == nil {
+		t.Error("stale version should have been skipped")
+	}
+
+	if err := f.mirrorAllRoleVersions(repo, "nothing.matching", []string{"9.9.9"}); err == nil {
+		t.Error("expected error when no published version can be mirrored")
+	}
+}
 
 func TestParseRequirements(t *testing.T) {
 	tests := []struct {

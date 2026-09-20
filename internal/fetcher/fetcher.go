@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -587,6 +588,67 @@ func (f *Fetcher) SyncAll() {
 	logger.Info("Full sync job completed.")
 }
 
+// resolveGitTag maps a requested role version to the exact tag name advertised
+// by the remote repository. Upstream authors tag releases either as "3.3.1" or
+// as "v1.0.1"; probe both spellings so a declared version clones cleanly
+// instead of failing with "Remote branch not found in upstream origin". An
+// empty version (default branch) is returned unchanged.
+func (f *Fetcher) resolveGitTag(gitURL, version string) (string, error) {
+	if version == "" {
+		return "", nil
+	}
+
+	cmd := exec.Command("git", "ls-remote", "--tags", gitURL)
+	cmd.Env = f.gitEnv()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to list tags of %s: %w (%s)", gitURL, err, strings.TrimSpace(string(output)))
+	}
+
+	tags := map[string]struct{}{}
+	var samples []string
+	for _, line := range strings.Split(string(output), "\n") {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		name := strings.TrimPrefix(parts[1], "refs/tags/")
+		name = strings.TrimSuffix(name, "^{}")
+		if name == "" {
+			continue
+		}
+		if _, ok := tags[name]; !ok {
+			samples = append(samples, name)
+		}
+		tags[name] = struct{}{}
+	}
+
+	if len(tags) == 0 {
+		return "", fmt.Errorf("remote %s advertises no tags", gitURL)
+	}
+
+	candidates := []string{version}
+	if strings.HasPrefix(version, "v") {
+		candidates = append(candidates, strings.TrimPrefix(version, "v"))
+	} else {
+		candidates = append(candidates, "v"+version)
+	}
+	for _, cand := range candidates {
+		if _, ok := tags[cand]; ok {
+			return cand, nil
+		}
+	}
+
+	sort.Strings(samples)
+	const maxShown = 5
+	hint := samples
+	if len(hint) > maxShown {
+		hint = hint[:maxShown]
+	}
+	return "", fmt.Errorf("no tag matching version %q (tried %s) in %s; repo exposes tags like %s",
+		version, strings.Join(candidates, ", "), gitURL, strings.Join(hint, ", "))
+}
+
 func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 	// Versions already on disk are never re-downloaded. A corrupt version is
 	// repaired by deleting it first and letting the next sync fetch it fresh.
@@ -615,7 +677,11 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 			}
 		} else {
 			if version != "" {
-				cmdCheckout := exec.Command("git", "-C", targetDir, "checkout", version)
+				ref, err := f.resolveGitTag(gitURL, version)
+				if err != nil {
+					return err
+				}
+				cmdCheckout := exec.Command("git", "-C", targetDir, "checkout", ref)
 				cmdCheckout.Env = f.gitEnv()
 				return cmdCheckout.Run()
 			}
@@ -624,9 +690,13 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 	}
 
 	logger.Info("Cloning Git repo %s (ref: %s)...", gitURL, version)
+	ref, err := f.resolveGitTag(gitURL, version)
+	if err != nil {
+		return err
+	}
 	args := []string{"clone"}
-	if version != "" {
-		args = append(args, "--branch", version, "--depth", "1")
+	if ref != "" {
+		args = append(args, "--branch", ref, "--depth", "1")
 	}
 	args = append(args, gitURL, targetDir)
 
@@ -638,6 +708,28 @@ func (f *Fetcher) SyncGitRepo(gitURL, version, targetDir string) error {
 	}
 
 	logger.Info("Successfully cloned %s into %s", gitURL, targetDir)
+	return nil
+}
+
+// mirrorAllRoleVersions clones every published version of a galaxy role. A
+// version whose git tag no longer exists upstream is skipped with a warning
+// (stale galaxy listings and v-prefix drifts are common) instead of aborting
+// the whole role; the role only errors when none of its versions could be
+// mirrored.
+func (f *Fetcher) mirrorAllRoleVersions(gitURL, roleDir string, published []string) error {
+	logger.Info("Mirroring %d published versions of galaxy role %s", len(published), roleDir)
+	synced := 0
+	for _, publishedVersion := range published {
+		targetDir := filepath.Join(f.storagePath, "roles", roleDir, publishedVersion)
+		if err := f.SyncGitRepo(gitURL, publishedVersion, targetDir); err != nil {
+			logger.Warn("Skipping unavailable version %s of galaxy role %s: %v", publishedVersion, roleDir, err)
+			continue
+		}
+		synced++
+	}
+	if synced == 0 {
+		return fmt.Errorf("no published version of galaxy role %s could be mirrored", roleDir)
+	}
 	return nil
 }
 
@@ -832,6 +924,18 @@ func (f *Fetcher) ProcessRole(item RoleItem) error {
 	return fmt.Errorf("invalid galaxy role name format: %s", item.Name)
 }
 
+// roleVersionString returns the published version string to mirror for a
+// Galaxy V1 role version. Galaxy reports both an exact git tag (name) and a
+// sanitized semantic version (version); prefer the tag so the mirrored name
+// matches what upstream authors actually publish (e.g. "v1.0.1" instead of
+// "1.0.1") and the tag looks up cleanly during the git clone.
+func roleVersionString(name, version string) string {
+	if name != "" {
+		return name
+	}
+	return version
+}
+
 // fetchRoleVersions returns the published version tags for a Galaxy V1 role.
 func (f *Fetcher) fetchRoleVersions(roleID int) ([]string, error) {
 	galaxyBase := "https://galaxy.ansible.com"
@@ -874,11 +978,7 @@ func (f *Fetcher) fetchRoleVersions(roleID int) ([]string, error) {
 		}
 
 		for _, result := range pageData.Results {
-			v := result.Version
-			if v == "" {
-				v = result.Name
-			}
-			if v != "" {
+			if v := roleVersionString(result.Name, result.Version); v != "" {
 				versions = append(versions, v)
 			}
 		}
@@ -1019,14 +1119,7 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 			targetDir := filepath.Join(f.storagePath, "roles", roleDir, "latest")
 			return f.SyncGitRepo(gitURL, "", targetDir)
 		}
-		logger.Info("Mirroring all %d published versions of galaxy role %s.%s", len(published), namespace, name)
-		for _, publishedVersion := range published {
-			targetDir := filepath.Join(f.storagePath, "roles", roleDir, publishedVersion)
-			if err := f.SyncGitRepo(gitURL, publishedVersion, targetDir); err != nil {
-				return err
-			}
-		}
-		return nil
+		return f.mirrorAllRoleVersions(gitURL, roleDir, published)
 	}
 
 	if ver.IsLatest(version) || ver.IsConstraint(version) {
@@ -1051,6 +1144,15 @@ func (f *Fetcher) SyncGalaxyRole(namespace, name, version string) error {
 		return f.SyncGitRepo(gitURL, resolved, targetDir)
 	}
 
+	// Canonicalize an explicitly pinned version to the real upstream tag
+	// (e.g. "1.0.1" -> "v1.0.1") so the same content is never stored and
+	// served under two spellings, which breaks ansible-galaxy's latest-version
+	// comparison. When no tag matches, keep the declared string and let
+	// SyncGitRepo surface the resolution error.
+	tag, tagErr := f.resolveGitTag(gitURL, version)
+	if tagErr == nil && tag != "" {
+		version = tag
+	}
 	targetDir := filepath.Join(f.storagePath, "roles", roleDir, version)
 	logger.Info("Resolved Galaxy role %s.%s to Git repo %s (version: %s)", namespace, name, gitURL, version)
 	return f.SyncGitRepo(gitURL, version, targetDir)
