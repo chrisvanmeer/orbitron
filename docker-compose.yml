@@ -1,0 +1,44 @@
+services:
+  orbitron:
+    # Pre-built image published to GHCR on every release tag; `docker compose
+    # up -d --build` rebuilds it locally instead when you prefer that.
+    image: ghcr.io/chrisvanmeer/orbitron:latest
+    build:
+      context: .
+      args:
+        VERSION: dev
+    container_name: orbitron
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Listen inside the container; the published host port maps onto it.
+      - ORBITRON_LISTEN_ADDR=0.0.0.0:8080
+      - ORBITRON_STORAGE_PATH=/data
+      - ORBITRON_LOG_PATH=
+      - ORBITRON_TOKENS_FILE=/data/tokens.json
+      - ORBITRON_REQUIRE_AUTH_PULL=false
+      - ORBITRON_MAX_CONCURRENCY=4
+      - ORBITRON_TOKEN_TTL_DAYS=0
+      - ORBITRON_AUTO_TOKEN=true
+      # Optional forward proxy for outbound Galaxy API calls, collection
+      # downloads and git clones (e.g. a Squid proxy).
+      # - ORBITRON_HTTP_PROXY=http://proxy.internal:3128
+      # - ORBITRON_HTTPS_PROXY=http://proxy.internal:3128
+      # - ORBITRON_NO_PROXY=localhost,127.0.0.1,10.0.0.0/8
+      # Timezone used for container log timestamps.
+      - TZ=Europe/Amsterdam
+    volumes:
+      # Persistent cache: roles, collections and the admin token survive
+      # container rebuilds.
+      - orbitron-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  orbitron-data:
+    name: orbitron-data

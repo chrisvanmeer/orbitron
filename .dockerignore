@@ -1,0 +1,27 @@
+# Build artifacts
+bin/
+/orbitron
+
+# Git internals
+.git/
+.gitignore
+
+# Local runtime data & secrets
+storage/
+logs/
+*.log
+tokens.json
+config.yml
+config.local.yml
+
+# OS & editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Test artifacts
+.pytest_cache/
+.ansible/
+*.test
+*.out
