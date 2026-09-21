@@ -42,6 +42,31 @@ orbitron_http_proxy: ""
 orbitron_https_proxy: ""
 orbitron_no_proxy: ""
 
+# --- SSO (OIDC / Keycloak) authentication for the web dashboard -----------
+# When enabled, the /ui login page additionally offers "Sign in with SSO" next
+# to the regular access-token login. The issuer must be the full Keycloak realm
+# URL, e.g. https://keycloak.example.org/realms/orbitron, and the client must
+# be registered in Keycloak as a confidential OpenID Connect client with its
+# redirect URI set to <scheme>://<host>/ui/oidc/callback.
+orbitron_oidc_enabled: false
+orbitron_oidc_issuer: ""
+orbitron_oidc_client_id: ""
+orbitron_oidc_client_secret: ""
+
+# How long an authenticated dashboard session lives before the user has to
+# log in again. Sessions are in-memory only and reset on daemon restart.
+orbitron_oidc_session_ttl_hours: 8
+
+# Optional canonical redirect URI advertised to the IDP. Leave empty to
+# auto-derive it from the request as <scheme>://<host>/ui/oidc/callback.
+orbitron_oidc_redirect_uri: ""
+
+# Optional access filter: only users who are a member of at least one of these
+# groups may log in (compared against the ID token "groups" claim, which
+# Keycloak only emits after a "groups" client scope / Group Membership mapper
+# with "Add to ID token: ON" is added to the client). Empty disables the filter.
+orbitron_oidc_allowed_groups: []
+
 # --- Service layout --------------------------------------------------------
 orbitron_config_file: /etc/orbitron/config.yml
 

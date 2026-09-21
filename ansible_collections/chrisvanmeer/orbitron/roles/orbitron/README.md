@@ -29,6 +29,13 @@ Galaxy mirror daemon on a Linux host with `systemd`.
 | `orbitron_http_proxy`        | `""`                             | Forward proxy for outbound `http://` (e.g. Squid).       |
 | `orbitron_https_proxy`       | `""`                             | Forward proxy for outbound `https://` traffic.           |
 | `orbitron_no_proxy`          | `""`                             | Comma-separated proxy exclusions (host, domain, CIDR).   |
+| `orbitron_oidc_enabled`      | `false`                          | Enable SSO (OIDC) login on the web dashboard.            |
+| `orbitron_oidc_issuer`       | `""`                             | Full Keycloak realm URL, e.g. `https://kc/realms/x`.     |
+| `orbitron_oidc_client_id`    | `""`                             | Keycloak confidential client id.                         |
+| `orbitron_oidc_client_secret`| `""`                             | Keycloak client secret.                                  |
+| `orbitron_oidc_session_ttl_hours` | `8`                          | Dashboard session lifetime in hours.                     |
+| `orbitron_oidc_redirect_uri` | `""`                             | Explicit redirect URI, else auto-derived.                |
+| `orbitron_oidc_allowed_groups` | `[]`                          | Optional group filter; members of these groups only.     |
 | `orbitron_token`             | `""`                             | Pre-set admin token (else generated).                    |
 | `orbitron_token_path`        | `/root/.orbitron_token`          | Where a generated token is persisted (0600).             |
 | `orbitron_prune_days`        | `0`                              | Retention window in days; `> 0` enables pruning.         |
@@ -44,6 +51,30 @@ Set `orbitron_prune_days` to a value above `0` to prune cached versions that
 have not been served to a client within that retention window, right after the
 daemon is installed. Pruning runs as a dry run by default (it only previews the
 candidate versions); set `orbitron_prune_dry_run: false` to delete them for real.
+
+## SSO (OIDC / Keycloak)
+
+Set `orbitron_oidc_enabled: true` plus the `issuer`, `client_id` and
+`client_secret` to let dashboard users authenticate through an external
+identity provider instead of (or in addition to) a manual access token. The
+issuer must be the full Keycloak realm URL
+(`https://<keycloak>/realms/<realm>`), and the OIDC client must be registered
+in Keycloak as **confidential** with redirect URI
+`https://<your-orbitron-host>/ui/oidc/callback`. The regular token login stays
+available; SSO sessions are validated identically and live in memory until the
+daemon restarts. See the main [Orbitron README](../../../../../README.md#sso-oidc-keycloak)
+for the Keycloak client setup guide.
+
+To admit only members of specific Keycloak groups, set
+`orbitron_oidc_allowed_groups` to a list such as
+`["orbitron-admins", "orbitron-ops"]` — every other SSO user is denied access
+(fails closed when the ID token carries no `groups` claim). Empty (the default)
+disables the filter. The ID token only carries `groups` after a **Group
+Membership** protocol mapper (or the built-in `groups` client scope) with
+*Add to ID token* **ON** is added to the Keycloak client; full group paths
+(e.g. `/admins`) emitted by default by the Group Membership mapper are matched
+as well as plain names. See the main README's Keycloak-side setup for the
+exact steps.
 
 ## Exposed facts
 

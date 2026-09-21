@@ -69,3 +69,12 @@ func Close() {
 		_ = logFile.Close()
 	}
 }
+
+// Reopen resets the output to stdout, closes the previous log file and opens
+// logPath again. It is used on config reload so a rotated log file is re-opened
+// and a new log path takes effect. On failure output falls back to stdout.
+func Reopen(logPath string) error {
+	SetOutput(os.Stdout)
+	Close()
+	return Init(logPath)
+}

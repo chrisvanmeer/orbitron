@@ -106,6 +106,7 @@ Type=simple
 User=orbitron
 Group=orbitron
 ExecStart=/usr/local/bin/orbitron --config /etc/orbitron/config.yml
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5s
 

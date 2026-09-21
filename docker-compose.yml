@@ -26,6 +26,22 @@ services:
       # - ORBITRON_HTTP_PROXY=http://proxy.internal:3128
       # - ORBITRON_HTTPS_PROXY=http://proxy.internal:3128
       # - ORBITRON_NO_PROXY=localhost,127.0.0.1,10.0.0.0/8
+      # Optional SSO (OIDC / Keycloak) authentication for the web dashboard.
+      # When enabled, the /ui login page additionally offers "Sign in with SSO"
+      # next to the regular access-token login.
+      # - ORBITRON_OIDC_ENABLED=true
+      # - ORBITRON_OIDC_ISSUER=https://keycloak.example.org/realms/orbitron
+      # - ORBITRON_OIDC_CLIENT_ID=orbitron
+      # - ORBITRON_OIDC_CLIENT_SECRET=<client secret from Keycloak>
+      # - ORBITRON_OIDC_SESSION_TTL_HOURS=8
+      # Leave empty to auto-derive the redirect URI from the request as
+      # <scheme>://<host>/ui/oidc/callback; must match a Keycloak-registered
+      # redirect URI when set explicitly.
+      # - ORBITRON_OIDC_REDIRECT_URI=
+      # Optionally restrict SSO login to members of at least one of these
+      # groups (comma-separated; requires the "groups" claim in the ID token,
+      # see README). Leave empty to admit every verified SSO user.
+      # - ORBITRON_OIDC_ALLOWED_GROUPS=orbitron-admins,orbitron-ops
       # Timezone used for container log timestamps.
       - TZ=Europe/Amsterdam
     volumes:

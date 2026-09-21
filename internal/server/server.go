@@ -21,6 +21,7 @@ import (
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
 	"orbitron/internal/logger"
+	"orbitron/internal/oidc"
 	"orbitron/internal/telemetry"
 	"orbitron/internal/web"
 )
@@ -37,10 +38,12 @@ type Server struct {
 	rec      *access.Recorder
 	shaMu    sync.Mutex
 	shaCache map[string]shaEntry
+	oidc     *oidc.Client
+	sessions *auth.SessionManager
 }
 
-func NewServer(cfg *config.Config) *Server {
-	return &Server{
+func NewServer(cfg *config.Config) (srv *Server, err error) {
+	srv = &Server{
 		cfg: cfg,
 		fetcher: fetcher.NewFetcher(cfg.StoragePath, cfg.MaxConcurrency, fetcher.ProxyConfig{
 			HTTPProxy:  cfg.HTTPProxy,
@@ -49,7 +52,22 @@ func NewServer(cfg *config.Config) *Server {
 		}),
 		rec:      access.New(cfg.StoragePath),
 		shaCache: make(map[string]shaEntry),
+		sessions: auth.NewSessionManager(cfg.OIDC.SessionTTL()),
 	}
+
+	if cfg.OIDC.Enabled && !cfg.OIDC.EnabledAndConfigured() {
+		return nil, fmt.Errorf("oidc is enabled but issuer and/or client_id are not configured")
+	}
+	if cfg.OIDC.Enabled {
+		srv.oidc, err = oidc.NewClient(cfg.OIDC)
+		if err != nil {
+			return nil, err
+		}
+		logger.Info("OIDC authentication enabled (issuer=%s, client_id=%s)", srv.oidc.Issuer(), srv.oidc.ClientID())
+	} else {
+		logger.Info("OIDC authentication disabled")
+	}
+	return srv, nil
 }
 
 func generateRoleID(roleName string) string {
@@ -118,6 +136,15 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 	if cookie, err := r.Cookie("orbitron_token"); err == nil {
 		if store.Valid(cookie.Value) {
 			return true
+		}
+	}
+
+	// 1b. Check OIDC dashboard session (browser/UI sessions established via SSO)
+	if s.sessions != nil {
+		if cookie, err := r.Cookie(web.OIDCSessionCookie); err == nil {
+			if s.sessions.Valid(cookie.Value) {
+				return true
+			}
 		}
 	}
 
@@ -679,7 +706,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/metrics", s.AuthMiddleware(metrics.Handler(s.cfg)))
 
 	// Web UI Cyberpunk Dashboard & HTMX Assets (Uses its own cookie auth)
-	dashboard := web.NewDashboard(s.cfg)
+	dashboard := web.NewDashboard(s.cfg, s.oidc, s.sessions)
 	dashboard.Register(mux)
 
 	// Unauthenticated liveness probe for orchestrators & load balancers.
@@ -733,6 +760,31 @@ func (s *Server) Start() error {
 		return err
 	}
 	return nil
+}
+
+// Reload re-reads the configuration at configPath and rebuilds the logger on
+// the new log path. Only when the new configuration loads and initializes
+// cleanly (including OIDC discovery when enabled) is a fresh Server returned;
+// on any failure the current server and its log output keep running and an
+// error is returned. Callers shutting the old server down before starting the
+// returned one should expect a brief bind gap, since both share the listen
+// address.
+func (s *Server) Reload(configPath string) (*Server, error) {
+	if _, err := os.Stat(configPath); err != nil {
+		return nil, fmt.Errorf("reload: cannot read config file %s: %w", configPath, err)
+	}
+	newCfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("reload: failed to load config: %w", err)
+	}
+	newSrv, err := NewServer(newCfg)
+	if err != nil {
+		return nil, fmt.Errorf("reload: failed to initialize new server: %w", err)
+	}
+	if err := logger.Reopen(newCfg.LogPath); err != nil {
+		logger.Warn("Reload: could not switch log output to %q, continuing on stdout: %v", newCfg.LogPath, err)
+	}
+	return newSrv, nil
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {

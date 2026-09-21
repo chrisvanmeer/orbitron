@@ -77,6 +77,44 @@ Access-based storage pruning is optional via `orbitron_prune_days` (retention
 window; `0` disables it) and `orbitron_prune_dry_run` (defaults to `true`, so
 only the candidates are previewed).
 
+#### SSO / OIDC (Keycloak)
+
+Optional SSO login for the web dashboard is configured through
+`orbitron_oidc_enabled` plus the `orbitron_oidc_issuer` (full Keycloak realm
+URL, e.g. `https://keycloak.example.org/realms/orbitron`),
+`orbitron_oidc_client_id` and `orbitron_oidc_client_secret`. `orbitron_oidc_session_ttl_hours`
+(default `8`) sets the dashboard session lifetime and `orbitron_oidc_redirect_uri`
+an explicit callback URL (default: auto-derived from the request as
+`<scheme>://<host>/ui/oidc/callback`). To admit only members of specific
+Keycloak groups, set `orbitron_oidc_allowed_groups` to a list such as
+`["orbitron-admins"]`; empty (default) allows every verified SSO user in.
+Deploy with these variables set, or `set_fact` them after a later run and
+re-run the role — the daemon picks the changes up (optionally hot via
+`systemctl reload orbitron`). Full group paths emitted by Keycloak's Group
+Membership mapper (e.g. `/admins`) match plain `allowed_groups` names as well.
+See the main README's
+["SSO / OIDC (Keycloak)"](../../../README.md#sso-oidc-keycloak) section for
+the Keycloak client setup guide (redirect URIs, client secret, and the
+`groups` claim required for the group filter).
+
+#### Forward proxy
+
+When Orbitron must reach Galaxy, GitHub and git remotes through a corporate
+proxy (e.g. Squid), set `orbitron_http_proxy` and `orbitron_https_proxy` to the
+proxy URL such as `http://squid.internal:3128`, and `orbitron_no_proxy` to a
+comma-separated list of hosts/domains/CIDRs that must bypass the proxy (e.g.
+`localhost,127.0.0.1,.internal`). These map directly onto the daemon's
+`http_proxy`, `https_proxy` and `no_proxy` config keys, which fall back to the
+process `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment when left empty. See
+the main README's ["Forward Proxy"](../../../README.md#forward-proxy-squid-co)
+section for details. Example:
+
+```yaml
+orbitron_http_proxy: http://squid.internal:3128
+orbitron_https_proxy: http://squid.internal:3128
+orbitron_no_proxy: "localhost,127.0.0.1,.internal,10.0.0.0/8"
+```
+
 ### `orbitron_mirror`
 
 Declarative mirroring: stores role/collection requirements and waits for the

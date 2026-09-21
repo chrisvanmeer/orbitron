@@ -9,3 +9,19 @@ token_ttl_days: {{ orbitron_token_ttl_days }}
 http_proxy: "{{ orbitron_http_proxy }}"
 https_proxy: "{{ orbitron_https_proxy }}"
 no_proxy: "{{ orbitron_no_proxy }}"
+{% if orbitron_oidc_enabled %}
+oidc:
+  enabled: true
+  issuer: "{{ orbitron_oidc_issuer }}"
+  client_id: "{{ orbitron_oidc_client_id }}"
+  client_secret: "{{ orbitron_oidc_client_secret }}"
+  session_ttl_hours: {{ orbitron_oidc_session_ttl_hours }}
+  redirect_uri: "{{ orbitron_oidc_redirect_uri }}"
+{% if orbitron_oidc_allowed_groups %}
+  # Only users that are a member of at least one of these groups may log in.
+  allowed_groups:
+{% for group in orbitron_oidc_allowed_groups %}
+    - "{{ group }}"
+{% endfor %}
+{% endif %}
+{% endif %}

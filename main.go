@@ -128,10 +128,16 @@ func main() {
 	}
 	defer logger.Close()
 
-	srv := server.NewServer(cfg)
+	srv, err := server.NewServer(cfg)
+	if err != nil {
+		logger.Error("Failed to initialize server: %v", err)
+		os.Exit(1)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	reload := make(chan os.Signal, 1)
+	signal.Notify(reload, syscall.SIGHUP)
 
 	go func() {
 		if err := srv.Start(); err != nil {
@@ -140,14 +146,39 @@ func main() {
 		}
 	}()
 
-	<-stop
-	logger.Info("Shutting down Orbitron daemon...")
+	for {
+		select {
+		case <-reload:
+			logger.Info("SIGHUP received: reloading configuration from %s", *configPath)
+			next, err := srv.Reload(*configPath)
+			if err != nil {
+				logger.Error("Configuration reload failed, keeping current configuration: %v", err)
+				continue
+			}
+			logger.Info("Configuration reloaded: draining the previous server before starting the new one")
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			if err := srv.Shutdown(ctx); err != nil {
+				logger.Error("Error shutting down previous server: %v", err)
+			}
+			cancel()
+			srv = next
+			go func() {
+				if err := srv.Start(); err != nil {
+					logger.Error("Server error: %v", err)
+					os.Exit(1)
+				}
+			}()
+		case <-stop:
+			logger.Info("Shutting down Orbitron daemon...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("Error shutting down server: %v", err)
+			if err := srv.Shutdown(ctx); err != nil {
+				logger.Error("Error shutting down server: %v", err)
+			}
+			logger.Info("Orbitron stopped gracefully")
+			return
+		}
 	}
-	logger.Info("Orbitron stopped gracefully")
 }

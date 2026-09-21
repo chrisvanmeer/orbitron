@@ -33,6 +33,66 @@ func newTestServer(t *testing.T) (*Server, string) {
 	return s, storage
 }
 
+func TestReloadBuildsNewServerOnValidConfig(t *testing.T) {
+	s, _ := newTestServer(t)
+	oldListen := s.cfg.ListenAddr
+
+	storage := t.TempDir()
+	tokens := filepath.Join(t.TempDir(), "tokens.json")
+	cfgPath := filepath.Join(t.TempDir(), "config.yml")
+	cfgYAML := fmt.Sprintf("listen_addr: 127.0.0.1:19091\nstorage_path: %s\nlog_path: \"\"\ntokens_file: %s\n", storage, tokens)
+	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	next, err := s.Reload(cfgPath)
+	if err != nil {
+		t.Fatalf("Reload on a valid config failed: %v", err)
+	}
+	if next == nil {
+		t.Fatal("Reload returned a nil server")
+	}
+	if next.cfg.ListenAddr == oldListen {
+		t.Errorf("new server still on %q, expected reloaded ListenAddr", oldListen)
+	}
+	if next.cfg.StoragePath != storage {
+		t.Errorf("new server storage = %q, want %q", next.cfg.StoragePath, storage)
+	}
+	if s.cfg.ListenAddr != oldListen {
+		t.Errorf("current server mutated despite reload: %q", s.cfg.ListenAddr)
+	}
+}
+
+func TestReloadKeepsCurrentServerOnBrokenConfig(t *testing.T) {
+	s, _ := newTestServer(t)
+	oldListen := s.cfg.ListenAddr
+
+	cfgPath := filepath.Join(t.TempDir(), "config.yml")
+	// OIDC enabled but no issuer/client_id must fail NewServer validation.
+	cfgYAML := "listen_addr: 127.0.0.1:19092\noidc:\n  enabled: true\n"
+	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	next, err := s.Reload(cfgPath)
+	if err == nil {
+		t.Fatal("expected Reload to fail on invalid OIDC configuration")
+	}
+	if next != nil {
+		t.Fatal("Reload returned a server for an invalid config")
+	}
+	if s.cfg.ListenAddr != oldListen {
+		t.Errorf("current server was mutated by a failed reload: %q", s.cfg.ListenAddr)
+	}
+}
+
+func TestReloadFailsOnMissingConfigFile(t *testing.T) {
+	s, _ := newTestServer(t)
+	if _, err := s.Reload(filepath.Join(t.TempDir(), "does-not-exist.yml")); err == nil {
+		t.Fatal("expected Reload to fail for a missing config file")
+	}
+}
+
 func TestGenerateRoleIDStable(t *testing.T) {
 	a := generateRoleID("geerlingguy.nginx")
 	b := generateRoleID("geerlingguy.nginx")

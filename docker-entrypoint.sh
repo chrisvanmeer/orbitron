@@ -25,6 +25,21 @@ set -eu
 : "${ORBITRON_AUTO_TOKEN:=true}"
 : "${ORBITRON_CONFIG_FILE:=/etc/orbitron/config.yml}"
 
+# Optional OpenID Connect (SSO) authentication for the web dashboard. When
+# enabled the /ui login page gains a "Sign in with SSO" button in addition to
+# the regular access-token login.
+: "${ORBITRON_OIDC_ENABLED:=false}"
+: "${ORBITRON_OIDC_ISSUER:=}"
+: "${ORBITRON_OIDC_CLIENT_ID:=}"
+: "${ORBITRON_OIDC_CLIENT_SECRET:=}"
+: "${ORBITRON_OIDC_SESSION_TTL_HOURS:=8}"
+: "${ORBITRON_OIDC_REDIRECT_URI:=}"
+# Comma-separated list of Keycloak group names; only members of at least one
+# listed group may log in. Leave empty to admit every verified SSO user. The ID
+# token must carry a "groups" claim (Keycloak: add the "groups" client scope /
+# a "Group Membership" mapper with "Add to ID token: ON").
+: "${ORBITRON_OIDC_ALLOWED_GROUPS:=}"
+
 CONF_DIR="$(dirname "${ORBITRON_CONFIG_FILE}")"
 STORAGE_DIR="${ORBITRON_STORAGE_PATH}"
 TOKENS_DIR="$(dirname "${ORBITRON_TOKENS_FILE}")"
@@ -45,6 +60,27 @@ http_proxy: "${ORBITRON_HTTP_PROXY}"
 https_proxy: "${ORBITRON_HTTPS_PROXY}"
 no_proxy: "${ORBITRON_NO_PROXY}"
 EOF
+
+# Append the optional OIDC block only when SSO is enabled so a disabled
+# configuration stays deterministic.
+if [ "${ORBITRON_OIDC_ENABLED}" = "true" ]; then
+    # Render the optional group filter as a YAML inline list from the
+    # comma-separated env var.
+    ALLOWED_GROUPS_YAML=
+    if [ -n "${ORBITRON_OIDC_ALLOWED_GROUPS}" ]; then
+        ALLOWED_GROUPS_YAML="  allowed_groups: [${ORBITRON_OIDC_ALLOWED_GROUPS}]"
+    fi
+    cat >> "${ORBITRON_CONFIG_FILE}" <<EOF
+oidc:
+  enabled: true
+  issuer: "${ORBITRON_OIDC_ISSUER}"
+  client_id: "${ORBITRON_OIDC_CLIENT_ID}"
+  client_secret: "${ORBITRON_OIDC_CLIENT_SECRET}"
+  session_ttl_hours: ${ORBITRON_OIDC_SESSION_TTL_HOURS}
+  redirect_uri: "${ORBITRON_OIDC_REDIRECT_URI}"
+${ALLOWED_GROUPS_YAML}
+EOF
+fi
 chown root:orbitron "${ORBITRON_CONFIG_FILE}"
 chmod 0640 "${ORBITRON_CONFIG_FILE}"
 

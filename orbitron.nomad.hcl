@@ -123,6 +123,22 @@ job "orbitron" {
         # ORBITRON_HTTP_PROXY  = "http://proxy.internal:3128"
         # ORBITRON_HTTPS_PROXY = "http://proxy.internal:3128"
         # ORBITRON_NO_PROXY    = "localhost,127.0.0.1,10.0.0.0/8"
+        # Optional SSO (OIDC / Keycloak) authentication for the web dashboard.
+        # When enabled, the /ui login page additionally offers "SSO Login"
+        # next to the regular access-token login. Keep the client secret in
+        # Nomad Variables or Vault (see Option A/B below) rather than inline.
+        # ORBITRON_OIDC_ENABLED        = "true"
+        # ORBITRON_OIDC_ISSUER         = "https://keycloak.example.org/realms/orbitron"
+        # ORBITRON_OIDC_CLIENT_ID      = "orbitron"
+        # ORBITRON_OIDC_CLIENT_SECRET  = "<client secret from Keycloak>"
+        # ORBITRON_OIDC_SESSION_TTL_HOURS = "8"
+        # Leave empty to auto-derive the redirect URI from the request as
+        # <scheme>://<host>/ui/oidc/callback; when set explicitly it must match
+        # a Keycloak-registered redirect URI.
+        # ORBITRON_OIDC_REDIRECT_URI  = ""
+        # Optionally restrict login to members of these Keycloak groups
+        # (comma-separated; requires the ID token "groups" claim, see README).
+        # ORBITRON_OIDC_ALLOWED_GROUPS = "orbitron-admins,orbitron-ops"
       }
 
       # --- Option A: Nomad Variables (default: token auto-generated) ----------

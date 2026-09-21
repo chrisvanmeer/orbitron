@@ -19,21 +19,53 @@ import (
 	"orbitron/internal/build"
 	"orbitron/internal/config"
 	"orbitron/internal/logger"
+	"orbitron/internal/oidc"
 )
+
+// OIDCSessionCookie is the cookie name backing browser sessions established
+// via the OIDC (SSO) login flow. The same value satisfies the API
+// authenticateRequest, mirroring how the token cookie leaks into the API.
+const OIDCSessionCookie = "orbitron_oidc"
+
+// pendingAuthLoginTTL bounds how long an initiated SSO hand-off may take
+// before its state/nonce/PKCE values are discarded.
+const pendingAuthLoginTTL = 5 * time.Minute
 
 type sizeEntry struct {
 	size int64
 	ts   time.Time
 }
 
+// pendingAuth links an in-flight OIDC hand-off's state value to the PKCE and
+// nonce material required to complete it. Entries expire after 5 minutes.
+type pendingAuth struct {
+	params  *oidc.AuthParams
+	expires time.Time
+}
+
 type Dashboard struct {
 	cfg       *config.Config
 	sizeMu    sync.Mutex
 	sizeCache map[string]sizeEntry
+
+	oidc     *oidc.Client
+	sessions *auth.SessionManager
+
+	puMu    sync.Mutex
+	pending map[string]pendingAuth
 }
 
-func NewDashboard(cfg *config.Config) *Dashboard {
-	return &Dashboard{cfg: cfg, sizeCache: make(map[string]sizeEntry)}
+// NewDashboard wires the dashboard to the daemon configuration and, when OIDC
+// is enabled, to the SSO client and session store. Both may be nil when SSO is
+// disabled, in which case only token-based login is offered.
+func NewDashboard(cfg *config.Config, oc *oidc.Client, sessions *auth.SessionManager) *Dashboard {
+	return &Dashboard{
+		cfg:       cfg,
+		sizeCache: make(map[string]sizeEntry),
+		oidc:      oc,
+		sessions:  sessions,
+		pending:   make(map[string]pendingAuth),
+	}
 }
 
 // Register attaches all UI endpoints to the mux (without global API auth wrapper)
@@ -49,6 +81,10 @@ func (d *Dashboard) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/ui/login", d.handleLogin)
 	mux.HandleFunc("/ui/logout", d.handleLogout)
 
+	// OIDC (SSO) login flow
+	mux.HandleFunc("/ui/oidc/start", d.handleOIDCStart)
+	mux.HandleFunc("/ui/oidc/callback", d.handleOIDCCallback)
+
 	// Protected UI routes
 	mux.HandleFunc("/ui", d.requireAuth(d.handleIndex))
 	mux.HandleFunc("/ui/storage", d.requireAuth(d.handleStorage))
@@ -60,27 +96,30 @@ func (d *Dashboard) Register(mux *http.ServeMux) {
 
 func (d *Dashboard) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := ""
+		authenticated := false
 		if cookie, err := r.Cookie("orbitron_token"); err == nil {
-			token = cookie.Value
-		}
-
-		valid := false
-		if token != "" {
 			if store, err := auth.LoadTokens(d.cfg.TokensFile); err == nil {
-				if store.Valid(token) {
-					valid = true
+				if store.Valid(cookie.Value) {
+					authenticated = true
 				}
 			}
 		}
 
-		if !valid {
+		if !authenticated && d.sessions != nil {
+			if cookie, err := r.Cookie(OIDCSessionCookie); err == nil {
+				if d.sessions.Valid(cookie.Value) {
+					authenticated = true
+				}
+			}
+		}
+
+		if !authenticated {
 			if r.Header.Get("HX-Request") == "true" {
 				w.Header().Set("HX-Redirect", "/ui")
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			d.renderLogin(w, false)
+			d.renderLogin(w, false, "")
 			return
 		}
 
@@ -90,6 +129,10 @@ func (d *Dashboard) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 func (d *Dashboard) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
+		if r.URL.Query().Get("error") == "oidc" {
+			d.renderLogin(w, true, "[ SSO ACCESS DENIED ]")
+			return
+		}
 		http.Redirect(w, r, "/ui", http.StatusSeeOther)
 		return
 	}
@@ -103,13 +146,8 @@ func (d *Dashboard) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	clientIP := r.Header.Get("X-Forwarded-For")
-	if clientIP == "" {
-		clientIP = r.RemoteAddr
-	}
-
 	if valid {
-		logger.Info("Web UI session established (from %s)", clientIP)
+		logger.Info("Web UI session established (from %s)", clientIP(r))
 		http.SetCookie(w, &http.Cookie{
 			Name:     "orbitron_token",
 			Value:    token,
@@ -122,16 +160,207 @@ func (d *Dashboard) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Warn("Web UI authentication failed (from %s)", clientIP)
-	d.renderLogin(w, true)
+	logger.Warn("Web UI authentication failed (from %s)", clientIP(r))
+	d.renderLogin(w, true, "")
+}
+
+// handleOIDCStart begins the OpenID Connect authorization-code flow: it
+// generates fresh state/nonce/PKCE values, remembers them briefly, and
+// redirects the browser to the IDP's authorization endpoint.
+func (d *Dashboard) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
+	if d.oidc == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	redirectURI := d.oidcRedirectURI(r)
+	params, err := oidc.NewAuthParams(redirectURI)
+	if err != nil {
+		logger.Error("OIDC: failed to generate auth params: %v", err)
+		http.Error(w, "Failed to start SSO login", http.StatusInternalServerError)
+		return
+	}
+
+	// Sweep expired hand-offs before storing the new one so abandoned logins
+	// cannot accumulate in memory.
+	now := time.Now()
+	d.puMu.Lock()
+	for state, p := range d.pending {
+		if now.After(p.expires) {
+			delete(d.pending, state)
+		}
+	}
+	d.pending[params.State] = pendingAuth{params: params, expires: now.Add(pendingAuthLoginTTL)}
+	d.puMu.Unlock()
+
+	authURL, err := d.oidc.AuthURL(redirectURI, params.State, params.Nonce, params.CodeVerifier)
+	if err != nil {
+		logger.Error("OIDC: failed to build authorization URL: %v", err)
+		d.puMu.Lock()
+		delete(d.pending, params.State)
+		d.puMu.Unlock()
+		http.Error(w, "Failed to contact identity provider", http.StatusBadGateway)
+		return
+	}
+
+	logger.Info("Web UI OIDC login initiated (from %s)", clientIP(r))
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+// handleOIDCCallback receives the IDP redirect, exchanges the authorization
+// code for tokens, verifies the ID token and opens a dashboard session.
+func (d *Dashboard) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	if d.oidc == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	query := r.URL.Query()
+	state := query.Get("state")
+	code := query.Get("code")
+
+	if errDesc := query.Get("error"); errDesc != "" {
+		logger.Warn("OIDC: identity provider denied authorization: %s", errDesc)
+		http.Redirect(w, r, "/ui/login?error=oidc", http.StatusSeeOther)
+		return
+	}
+
+	d.puMu.Lock()
+	pending, ok := d.pending[state]
+	if ok {
+		delete(d.pending, state)
+	}
+	d.puMu.Unlock()
+
+	if !ok || time.Now().After(pending.expires) {
+		logger.Warn("OIDC: unknown or expired state from %s", clientIP(r))
+		http.Redirect(w, r, "/ui/login?error=oidc", http.StatusSeeOther)
+		return
+	}
+
+	claims, err := d.oidc.ExchangeCode(code, pending.params)
+	if err != nil {
+		logger.Warn("OIDC: token exchange/verification failed: %v", err)
+		http.Redirect(w, r, "/ui/login?error=oidc", http.StatusSeeOther)
+		return
+	}
+
+	if !d.oidcAuthorized(claims) {
+		logger.Warn("OIDC: user %s (groups %q) is not a member of an allowed group; denying access", identityFor(claims), claims.Groups)
+		http.Redirect(w, r, "/ui/login?error=oidc", http.StatusSeeOther)
+		return
+	}
+
+	session, err := d.sessions.Create()
+	if err != nil {
+		logger.Error("OIDC: failed to create session: %v", err)
+		http.Redirect(w, r, "/ui/login?error=oidc", http.StatusSeeOther)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     OIDCSessionCookie,
+		Value:    session,
+		Path:     "/ui",
+		MaxAge:   int(d.cfg.OIDC.SessionTTL().Seconds()),
+		HttpOnly: true,
+		Secure:   r.URL.Scheme == "https" || r.Header.Get("X-Forwarded-Proto") == "https",
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	logger.Info("Web UI OIDC session established (user=%s from %s)", identityFor(claims), clientIP(r))
+	http.Redirect(w, r, "/ui", http.StatusSeeOther)
+}
+
+// oidcAuthorized applies the optional allowed_groups access filter. When no
+// groups are configured every verified SSO user is admitted; otherwise the
+// user must be a member of at least one allowed group. The check fails closed
+// when the ID token carries no groups claim at all.
+func (d *Dashboard) oidcAuthorized(claims *oidc.Claims) bool {
+	allowed := d.cfg.OIDC.AllowedGroups
+	if len(allowed) == 0 {
+		return true
+	}
+	for _, want := range allowed {
+		for _, g := range claims.Groups {
+			if groupMatches(g, want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// groupMatches compares a group claim value against an allowed group name.
+// Keycloak's "Group Membership" mapper emits full group paths by default
+// (e.g. "/admins" or "/orbitron/admins"), so a claim matches when it is
+// exactly the allowed name, when they differ only by a leading slash, or when
+// the last path segment of the claim equals the allowed name.
+func groupMatches(claim, allowed string) bool {
+	if claim == allowed {
+		return true
+	}
+	trimmed := strings.TrimPrefix(claim, "/")
+	if trimmed == allowed {
+		return true
+	}
+	if strings.HasPrefix(allowed, "/") {
+		allowed = strings.TrimPrefix(allowed, "/")
+		if claim == allowed {
+			return true
+		}
+	}
+	if i := strings.LastIndex(trimmed, "/"); i >= 0 && trimmed[i+1:] == allowed {
+		return true
+	}
+	return false
+}
+
+// identityFor picks a human-readable principal label from the ID token claims.
+func identityFor(claims *oidc.Claims) string {
+	switch {
+	case claims.Email != "":
+		return claims.Email
+	case claims.PreferredUsername != "":
+		return claims.PreferredUsername
+	default:
+		return claims.Subject
+	}
+}
+
+// oidcRedirectURI returns the callback URL advertised to the IDP. A configured
+// redirect_uri wins; otherwise it is derived from the incoming request,
+// honoring X-Forwarded-Proto and direct TLS so the value matches what Keycloak
+// has registered.
+func (d *Dashboard) oidcRedirectURI(r *http.Request) string {
+	if d.cfg.OIDC.RedirectURI != "" {
+		return d.cfg.OIDC.RedirectURI
+	}
+	scheme := "http"
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	} else if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + "/ui/oidc/callback"
+}
+
+func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		return ip
+	}
+	return r.RemoteAddr
 }
 
 func (d *Dashboard) handleLogout(w http.ResponseWriter, r *http.Request) {
-	clientIP := r.Header.Get("X-Forwarded-For")
-	if clientIP == "" {
-		clientIP = r.RemoteAddr
+	logger.Info("Web UI session terminated (from %s)", clientIP(r))
+
+	// Revoke an OIDC session if the user came in through SSO.
+	if d.sessions != nil {
+		if cookie, err := r.Cookie(OIDCSessionCookie); err == nil {
+			d.sessions.Revoke(cookie.Value)
+		}
 	}
-	logger.Info("Web UI session terminated (from %s)", clientIP)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "orbitron_token",
@@ -141,17 +370,41 @@ func (d *Dashboard) handleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     OIDCSessionCookie,
+		Value:    "",
+		Path:     "/ui",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	http.Redirect(w, r, "/ui", http.StatusSeeOther)
 }
 
-func (d *Dashboard) renderLogin(w http.ResponseWriter, hasError bool) {
+func (d *Dashboard) renderLogin(w http.ResponseWriter, hasError bool, errorText string) {
 	display := "none"
 	if hasError {
 		display = "block"
 	}
+	if errorText == "" {
+		errorText = "[ ACCESS DENIED: INVALID TOKEN ]"
+	}
+
+	oidcSection := ""
+	tokenLabel := "Establish Link"
+	if d.cfg.OIDC.EnabledAndConfigured() {
+		tokenLabel = "Authenticate with Token"
+		oidcSection = `<div class="or-divider"><span>OR</span></div>
+        <a class="oidc-btn" href="/ui/oidc/start">SSO Login</a>`
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	html := strings.Replace(loginTemplate, "{{DISPLAY}}", display, 1)
-	_, _ = w.Write([]byte(html))
+	htmlOut := loginTemplate
+	htmlOut = strings.ReplaceAll(htmlOut, "{{DISPLAY}}", display)
+	htmlOut = strings.ReplaceAll(htmlOut, "{{ERROR_TEXT}}", errorText)
+	htmlOut = strings.ReplaceAll(htmlOut, "{{OIDC_SECTION}}", oidcSection)
+	htmlOut = strings.ReplaceAll(htmlOut, "{{TOKEN_LABEL}}", tokenLabel)
+	_, _ = w.Write([]byte(htmlOut))
 }
 
 // --- HTML Templates ---
@@ -207,6 +460,18 @@ const loginTemplate = `
             transition: 0.3s; font-weight: bold; letter-spacing: 1px;
         }
         button:hover { background: var(--neon-yellow); color: #000; box-shadow: 0 0 10px var(--neon-yellow); }
+        .oidc-btn {
+            display: inline-block; background: transparent; color: var(--neon-pink);
+            border: 1px solid var(--neon-pink); padding: 12px 25px; margin-top: 12px;
+            cursor: pointer; font-family: inherit; text-transform: uppercase;
+            transition: 0.3s; font-weight: bold; letter-spacing: 1px; text-decoration: none;
+        }
+        .oidc-btn:hover { background: var(--neon-pink); color: #000; box-shadow: 0 0 10px var(--neon-pink); }
+        .or-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 2px; color: #4a5c66; }
+        .or-divider::before, .or-divider::after {
+            content: ''; flex: 1; height: 1px; background: #4a5c66;
+        }
+        .or-divider span { font-size: 0.8em; letter-spacing: 2px; }
         .error-msg { color: var(--neon-pink); font-size: 0.9em; margin-bottom: 10px; display: {{DISPLAY}}; font-weight: bold; }
     </style>
 </head>
@@ -247,12 +512,13 @@ const loginTemplate = `
             <circle cx="0" cy="0" r="6" fill="#090A0F" />
         </svg>
         <h1>ORBITRON</h1>
-        <div class="error-msg">[ ACCESS DENIED: INVALID TOKEN ]</div>
+        <div class="error-msg">{{ERROR_TEXT}}</div>
         <form method="POST" action="/ui/login">
             <input type="password" name="token" placeholder="ENTER ACCESS TOKEN" required autofocus>
             <br>
-            <button type="submit">Establish Link</button>
+            <button type="submit">{{TOKEN_LABEL}}</button>
         </form>
+        {{OIDC_SECTION}}
     </div>
 </body>
 </html>

@@ -58,8 +58,10 @@ Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real
   into a single row (version count, most recent access, and total disk usage) that unfolds on click to reveal every
   version with its own **LAST ACCESS** date. The matrix auto-refreshes every 10 seconds and keeps your sort order,
   search text, and expanded groups intact across refreshes.
-* **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only 8-hour cookie session using any
-  valid administrative token, gated behind an Orbitron SVG logo.
+* **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only session cookie using any
+  valid administrative token, gated behind an Orbitron SVG logo — or an optional **SSO (OIDC) sign-in**
+  through an external identity provider such as Keycloak (see
+  [SSO / OIDC (Keycloak)](#sso-oidc-keycloak) below).
 * **Tail-F Live Log Drawer**: Bottom sliding drawer (`▲ LOG STREAM`) that streams the tail of
   `/var/log/orbitron/orbitron.log` like `tail -f` — it stays pinned to the newest lines on every refresh, only
   releasing the pin when you scroll up to read history. Polls every 5 seconds.
@@ -102,7 +104,15 @@ sudo ./bin/orbitron --install
 sudo systemctl status orbitron
 sudo systemctl restart orbitron
 sudo systemctl stop orbitron
+sudo systemctl reload orbitron   # re-read config.yml hot, no downtime
 ```
+
+`systemctl reload` sends the daemon a SIGHUP: it re-reads `/etc/orbitron/config.yml`,
+re-validates it (including OIDC discovery when enabled), reopens the log file and
+rebuilds the HTTP server on the same address. If the new configuration fails to
+load or validate, the currently running daemon is left untouched and the reload
+logs the error. There is a brief bind gap while the old listener is drained and
+the new one starts.
 
 ### Full Uninstallation
 
@@ -173,6 +183,26 @@ token_ttl_days: 0
 http_proxy: ""
 https_proxy: ""
 no_proxy: ""
+
+# Optional SSO (OpenID Connect) authentication for the web dashboard, e.g.
+# against Keycloak. When enabled the /ui login page gains a "Sign in with SSO"
+# button next to the regular access-token login. It is purely an
+# authentication gate: an SSO session opens the dashboard exactly like a
+# valid admin token would. See "SSO / OIDC (Keycloak)" below.
+oidc:
+  enabled: false
+  issuer: ""                # full Keycloak realm URL, e.g.
+                            #   https://keycloak.example.org/realms/orbitron
+  client_id: ""
+  client_secret: ""
+  # Dashboard session lifetime in hours (0 = 8). In-memory only; resets on
+  # daemon restart.
+  session_ttl_hours: 8
+  # Optional explicit callback URL advertised to the IDP. Leave empty to
+  # auto-derive https(s)://<host>/ui/oidc/callback from the request (honoring
+  # X-Forwarded-Proto / TLS). Must exactly match a Keycloak-registered
+  # redirect URI when set.
+  redirect_uri: ""
 ```
 
 ### Forward Proxy (Squid & co.)
@@ -724,6 +754,95 @@ server {
 
 ---
 
+## SSO / OIDC (Keycloak)
+
+Orbitron can authenticate web-dashboard users against an external OpenID Connect
+identity provider (e.g. **Keycloak**) instead of — or alongside — the
+administrative Bearer token. It is purely an authentication gate: a successful
+SSO login opens the dashboard exactly like a valid token would (the UI stays
+read-only; there is no per-user authorization).
+
+### Keycloak-side setup
+
+1. **Create a realm** (or reuse one), e.g. `orbitron`. The realm URL is the
+   `issuer`: `https://<keycloak>/realms/orbitron`.
+2. **Register a client**: *Clients → Create client*.
+   - **Client type**: `OpenID Connect`
+   - **Client ID**: any name, e.g. `orbitron` (this is `client_id`)
+   - **Client authentication**: **ON** (this is required — Orbitron uses the
+     confidential `client_secret`, not just PKCE)
+   - **Valid redirect URIs**: exactly
+     ```
+     https://<your-orbitron-host>/ui/oidc/callback
+     ```
+     If you do not set `oidc.redirect_uri` in the daemon config, Orbitron
+     derives this same URL from the incoming request (honoring
+     `X-Forwarded-Proto` and TLS), so it must match what you registered here —
+     including the port when you publish on a non-standard one.
+   - **Web origins**: leave empty (or `+`). The login flow is a server-side
+     redirect, not a CORS flow, so this is not needed.
+3. **Copy the client secret**: *Clients → orbitron → Credentials* →
+   **Client secret**. This goes into `oidc.client_secret`.
+
+4. **(Optional) restrict login to a group.** By default every verified SSO user
+   can log in. To admit only members of one or more groups, make the ID token
+   carry a `groups` claim and set `oidc.allowed_groups` (see below):
+   - *Clients → orbitron → Client scopes → Add client scope →* select the
+     built-in **`groups`** scope, or create a **Group Membership** protocol
+     mapper with *Token Claim Name* `groups` and *Add to ID token* **ON**.
+   - Create the group (*Groups → Create group*, e.g. `orbitron-admins`) and
+     assign users to it.
+   The "Group Membership" mapper emits **full group paths** by default (`/admins`,
+   `/orbitron/admins`). Orbitron matches on the exact name, on a leading-slash
+   difference, or on the last path segment, so plain names (`orbitron-admins`)
+   and full paths both work — with the built-in `groups` scope only plain names
+   are emitted. Use *Client scopes → Evaluate* to inspect the effective
+   `groups` claim for a user before troubleshooting.
+
+### Orbitron-side configuration
+
+```yaml
+oidc:
+  enabled: true
+  issuer: "https://<keycloak>/realms/orbitron"
+  client_id: "orbitron"
+  client_secret: "<client-secret-from-keycloak>"
+  session_ttl_hours: 8
+  # redirect_uri: "https://orbitron.example.org/ui/oidc/callback"  # optional
+  # Restrict access to members of these Keycloak groups. Empty = everyone with
+  # a verified Keycloak account may log in. Missing groups claim = denied.
+  allowed_groups: ["orbitron-admins", "orbitron-ops"]
+```
+
+After a restart (or `systemctl reload orbitron`, which re-reads the config
+hot), the `/ui` login page offers **SSO Login** (neon-pink button,
+beside the renamed **Authenticate with Token** button). The first sign-in
+fails fast if the issuer is unreachable or the client secret is wrong — check
+the daemon log for the exact reason.
+
+### How it works (implementation notes)
+
+* Authorization-code flow with **PKCE (S256)** and the confidential client
+  secret; the ID token is verified against the issuer's **JWKS** (RS256/ES256,
+  with key rotation handled by re-fetching on unknown key IDs) by checking
+  issuer, audience, expiry and the per-login `nonce`.
+* State/CSRF and replay protection: each hand-off binds a random `state`,
+  `nonce` and PKCE verifier that expire after five minutes.
+* SSO sessions are **in-memory only** — they do not create or touch
+  `tokens.json`, vanish on daemon restart, and are revoked on **DISCONNECT**.
+* The SSO session cookie satisfies API authentication the same way the token
+  cookie does, keeping the dashboard's own polling/API calls working.
+
+### Keycloak behind the same reverse proxy
+
+If Keycloak itself is only reachable internally (e.g. `http://kc.internal:8080`),
+use that address as `issuer`. Browsers never call the issuer directly for the
+login redirect — they are sent to the `authorization_endpoint` advertised at
+that issuer's `/.well-known/openid-configuration`, so users must be able to
+reach whichever host that endpoint points at.
+
+---
+
 ## Docker & Docker Compose
 
 Orbitron ships an official container image published to GHCR on every release
@@ -777,6 +896,13 @@ galaxy_server = http://localhost:8080
 | `ORBITRON_HTTPS_PROXY`       | *empty*                  | Forward proxy for `https://` outbound requests.                  |
 | `ORBITRON_NO_PROXY`          | *empty*                  | Comma-separated proxy exclusions.                                |
 | `ORBITRON_AUTO_TOKEN`        | `true`                   | Generate an admin token on first start if none exists.           |
+| `ORBITRON_OIDC_ENABLED`      | `false`                  | Enable SSO (OIDC) login for the web dashboard.                   |
+| `ORBITRON_OIDC_ISSUER`       | *empty*                  | Full Keycloak realm URL (`https://kc/realms/<realm>`).           |
+| `ORBITRON_OIDC_CLIENT_ID`    | *empty*                  | Keycloak confidential client id.                                 |
+| `ORBITRON_OIDC_CLIENT_SECRET`| *empty*                  | Keycloak client secret.                                          |
+| `ORBITRON_OIDC_SESSION_TTL_HOURS` | `8`                 | Dashboard session lifetime (`0` = 8h).                           |
+| `ORBITRON_OIDC_REDIRECT_URI` | *empty*                  | Explicit callback URI; empty auto-derives `<scheme>://<host>/ui/oidc/callback`. |
+| `ORBITRON_OIDC_ALLOWED_GROUPS` | *empty*                | Comma-separated Keycloak groups whose members may log in (empty = unrestricted). |
 
 ### Persistence
 
