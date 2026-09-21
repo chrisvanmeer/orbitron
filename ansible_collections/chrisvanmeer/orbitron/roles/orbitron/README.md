@@ -29,6 +29,9 @@ Galaxy mirror daemon on a Linux host with `systemd`.
 | `orbitron_http_proxy`        | `""`                             | Forward proxy for outbound `http://` (e.g. Squid).       |
 | `orbitron_https_proxy`       | `""`                             | Forward proxy for outbound `https://` traffic.           |
 | `orbitron_no_proxy`          | `""`                             | Comma-separated proxy exclusions (host, domain, CIDR).   |
+| `orbitron_tls_ca_file`       | `""`                             | Local PEM CA bundle to deploy ("" = skip).               |
+| `orbitron_tls_ca_path`       | `/etc/orbitron/ca-bundle.crt`    | Where the CA bundle is placed on the daemon host.        |
+| `orbitron_tls_insecure_skip_tls_verify` | `false`               | Skip outbound TLS verification (like `curl -k`).         |
 | `orbitron_oidc_enabled`      | `false`                          | Enable SSO (OIDC) login on the web dashboard.            |
 | `orbitron_oidc_issuer`       | `""`                             | Full Keycloak realm URL, e.g. `https://kc/realms/x`.     |
 | `orbitron_oidc_client_id`    | `""`                             | Keycloak confidential client id.                         |
@@ -51,6 +54,17 @@ Set `orbitron_prune_days` to a value above `0` to prune cached versions that
 have not been served to a client within that retention window, right after the
 daemon is installed. Pruning runs as a dry run by default (it only previews the
 candidate versions); set `orbitron_prune_dry_run: false` to delete them for real.
+
+## TLS for outbound HTTPS (private CAs)
+
+When Orbitron has to reach internal services signed by a private CA (an
+internal Galaxy mirror, a self-hosted git server, Keycloak behind a corporate
+PKI), set `orbitron_tls_ca_file` to a local PEM CA bundle path. The role copies
+it to `orbitron_tls_ca_path` on the daemon host and configures the `tls` block,
+which applies to Galaxy API calls and downloads, git HTTPS remotes and OIDC
+discovery alike. When the CA cannot be pinned, set
+`orbitron_tls_insecure_skip_tls_verify: true` to disable outbound TLS
+verification entirely (the rough equivalent of `curl -k`).
 
 ## SSO (OIDC / Keycloak)
 
@@ -97,6 +111,9 @@ exact steps.
         orbitron_http_proxy: http://squid.internal:3128
         orbitron_https_proxy: http://squid.internal:3128
         orbitron_no_proxy: "localhost,127.0.0.1,.internal"
+        # Trust an internal CA for outbound HTTPS (opt-in; only when needed):
+        # orbitron_tls_ca_file: ./keys/ca-bundle.pem
+        # orbitron_tls_insecure_skip_tls_verify: false
         # Prune versions not served within 60 days (dry-run preview by default).
         orbitron_prune_days: 60
         orbitron_prune_dry_run: true

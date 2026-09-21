@@ -1,6 +1,9 @@
 package config
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"os"
 	"time"
 
@@ -77,6 +80,85 @@ type Config struct {
 	NoProxy    string `yaml:"no_proxy"`
 	// OIDC optionally enables SSO login for the web dashboard.
 	OIDC OIDCConfig `yaml:"oidc"`
+	// TLS controls certificate verification for every outbound HTTPS
+	// connection: Galaxy API calls, collection downloads, git HTTPS remotes
+	// and OIDC discovery/token/JWKS fetching.
+	TLS TLSConfig `yaml:"tls"`
+}
+
+// TLSConfig is the outbound transport-security policy applied when Orbitron
+// must talk to services signed by a private or otherwise untrusted CA (an
+// internal Galaxy mirror, a self-hosted git server, Keycloak behind a
+// corporate PKI, ...).
+type TLSConfig struct {
+	// CAFile points to a PEM bundle whose certificates are added to the
+	// trusted roots for outbound HTTPS, alongside the system defaults. The
+	// file may contain multiple CA certificates.
+	CAFile string `yaml:"ca_file"`
+	// InsecureSkipVerify disables TLS certificate verification entirely for
+	// outbound HTTPS (the rough equivalent of curl -k or ansible-galaxy's
+	// SSL_NO_VERIFY). Prefer ca_file so the server identity is still checked;
+	// this flag exists as a blunt workaround for environments where the CA
+	// cannot be pinned.
+	InsecureSkipVerify bool `yaml:"insecure_skip_tls_verify"`
+}
+
+// On reports whether the TLS policy deviates from the system defaults.
+func (t TLSConfig) On() bool {
+	return t.CAFile != "" || t.InsecureSkipVerify
+}
+
+// roots returns the system certificate pool extended with the configured
+// CAFile bundle, or nil when no bundle is configured.
+func (t TLSConfig) roots() (*x509.CertPool, error) {
+	if t.CAFile == "" {
+		return nil, nil
+	}
+	pemBytes, err := os.ReadFile(t.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read tls.ca_file %s: %w", t.CAFile, err)
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		roots = x509.NewCertPool()
+	}
+	if !roots.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("tls.ca_file %s contains no usable PEM certificates", t.CAFile)
+	}
+	return roots, nil
+}
+
+// TLSClientConfig returns the tls.Config for outbound HTTPS connections, or
+// nil when no custom TLS policy is configured (system-default verification).
+func (t TLSConfig) TLSClientConfig() (*tls.Config, error) {
+	roots, err := t.roots()
+	if err != nil {
+		return nil, err
+	}
+	if roots == nil && !t.InsecureSkipVerify {
+		return nil, nil
+	}
+	return &tls.Config{
+		RootCAs:            roots,
+		InsecureSkipVerify: t.InsecureSkipVerify,
+	}, nil
+}
+
+// GitEnv returns environment variables that make git honor this TLS policy
+// for HTTPS remotes: GIT_SSL_CAINFO (custom CA bundle) and GIT_SSL_NO_VERIFY
+// (skip verification). It returns nil when no policy is configured.
+func (t TLSConfig) GitEnv() []string {
+	if !t.On() {
+		return nil
+	}
+	var env []string
+	if t.CAFile != "" {
+		env = append(env, "GIT_SSL_CAINFO="+t.CAFile)
+	}
+	if t.InsecureSkipVerify {
+		env = append(env, "GIT_SSL_NO_VERIFY=true")
+	}
+	return env
 }
 
 func GetDefaultConfigYML() string {
@@ -103,6 +185,22 @@ token_ttl_days: 0
 http_proxy: ""
 https_proxy: ""
 no_proxy: ""
+
+# Optional TLS policy for outbound HTTPS: Galaxy API calls, collection
+# downloads, git HTTPS remotes and OIDC discovery/token/JWKS fetching. Needed
+# when Orbitron talks to services signed by a private CA (an internal Galaxy
+# mirror, a self-hosted git server, Keycloak behind a corporate PKI, ...).
+#
+# Point tls.ca_file at a PEM bundle containing the CA certificate(s) that sign
+# those services (they are trusted in addition to the system roots):
+#   ca_file: "/etc/orbitron/ca-bundle.crt"
+#
+# Or, as a blunt workaround when the CA cannot be pinned, disable verification
+# entirely (like curl -k / ansible-galaxy's SSL_NO_VERIFY):
+#   insecure_skip_tls_verify: true
+tls:
+  ca_file: ""
+  insecure_skip_tls_verify: false
 
 # Optional OpenID Connect (SSO) authentication for the web dashboard, e.g.
 # against Keycloak. When enabled the /ui login page gains a "Sign in with SSO"

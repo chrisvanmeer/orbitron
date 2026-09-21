@@ -18,6 +18,7 @@ import (
 
 	yaml "gopkg.in/yaml.v3"
 
+	"orbitron/internal/config"
 	"orbitron/internal/logger"
 	ver "orbitron/internal/version"
 )
@@ -59,9 +60,10 @@ type Fetcher struct {
 	maxConcurrency int
 	tracker        *SyncTracker
 	proxy          ProxyConfig
+	tls            config.TLSConfig
 }
 
-func NewFetcher(storagePath string, maxConcurrency int, proxy ProxyConfig) *Fetcher {
+func NewFetcher(storagePath string, maxConcurrency int, proxy ProxyConfig, tls config.TLSConfig) *Fetcher {
 	manifestPath := filepath.Join(storagePath, "manifests")
 	collectionsPath := filepath.Join(storagePath, "collections")
 	rolesPath := filepath.Join(storagePath, "roles")
@@ -88,11 +90,18 @@ func NewFetcher(storagePath string, maxConcurrency int, proxy ProxyConfig) *Fetc
 		KeepAlive: 30 * time.Second,
 	}
 
+	tlsClientConfig, err := tls.TLSClientConfig()
+	if err != nil {
+		logger.Warn("Invalid TLS policy (%v); falling back to system-default certificate verification", err)
+		tlsClientConfig = nil
+	}
+
 	transport := &http.Transport{
 		Proxy:                 proxyFunc,
 		DialContext:           dialer.DialContext,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:       tlsClientConfig,
 	}
 
 	return &Fetcher{
@@ -101,6 +110,7 @@ func NewFetcher(storagePath string, maxConcurrency int, proxy ProxyConfig) *Fetc
 		maxConcurrency: maxConcurrency,
 		tracker:        NewSyncTracker(),
 		proxy:          proxy,
+		tls:            tls,
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   30 * time.Second,
@@ -266,6 +276,9 @@ func (f *Fetcher) gitEnv() []string {
 	}
 	if f.proxy.NoProxy != "" {
 		env = append(env, "no_proxy="+f.proxy.NoProxy, "NO_PROXY="+f.proxy.NoProxy)
+	}
+	if gitTLSPolicy := f.tls.GitEnv(); gitTLSPolicy != nil {
+		env = append(env, gitTLSPolicy...)
 	}
 	return env
 }

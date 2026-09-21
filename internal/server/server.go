@@ -49,7 +49,7 @@ func NewServer(cfg *config.Config) (srv *Server, err error) {
 			HTTPProxy:  cfg.HTTPProxy,
 			HTTPSProxy: cfg.HTTPSProxy,
 			NoProxy:    cfg.NoProxy,
-		}),
+		}, cfg.TLS),
 		rec:      access.New(cfg.StoragePath),
 		shaCache: make(map[string]shaEntry),
 		sessions: auth.NewSessionManager(cfg.OIDC.SessionTTL()),
@@ -59,7 +59,7 @@ func NewServer(cfg *config.Config) (srv *Server, err error) {
 		return nil, fmt.Errorf("oidc is enabled but issuer and/or client_id are not configured")
 	}
 	if cfg.OIDC.Enabled {
-		srv.oidc, err = oidc.NewClient(cfg.OIDC)
+		srv.oidc, err = oidc.NewClient(cfg.OIDC, cfg.TLS)
 		if err != nil {
 			return nil, err
 		}

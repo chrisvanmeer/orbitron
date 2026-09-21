@@ -7,9 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +34,12 @@ type fakeIDP struct {
 }
 
 func newFakeIDP(t *testing.T, clientID string) *fakeIDP {
+	return newFakeIDPServer(t, clientID, false)
+}
+
+// newFakeIDPServer builds the fake IDP on either a plain HTTP server or a
+// self-signed TLS server (tls true), used to exercise the outbound TLS policy.
+func newFakeIDPServer(t *testing.T, clientID string, tls bool) *fakeIDP {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -71,7 +80,11 @@ func newFakeIDP(t *testing.T, clientID string) *fakeIDP {
 		_ = json.NewEncoder(w).Encode(map[string]any{"id_token": tok})
 	})
 
-	f.server = httptest.NewServer(mux)
+	if tls {
+		f.server = httptest.NewTLSServer(mux)
+	} else {
+		f.server = httptest.NewServer(mux)
+	}
 	f.issuer = f.server.URL
 	return f
 }
@@ -134,7 +147,7 @@ func newTestClient(t *testing.T, idp *fakeIDP) *Client {
 		Issuer:       idp.issuer,
 		ClientID:     idp.clientID,
 		ClientSecret: "s3cret",
-	})
+	}, config.TLSConfig{})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -142,13 +155,13 @@ func newTestClient(t *testing.T, idp *fakeIDP) *Client {
 }
 
 func TestNewClientRejectsMissingIssuer(t *testing.T) {
-	if _, err := NewClient(config.OIDCConfig{Enabled: true}); err == nil {
+	if _, err := NewClient(config.OIDCConfig{Enabled: true}, config.TLSConfig{}); err == nil {
 		t.Fatal("expected error for empty issuer")
 	}
 }
 
 func TestNewClientRejectsMalformedIssuer(t *testing.T) {
-	if _, err := NewClient(config.OIDCConfig{Enabled: true, Issuer: "not a url"}); err == nil {
+	if _, err := NewClient(config.OIDCConfig{Enabled: true, Issuer: "not a url"}, config.TLSConfig{}); err == nil {
 		t.Fatal("expected error for malformed issuer")
 	}
 }
@@ -156,9 +169,33 @@ func TestNewClientRejectsMalformedIssuer(t *testing.T) {
 func TestNewClientRejectsUnreachableIssuer(t *testing.T) {
 	idp := newFakeIDP(t, "orbitron")
 	unreachable := strings.ReplaceAll(idp.issuer, "://", "://unreachable.")
-	_, err := NewClient(config.OIDCConfig{Enabled: true, Issuer: unreachable, ClientID: "orbitron"})
+	_, err := NewClient(config.OIDCConfig{Enabled: true, Issuer: unreachable, ClientID: "orbitron"}, config.TLSConfig{})
 	if err == nil {
 		t.Fatal("expected error for unreachable issuer")
+	}
+}
+
+func TestNewClientHonorsTLSPolicy(t *testing.T) {
+	idp := newFakeIDPServer(t, "orbitron", true)
+	defer idp.close()
+
+	// Without a TLS policy the self-signed IDP must be rejected.
+	if _, err := NewClient(config.OIDCConfig{Enabled: true, Issuer: idp.issuer, ClientID: "orbitron"}, config.TLSConfig{}); err == nil {
+		t.Fatal("expected TLS error for self-signed IDP without configured CA")
+	}
+
+	// Pinning the IDP certificate as a CA must make discovery succeed.
+	caFile := filepath.Join(t.TempDir(), "ca.crt")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: idp.server.Certificate().Raw})
+	if err := os.WriteFile(caFile, pemBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewClient(config.OIDCConfig{Enabled: true, Issuer: idp.issuer, ClientID: "orbitron"}, config.TLSConfig{CAFile: caFile})
+	if err != nil {
+		t.Fatalf("discovery against TLS IDP with pinned CA failed: %v", err)
+	}
+	if got := c.Issuer(); got != idp.issuer {
+		t.Fatalf("issuer mismatch: got %q want %q", got, idp.issuer)
 	}
 }
 

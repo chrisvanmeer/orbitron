@@ -9,6 +9,11 @@ token_ttl_days: {{ orbitron_token_ttl_days }}
 http_proxy: "{{ orbitron_http_proxy }}"
 https_proxy: "{{ orbitron_https_proxy }}"
 no_proxy: "{{ orbitron_no_proxy }}"
+{% if orbitron_tls_ca_file or orbitron_tls_insecure_skip_tls_verify %}
+tls:
+  ca_file: "{{ orbitron_tls_ca_path }}"
+  insecure_skip_tls_verify: {{ orbitron_tls_insecure_skip_tls_verify | lower }}
+{% endif %}
 {% if orbitron_oidc_enabled %}
 oidc:
   enabled: true

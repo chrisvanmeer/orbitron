@@ -3,6 +3,8 @@ package fetcher
 import (
 	"sync"
 	"testing"
+
+	"orbitron/internal/config"
 )
 
 func TestSyncTrackerBeginEndProducesHistory(t *testing.T) {
@@ -91,7 +93,7 @@ func TestSyncTrackerConcurrentAccess(t *testing.T) {
 }
 
 func TestProcessRolesReportsToTracker(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 4, ProxyConfig{})
+	f := NewFetcher(t.TempDir(), 4, ProxyConfig{}, config.TLSConfig{})
 
 	// Two galaxy-style roles. Both will fail to reach galaxy.ansible.com in
 	// tests, which is exactly what we want: the tracker must count done items

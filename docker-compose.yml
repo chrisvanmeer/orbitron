@@ -26,6 +26,14 @@ services:
       # - ORBITRON_HTTP_PROXY=http://proxy.internal:3128
       # - ORBITRON_HTTPS_PROXY=http://proxy.internal:3128
       # - ORBITRON_NO_PROXY=localhost,127.0.0.1,10.0.0.0/8
+      # Optional TLS policy for outbound HTTPS (Galaxy API/downloads, git
+      # HTTPS remotes, OIDC discovery) against internal services signed by a
+      # private CA. Mount the CA bundle into the container and point
+      # ORBITRON_TLS_CA_FILE at it; instead of pinning the CA you can disable
+      # verification with ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY=true
+      # (equivalent to curl -k).
+      # - ORBITRON_TLS_CA_FILE=/etc/orbitron/keys/ca-bundle.crt
+      # - ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY=false
       # Optional SSO (OIDC / Keycloak) authentication for the web dashboard.
       # When enabled, the /ui login page additionally offers "Sign in with SSO"
       # next to the regular access-token login.
@@ -42,6 +50,8 @@ services:
       # groups (comma-separated; requires the "groups" claim in the ID token,
       # see README). Leave empty to admit every verified SSO user.
       # - ORBITRON_OIDC_ALLOWED_GROUPS=orbitron-admins,orbitron-ops
+      # Example: mount a private CA bundle and trust it for outbound HTTPS.
+      # - ./keys/ca-bundle.crt:/etc/orbitron/keys/ca-bundle.crt:ro
       # Timezone used for container log timestamps.
       - TZ=Europe/Amsterdam
     volumes:

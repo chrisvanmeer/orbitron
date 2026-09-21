@@ -42,6 +42,17 @@ orbitron_http_proxy: ""
 orbitron_https_proxy: ""
 orbitron_no_proxy: ""
 
+# --- TLS policy for outbound HTTPS (ops / OIDC) ---------------------------
+# Used when Galaxy API calls, collection downloads, git HTTPS remotes or OIDC
+# discovery talk to internal services signed by a private CA. Set
+# orbitron_tls_ca_file to a local PEM CA bundle path that gets deployed to
+# orbitron_tls_ca_path; or bluntly disable verification with
+# orbitron_tls_insecure_skip_tls_verify (like curl -k / SSL_NO_VERIFY) when
+# the CA cannot be pinned.
+orbitron_tls_ca_file: ""         # source CA bundle to deploy ("" = skip)
+orbitron_tls_ca_path: /etc/orbitron/ca-bundle.crt
+orbitron_tls_insecure_skip_tls_verify: false
+
 # --- SSO (OIDC / Keycloak) authentication for the web dashboard -----------
 # When enabled, the /ui login page additionally offers "Sign in with SSO" next
 # to the regular access-token login. The issuer must be the full Keycloak realm

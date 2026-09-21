@@ -77,6 +77,18 @@ Access-based storage pruning is optional via `orbitron_prune_days` (retention
 window; `0` disables it) and `orbitron_prune_dry_run` (defaults to `true`, so
 only the candidates are previewed).
 
+#### TLS for outbound HTTPS
+
+When Orbitron must talk to services signed by a private CA (an internal Galaxy
+mirror, a self-hosted git server, Keycloak behind a corporate PKI), set
+`orbitron_tls_ca_file` to a local PEM CA bundle; the role deploys it to
+`orbitron_tls_ca_path` (default `/etc/orbitron/ca-bundle.crt`) and enables the
+`tls` block so Galaxy API calls and downloads, git HTTPS remotes and OIDC
+discovery trust it. If pinning the CA is impossible,
+`orbitron_tls_insecure_skip_tls_verify: true` disables outbound TLS
+verification entirely (the blunt equivalent of `curl -k`). See the main
+README's ["TLS & private CAs"](../../../README.md#tls--private-cas) section.
+
 #### SSO / OIDC (Keycloak)
 
 Optional SSO login for the web dashboard is configured through

@@ -150,6 +150,18 @@
         path: "{{ orbitron_stage_dir }}"
         state: absent
 
+- name: Deploy the configured TLS CA bundle
+  ansible.builtin.copy:
+    src: "{{ orbitron_tls_ca_file }}"
+    dest: "{{ orbitron_tls_ca_path }}"
+    owner: orbitron
+    group: orbitron
+    mode: "0644"
+  when:
+    - orbitron_state == "present"
+    - orbitron_tls_ca_file != ""
+  notify: Restart orbitron
+
 - name: Ensure the orbitron configuration is rendered
   ansible.builtin.template:
     src: config.yml.j2

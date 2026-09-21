@@ -3,6 +3,8 @@ package fetcher
 import (
 	"net/http"
 	"testing"
+
+	"orbitron/internal/config"
 )
 
 func TestParseNoProxyMatch(t *testing.T) {
@@ -143,7 +145,7 @@ func TestGitEnvExportsProxy(t *testing.T) {
 		HTTPProxy:  "http://squid.internal:3128",
 		HTTPSProxy: "http://squid.internal:3128",
 		NoProxy:    "127.0.0.1,.internal",
-	})
+	}, config.TLSConfig{})
 
 	env := f.gitEnv()
 	for _, want := range []string{

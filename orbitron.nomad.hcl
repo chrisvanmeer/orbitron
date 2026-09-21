@@ -123,6 +123,18 @@ job "orbitron" {
         # ORBITRON_HTTP_PROXY  = "http://proxy.internal:3128"
         # ORBITRON_HTTPS_PROXY = "http://proxy.internal:3128"
         # ORBITRON_NO_PROXY    = "localhost,127.0.0.1,10.0.0.0/8"
+        # Optional TLS policy for outbound HTTPS (Galaxy API/downloads, git
+        # HTTPS remotes, OIDC discovery) against internal services signed by a
+        # private CA. Mount the CA bundle and point ORBITRON_TLS_CA_FILE at it,
+        # or skip verification with ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY=true
+        # (like curl -k). Mount-friendly example using a runtime template:
+        #   template {
+        #     data        = "{{ file "/etc/orbitron/ca-bundle.crt" }}"
+        #     destination = "local/ca-bundle.crt"
+        #     change_mode = "restart"
+        #   }
+        # ORBITRON_TLS_CA_FILE              = "local/ca-bundle.crt"
+        # ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY = "false"
         # Optional SSO (OIDC / Keycloak) authentication for the web dashboard.
         # When enabled, the /ui login page additionally offers "SSO Login"
         # next to the regular access-token login. Keep the client secret in

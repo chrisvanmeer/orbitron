@@ -22,6 +22,12 @@ set -eu
 : "${ORBITRON_HTTP_PROXY:=}"
 : "${ORBITRON_HTTPS_PROXY:=}"
 : "${ORBITRON_NO_PROXY:=}"
+# Optional TLS policy for outbound HTTPS (Galaxy API/downloads, git HTTPS
+# remotes, OIDC discovery). ORBITRON_TLS_CA_FILE points at a PEM bundle that
+# signs internal services (mounted into the container); set
+# ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY=true to skip verification entirely.
+: "${ORBITRON_TLS_CA_FILE:=}"
+: "${ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY:=false}"
 : "${ORBITRON_AUTO_TOKEN:=true}"
 : "${ORBITRON_CONFIG_FILE:=/etc/orbitron/config.yml}"
 
@@ -60,6 +66,17 @@ http_proxy: "${ORBITRON_HTTP_PROXY}"
 https_proxy: "${ORBITRON_HTTPS_PROXY}"
 no_proxy: "${ORBITRON_NO_PROXY}"
 EOF
+
+# Append the TLS policy only when a CA bundle is configured or verification
+# is skipped, keeping the default configuration deterministic.
+if [ -n "${ORBITRON_TLS_CA_FILE}" ] || \
+    [ "${ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY}" = "true" ]; then
+    cat >> "${ORBITRON_CONFIG_FILE}" <<EOF
+tls:
+  ca_file: "${ORBITRON_TLS_CA_FILE}"
+  insecure_skip_tls_verify: ${ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY}
+EOF
+fi
 
 # Append the optional OIDC block only when SSO is enabled so a disabled
 # configuration stays deterministic.

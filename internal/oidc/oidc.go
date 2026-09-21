@@ -110,7 +110,7 @@ type DiscoveryDoc struct {
 // NewClient validates the OIDC configuration, performs discovery and fetches
 // the initial JWKS. A client with an unreachable issuer fails fast so a
 // misconfigured daemon never silently starts without SSO.
-func NewClient(cfg config.OIDCConfig) (*Client, error) {
+func NewClient(cfg config.OIDCConfig, tls config.TLSConfig) (*Client, error) {
 	if cfg.Issuer == "" {
 		return nil, errors.New("oidc: issuer is required when OIDC is enabled")
 	}
@@ -119,12 +119,24 @@ func NewClient(cfg config.OIDCConfig) (*Client, error) {
 		return nil, fmt.Errorf("oidc: invalid issuer URL %q: %w", cfg.Issuer, err)
 	}
 
+	tlsClientConfig, err := tls.TLSClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("oidc: invalid TLS policy: %w", err)
+	}
+	var transport http.RoundTripper = http.DefaultTransport
+	if tlsClientConfig != nil {
+		baseClone := http.DefaultTransport.(*http.Transport).Clone()
+		baseClone.TLSClientConfig = tlsClientConfig
+		transport = baseClone
+	}
+
 	c := &Client{
 		issuer:   issuer,
 		clientID: cfg.ClientID,
 		secret:   cfg.ClientSecret,
 		client: &http.Client{
-			Timeout: 15 * time.Second,
+			Transport: transport,
+			Timeout:   15 * time.Second,
 		},
 	}
 

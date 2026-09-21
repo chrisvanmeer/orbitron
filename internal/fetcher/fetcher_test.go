@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"orbitron/internal/config"
 )
 
 // buildTaggedBareRepo creates a bare git repository offline advertising the
@@ -63,7 +65,7 @@ func TestResolveGitTag(t *testing.T) {
 	vRepo := buildTaggedBareRepo(t, []string{"v1.0.0", "v1.0.1"})
 	plainRepo := buildTaggedBareRepo(t, []string{"3.3.0", "3.3.1"})
 
-	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{}, config.TLSConfig{})
 
 	tests := []struct {
 		repo    string
@@ -100,7 +102,7 @@ func TestResolveGitTag(t *testing.T) {
 
 func TestSyncGitRepoClonesResolvedTag(t *testing.T) {
 	repo := buildTaggedBareRepo(t, []string{"v1.0.1"})
-	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{}, config.TLSConfig{})
 
 	target := filepath.Join(f.storagePath, "roles", "chrisvanmeer.containerlab", "v1.0.1")
 	if err := f.SyncGitRepo(repo, "1.0.1", target); err != nil {
@@ -118,7 +120,7 @@ func TestSyncGitRepoClonesResolvedTag(t *testing.T) {
 
 func TestMirrorAllRoleVersionsSkipsMissingTags(t *testing.T) {
 	repo := buildTaggedBareRepo(t, []string{"v1.0.0", "v1.0.1"})
-	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{}, config.TLSConfig{})
 
 	published := []string{"v1.0.0", "9.9.9", "v1.0.1"}
 	if err := f.mirrorAllRoleVersions(repo, "chrisvanmeer.containerlab", published); err != nil {
@@ -206,7 +208,7 @@ func TestParseRequirements(t *testing.T) {
 
 func TestNewFetcherCreatesStorageTree(t *testing.T) {
 	dir := t.TempDir()
-	f := NewFetcher(dir, 0, ProxyConfig{})
+	f := NewFetcher(dir, 0, ProxyConfig{}, config.TLSConfig{})
 
 	if f.maxConcurrency != 4 {
 		t.Errorf("expected default maxConcurrency 4, got %d", f.maxConcurrency)
@@ -220,7 +222,7 @@ func TestNewFetcherCreatesStorageTree(t *testing.T) {
 }
 
 func TestSaveManifestDeduplicatesByContent(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{}, config.TLSConfig{})
 	data := []byte("roles:\n  - name: geerlingguy.nginx\n    version: 3.2.0\n")
 
 	for i := 0; i < 3; i++ {
@@ -275,7 +277,7 @@ func TestDirExistsNonEmpty(t *testing.T) {
 // TestSyncGitRepoSkipsExistingVersion proves the no-re-download guarantee
 // without needing git: a version directory that already exists is skipped.
 func TestSyncGitRepoSkipsExistingVersion(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{}, config.TLSConfig{})
 	target := filepath.Join(f.storagePath, "roles", "geerlingguy.nginx", "3.3.1")
 	if err := os.MkdirAll(target, 0750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -293,7 +295,7 @@ func TestSyncGitRepoSkipsExistingVersion(t *testing.T) {
 // for galaxy collections: an existing artifact file is trusted and never fetched
 // again, even with a fake galaxy host.
 func TestDownloadCollectionArtifactSkipsCached(t *testing.T) {
-	f := NewFetcher(t.TempDir(), 2, ProxyConfig{})
+	f := NewFetcher(t.TempDir(), 2, ProxyConfig{}, config.TLSConfig{})
 	targetDir := filepath.Join(f.storagePath, "collections", "community")
 	targetFile := filepath.Join(targetDir, "community-general-8.5.0.tar.gz")
 	if err := os.MkdirAll(targetDir, 0750); err != nil {

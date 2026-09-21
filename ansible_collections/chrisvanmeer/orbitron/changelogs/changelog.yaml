@@ -1,5 +1,37 @@
 ---
 releases:
+  1.7.0:
+    changes:
+      release_summary: |
+        Orbitron 1.7.0 adds an optional TLS policy for outbound HTTPS. When
+        the daemon talks to services signed by a private or self-signed CA (an
+        internal Galaxy mirror, a self-hosted git server, or Keycloak behind a
+        corporate PKI), the new ``tls`` config block lets it trust a custom CA
+        bundle (``tls.ca_file``) or bluntly skip verification
+        (``tls.insecure_skip_tls_verify``). The policy is applied uniformly to
+        Galaxy API calls, collection downloads, git HTTPS remotes and OIDC
+        discovery/token/JWKS fetching. The ``orbitron`` role renders the block
+        from the ``orbitron_tls_ca_file`` / ``orbitron_tls_ca_path`` /
+        ``orbitron_tls_insecure_skip_tls_verify`` variables (deploying the CA
+        bundle to the daemon host), and the container plumbing exposes the
+        ``ORBITRON_TLS_CA_FILE`` and ``ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY``
+        environment variables.
+      minor_features:
+        - >-
+          The daemon config gains an optional ``tls`` block
+          (``ca_file``, ``insecure_skip_tls_verify``). ``tls.ca_file`` points
+          at a PEM bundle trusted in addition to the system roots for outbound
+          HTTPS; ``tls.insecure_skip_tls_verify`` disables outbound TLS
+          verification entirely, the blunt equivalent of ``curl -k``. The
+          policy covers Galaxy API calls, collection downloads, git HTTPS
+          remotes (via ``GIT_SSL_CAINFO`` / ``GIT_SSL_NO_VERIFY``) and OIDC
+          discovery/token/JWKS fetching. A missing or invalid CA file is
+          rejected at daemon start.
+        - >-
+          The ``orbitron`` role gains ``orbitron_tls_ca_file`` to deploy a
+          local PEM CA bundle to ``orbitron_tls_ca_path`` on the daemon host,
+          rendered into the ``tls.ca_file`` config key, plus
+          ``orbitron_tls_insecure_skip_tls_verify`` for the matching flag.
   1.6.0:
     changes:
       release_summary: |

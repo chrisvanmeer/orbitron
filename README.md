@@ -184,6 +184,14 @@ http_proxy: ""
 https_proxy: ""
 no_proxy: ""
 
+# Optional TLS policy for outbound HTTPS (Galaxy API calls, collection
+# downloads, git HTTPS remotes and OIDC discovery/token/JWKS fetching). Needed
+# when Orbitron talks to services signed by a private CA. See "TLS & private
+# CAs" below.
+tls:
+  ca_file: ""                        # PEM bundle with the CA(s) that sign internal services
+  insecure_skip_tls_verify: false    # blunt workaround, like curl -k
+
 # Optional SSO (OpenID Connect) authentication for the web dashboard, e.g.
 # against Keycloak. When enabled the /ui login page gains a "Sign in with SSO"
 # button next to the regular access-token login. It is purely an
@@ -228,6 +236,47 @@ no_proxy: "localhost,127.0.0.1,.example.com"
 All three are optional. When left empty, Orbitron falls back to the standard
 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` environment variables of the daemon
 process.
+
+### TLS & private CAs
+
+By default Orbitron verifies outbound HTTPS against the system certificate
+store. If you run it in an environment where an internal Galaxy mirror, a
+self-hosted git server or Keycloak is signed by a private/self-signed CA, you
+will see errors such as:
+
+```text
+tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+Two complementary workarounds exist, both applied to **every** outbound
+connection — Galaxy API calls, collection downloads, git HTTPS remotes and
+OIDC discovery/token/JWKS fetching.
+
+**1. Trust the private CA (`tls.ca_file`, recommended).** Point `tls.ca_file`
+at a PEM bundle containing the CA certificate(s) that sign the internal
+services. Those certificates are trusted *in addition to* the system roots, so
+public Galaxy access keeps working:
+
+```yaml
+tls:
+  ca_file: "/etc/orbitron/ca-bundle.crt"
+```
+
+The file may hold multiple PEM certificates. Git honors the same bundle via
+`GIT_SSL_CAINFO`.
+
+**2. Skip verification (`tls.insecure_skip_tls_verify`).** When the CA cannot
+be pinned at all, disable outbound TLS verification entirely — the blunt
+equivalent of `curl -k` (or ansible-galaxy's `SSL_NO_VERIFY`). Only use this
+when pinning the CA is impossible; you give up server identity checks:
+
+```yaml
+tls:
+  insecure_skip_tls_verify: true
+```
+
+Git backs this up with `GIT_SSL_NO_VERIFY=true`. A bad CA file path or a
+file without valid PEM certificates is rejected at daemon start with an error.
 
 ---
 
@@ -897,6 +946,8 @@ galaxy_server = http://localhost:8080
 | `ORBITRON_HTTP_PROXY`        | *empty*                  | Forward proxy for `http://` outbound requests.                   |
 | `ORBITRON_HTTPS_PROXY`       | *empty*                  | Forward proxy for `https://` outbound requests.                  |
 | `ORBITRON_NO_PROXY`          | *empty*                  | Comma-separated proxy exclusions.                                |
+| `ORBITRON_TLS_CA_FILE`       | *empty*                  | Path to a PEM CA bundle (mounted file) trusted for outbound HTTPS. |
+| `ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY` | `false`        | Disable outbound TLS verification (like `curl -k`).              |
 | `ORBITRON_AUTO_TOKEN`        | `true`                   | Generate an admin token on first start if none exists.           |
 | `ORBITRON_OIDC_ENABLED`      | `false`                  | Enable SSO (OIDC) login for the web dashboard.                   |
 | `ORBITRON_OIDC_ISSUER`       | *empty*                  | Full Keycloak realm URL (`https://kc/realms/<realm>`).           |
@@ -950,7 +1001,9 @@ nomad alloc logs <alloc-id> | grep "ADMIN TOKEN"
 Optional Traefik routing tags and Vault Workload Identity templates are
 included as commented sections in the jobspec. The bundle also runs fine with
 the `-bind-allocation` Docker networking modes; port `http` maps onto the
-container's `:8080`.
+container's `:8080`. The jobspec includes commented `ORBITRON_TLS_CA_FILE` /
+`ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY` examples for trusting a private CA (see
+"TLS & private CAs").
 
 ---
 
