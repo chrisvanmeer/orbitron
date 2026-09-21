@@ -77,7 +77,7 @@
       },
       "id": 2,
       "options": {
-        "colorMode": "fixed",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -137,7 +137,7 @@
       },
       "id": 3,
       "options": {
-        "colorMode": "fixed",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -197,7 +197,7 @@
       },
       "id": 4,
       "options": {
-        "colorMode": "fixed",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -257,7 +257,7 @@
       },
       "id": 5,
       "options": {
-        "colorMode": "fixed",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -317,7 +317,7 @@
       },
       "id": 6,
       "options": {
-        "colorMode": "fixed",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -377,7 +377,7 @@
       },
       "id": 7,
       "options": {
-        "colorMode": "fixed",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -437,7 +437,7 @@
       },
       "id": 8,
       "options": {
-        "colorMode": "fixed",
+        "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",

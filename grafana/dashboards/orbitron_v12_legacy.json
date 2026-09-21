@@ -53,7 +53,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "background"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
@@ -112,7 +112,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "background"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
@@ -171,7 +171,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "background"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
@@ -230,7 +230,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "background"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
@@ -289,7 +289,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "background"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
@@ -348,7 +348,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "background"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
@@ -407,7 +407,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "background"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
