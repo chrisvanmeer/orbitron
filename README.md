@@ -1064,7 +1064,10 @@ scrape_configs:
 
 ### Grafana Dashboard
 
-A ready-made dashboard for the metrics above lives in `grafana/dashboards/orbitron.json`.
+A ready-made dashboard for the metrics above lives in
+`grafana/dashboards/orbitron_v13_current.json`. An un-migrated variant
+(`orbitron_v12_legacy.json`, still using stat background fills) is kept for
+older Grafana versions that support panel styles.
 
 * **Import:** Dashboards → Import → upload the JSON file. During import Grafana
   asks which Prometheus **data source** to bind the dashboard to — pick the one
