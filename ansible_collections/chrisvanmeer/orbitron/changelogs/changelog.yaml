@@ -1,5 +1,163 @@
 ---
 releases:
+  1.6.0:
+    changes:
+      release_summary: |
+        Orbitron 1.6.0 adds optional SSO authentication to the web dashboard.
+        The daemon can now authenticate dashboard users against an external
+        OpenID Connect identity provider such as Keycloak, in addition to the
+        regular administrative Bearer token. It is purely an authentication
+        gate: a successful SSO login opens the dashboard exactly like a valid
+        token would, and the UI remains read-only. Access can optionally be
+        restricted to members of specific Keycloak groups via the
+        ``oidc.allowed_groups`` filter. The ``orbitron`` Ansible
+        role renders the new ``oidc`` config block from the ``orbitron_oidc_*``
+        variables, and the Docker Compose and Nomad files document the matching
+        ``ORBITRON_OIDC_*`` environment variables.
+      minor_features:
+        - >-
+          The web dashboard /ui login page gains a ``SSO Login`` button next
+          to the regular access-token login whenever OIDC is enabled. The
+          token button is then relabelled ``Authenticate with Token``.
+        - >-
+          The daemon config gains an optional ``oidc`` block (``enabled``,
+          ``issuer``, ``client_id``, ``client_secret``, ``session_ttl_hours``,
+          ``redirect_uri``). The authorization-code flow uses PKCE (S256) and a
+          confidential client secret; the ID token is verified against the
+          issuer's JWKS (RS256/ES256) by checking issuer, audience, expiry and
+          a per-login nonce, with JWKS key rotation handled by re-fetching on
+          unknown key IDs.
+        - >-
+          The optional ``oidc.allowed_groups`` access filter admits only users
+          who are a member of at least one listed Keycloak group (matched
+          against the ID token ``groups`` claim), denying everyone else and
+          failing closed when the claim is absent. An empty list disables the
+          filter. The ``orbitron`` role gains the matching
+          ``orbitron_oidc_allowed_groups`` variable and the container plumbing
+          the ``ORBITRON_OIDC_ALLOWED_GROUPS`` environment variable.
+        - >-
+          SSO dashboard sessions live in memory only: they never touch
+          ``tokens.json``, reset on daemon restart, expire after the configured
+          ``session_ttl_hours`` (default 8), and are revoked by the DISCONNECT
+          button. The SSO session cookie satisfies API authentication the same
+          way the token cookie does.
+        - >-
+          ``redirect_uri`` can be left empty to be auto-derived from the
+          incoming request as ``<scheme>://<host>/ui/oidc/callback`` (honoring
+          TLS and ``X-Forwarded-Proto``), which must match a registered
+          redirect URI in the identity provider client.
+        - >-
+          The ``orbitron`` role gains the new ``orbitron_oidc_enabled``,
+          ``orbitron_oidc_issuer``, ``orbitron_oidc_client_id``,
+          ``orbitron_oidc_client_secret``, ``orbitron_oidc_session_ttl_hours``
+          and ``orbitron_oidc_redirect_uri`` variables, rendering the ``oidc``
+          config block only when enabled.
+        - >-
+          The importable Grafana dashboard renders the storage and cached
+          version series as proper range queries and hides zero-value samples
+          from the capacity and growth panels; the dashboard login page got a
+          refreshed logo asset.
+        - >-
+          The daemon now reloads its configuration hot: ``systemctl reload
+          orbitron`` (or ``SIGHUP``) re-reads ``config.yml``, re-validates it
+          (including OIDC discovery when enabled), reopens the log file after a
+          logrotate rotation and rebuilds the HTTP server on the same address.
+          A failing configuration leaves the running daemon untouched and is
+          logged; the installer-generated systemd unit gained an
+          ``ExecReload=/bin/kill -HUP $MAINPID`` directive.
+      bugfixes:
+        - >-
+          ID tokens whose ``aud`` claim is a single JSON string (Keycloak's
+          format while a token has exactly one audience) no longer fail
+          verification with "cannot unmarshal string into Go struct field
+          Claims.aud"; the claim is now accepted as either a string or an
+          array.
+        - >-
+          A failing well-known OpenID discovery against a 404/403 (typically a
+          Keycloak issuer configured without the ``/realms/<realm>`` path
+          segment) now reports that hint in the error instead of a bare
+          "unexpected status".
+        - >-
+          The ``oidc.allowed_groups`` access filter now also matches Keycloak
+          "Group Membership" claims emitted as full group paths (e.g.
+          ``/admins`` or ``/orbitron/admins``): a claim matches when it equals
+          the allowed name, differs only by a leading slash, or shares the
+          same last path segment. Denied logins now log the user's actual
+          ``groups`` claim to simplify troubleshooting.
+  1.5.2:
+    changes:
+      release_summary: |
+        Orbitron 1.5.2 mirrors Galaxy roles under their real git tags and
+        warms the Docker build cache. Roles whose upstream repo tags releases
+        with a ``v`` prefix (the Galaxy default) no longer fail to clone, and
+        mirrored role versions always match the tags Galaxy advertises.
+      bugfixes:
+        - >-
+          Galaxy role sync no longer treats a role's sanitized ``version``
+          field as a literal git branch. Published versions are resolved to
+          the exact upstream tag first (via ``git ls-remote --tags``, probing
+          both the bare version and its ``v``-prefixed spelling) and cloned
+          and checked out from that tag, so roles tagged ``v1.0.1`` mirror
+          successfully instead of failing with "Remote branch 1.0.1 not found
+          in upstream origin".
+        - >-
+          An explicitly pinned role version is canonicalized to the real tag,
+          so the same version is never stored and served under two spellings
+          (which broke ``ansible-galaxy``'s latest-version comparison). In
+          ``all`` mode, versions whose tag no longer exists are skipped with a
+          warning instead of aborting the entire role.
+        - >-
+          The Docker image build warms the Go build cache so multi-stage
+          rebuilds of the container skip recompiling the whole module graph.
+    release_date: '2026-09-20'
+  1.5.1:
+    changes:
+      release_summary: |
+        Orbitron 1.5.1 quiets the Prometheus scrape traffic in the daemon log,
+        ships an importable Grafana dashboard for the metrics, and makes the
+        SYSTEM LOGS panel work under Nomad by persisting the log file on the
+        host volume.
+      minor_features:
+        - >-
+          ``HTTP GET /metrics`` scrape requests are no longer logged at INFO
+          level (like ``/healthz`` and ``/ui``), keeping the daemon log
+          readable for Prometheus setups that poll the endpoint every
+          interval.
+        - >-
+          The repository ships an importable Grafana dashboard for the
+          Prometheus metrics; its table frames are de-duplicated and the
+          "Largest cached items" gauge widened. When file logging is disabled,
+          the SYSTEM LOGS panel now shows a hint that the log was emitted to
+          stdout instead of an empty drawer.
+        - >-
+          The Nomad jobspec persists ``orbitron.log`` on the ``orbitron-data``
+          host volume so the SYSTEM LOGS panel functions under Nomad too,
+          instead of tying logs to an ephemeral alloc directory.
+    release_date: '2026-09-20'
+  1.5.0:
+    changes:
+      release_summary: |
+        Orbitron 1.5.0 reworks the Prometheus ``/metrics`` endpoint around a
+        shared inventory scanner and ships the Docker and Nomad deployment
+        files. The metric set now matches the dashboard counts and on-disk
+        sizes, and the repository gains a Dockerfile, docker-compose.yml and a
+        validated Nomad jobspec for running the daemon as a containerized
+        service.
+      features:
+        - >-
+          ``/metrics`` is rebuilt on a shared inventory scanner: the outdated
+          ``orbitron_manifests_total`` gauge is replaced by aggregate gauges
+          for role, collection, version and namespace counts plus total
+          storage bytes, and per-item labeled series
+          (``orbitron_cached_item_bytes``, ``orbitron_cached_version_bytes``)
+          using block-allocated bytes to match the dashboard and prune logic.
+        - >-
+          The repository now ships Docker, Docker Compose and Nomad deployment
+          files (GHCR container image, compose with a persistent volume, and a
+          Nomad jobspec with a host volume and health check); the container
+          health check derives its port from ``ORBITRON_LISTEN_ADDR`` instead
+          of hardcoding 8080.
+    release_date: '2026-09-20'
   1.4.1:
     changes:
       release_summary: |
