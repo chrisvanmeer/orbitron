@@ -62,7 +62,7 @@ issuer must be the full Keycloak realm URL
 in Keycloak as **confidential** with redirect URI
 `https://<your-orbitron-host>/ui/oidc/callback`. The regular token login stays
 available; SSO sessions are validated identically and live in memory until the
-daemon restarts. See the main [Orbitron README](../../../../../README.md#sso-oidc-keycloak)
+daemon restarts. See the main [Orbitron README](../../../../../README.md#sso--oidc-keycloak)
 for the Keycloak client setup guide.
 
 To admit only members of specific Keycloak groups, set

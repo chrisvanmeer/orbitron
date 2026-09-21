@@ -93,7 +93,7 @@ re-run the role — the daemon picks the changes up (optionally hot via
 `systemctl reload orbitron`). Full group paths emitted by Keycloak's Group
 Membership mapper (e.g. `/admins`) match plain `allowed_groups` names as well.
 See the main README's
-["SSO / OIDC (Keycloak)"](../../../README.md#sso-oidc-keycloak) section for
+["SSO / OIDC (Keycloak)"](../../../README.md#sso--oidc-keycloak) section for
 the Keycloak client setup guide (redirect URIs, client secret, and the
 `groups` claim required for the group filter).
 

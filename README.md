@@ -60,8 +60,8 @@ Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real
   search text, and expanded groups intact across refreshes.
 * **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only session cookie using any
   valid administrative token, gated behind an Orbitron SVG logo — or an optional **SSO (OIDC) sign-in**
-  through an external identity provider such as Keycloak (see
-  [SSO / OIDC (Keycloak)](#sso-oidc-keycloak) below).
+through an external identity provider such as Keycloak (see
+   [SSO / OIDC (Keycloak)](#sso--oidc-keycloak) below).
 * **Tail-F Live Log Drawer**: Bottom sliding drawer (`▲ LOG STREAM`) that streams the tail of
   `/var/log/orbitron/orbitron.log` like `tail -f` — it stays pinned to the newest lines on every refresh, only
   releasing the pin when you scroll up to read history. Polls every 5 seconds.
@@ -767,19 +767,21 @@ read-only; there is no per-user authorization).
 1. **Create a realm** (or reuse one), e.g. `orbitron`. The realm URL is the
    `issuer`: `https://<keycloak>/realms/orbitron`.
 2. **Register a client**: *Clients → Create client*.
-   - **Client type**: `OpenID Connect`
-   - **Client ID**: any name, e.g. `orbitron` (this is `client_id`)
-   - **Client authentication**: **ON** (this is required — Orbitron uses the
+   * **Client type**: `OpenID Connect`
+   * **Client ID**: any name, e.g. `orbitron` (this is `client_id`)
+   * **Client authentication**: **ON** (this is required — Orbitron uses the
      confidential `client_secret`, not just PKCE)
-   - **Valid redirect URIs**: exactly
-     ```
+   * **Valid redirect URIs**: exactly
+
+     ```text
      https://<your-orbitron-host>/ui/oidc/callback
      ```
+
      If you do not set `oidc.redirect_uri` in the daemon config, Orbitron
      derives this same URL from the incoming request (honoring
      `X-Forwarded-Proto` and TLS), so it must match what you registered here —
      including the port when you publish on a non-standard one.
-   - **Web origins**: leave empty (or `+`). The login flow is a server-side
+   * **Web origins**: leave empty (or `+`). The login flow is a server-side
      redirect, not a CORS flow, so this is not needed.
 3. **Copy the client secret**: *Clients → orbitron → Credentials* →
    **Client secret**. This goes into `oidc.client_secret`.
@@ -787,10 +789,10 @@ read-only; there is no per-user authorization).
 4. **(Optional) restrict login to a group.** By default every verified SSO user
    can log in. To admit only members of one or more groups, make the ID token
    carry a `groups` claim and set `oidc.allowed_groups` (see below):
-   - *Clients → orbitron → Client scopes → Add client scope →* select the
+   * *Clients → orbitron → Client scopes → Add client scope →* select the
      built-in **`groups`** scope, or create a **Group Membership** protocol
      mapper with *Token Claim Name* `groups` and *Add to ID token* **ON**.
-   - Create the group (*Groups → Create group*, e.g. `orbitron-admins`) and
+   * Create the group (*Groups → Create group*, e.g. `orbitron-admins`) and
      assign users to it.
    The "Group Membership" mapper emits **full group paths** by default (`/admins`,
    `/orbitron/admins`). Orbitron matches on the exact name, on a leading-slash
