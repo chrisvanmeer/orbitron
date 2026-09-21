@@ -123,11 +123,11 @@ func NewClient(cfg config.OIDCConfig, tls config.TLSConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("oidc: invalid TLS policy: %w", err)
 	}
-	var transport http.RoundTripper = http.DefaultTransport
+	transport := http.DefaultTransport
 	if tlsClientConfig != nil {
-		baseClone := http.DefaultTransport.(*http.Transport).Clone()
-		baseClone.TLSClientConfig = tlsClientConfig
-		transport = baseClone
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		t.TLSClientConfig = tlsClientConfig
+		transport = t
 	}
 
 	c := &Client{

@@ -31,7 +31,7 @@ func TestFetcherRejectsUntrustedTLSServer(t *testing.T) {
 	f := NewFetcher(t.TempDir(), 2, ProxyConfig{}, config.TLSConfig{})
 	resp, err := f.httpClient.Get(srv.URL)
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatal("expected TLS error for untrusted self-signed server")
 	}
 	if !strings.Contains(err.Error(), "certificate") {
@@ -51,7 +51,7 @@ func TestFetcherTrustsConfiguredCAFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request with pinned CA failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status: %d", resp.StatusCode)
 	}
@@ -68,7 +68,7 @@ func TestFetcherSkipsTLSVerificationWhenConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request with skip-verify failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status: %d", resp.StatusCode)
 	}

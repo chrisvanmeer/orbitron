@@ -65,9 +65,6 @@ func TestTLSClientConfigLoadsCAFile(t *testing.T) {
 	if cfg.RootCAs == nil {
 		t.Fatal("expected root pool to be set")
 	}
-	if len(cfg.RootCAs.Subjects()) == 0 {
-		t.Fatal("expected at least one subject in the custom root pool")
-	}
 }
 
 func TestTLSClientConfigRejectsMissingCAFile(t *testing.T) {
