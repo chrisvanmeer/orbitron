@@ -1,5 +1,30 @@
 ---
 releases:
+  1.7.1:
+    changes:
+      release_summary: |
+        Orbitron 1.7.1 fixes stale version resolution in ``ansible-galaxy``
+        clients. The Galaxy v3 collection-info endpoint now reports
+        ``created_at`` and ``updated_at`` derived from the mirrored artifacts on
+        disk, so ansible-galaxy invalidates its cached version list the moment a
+        new collection version (such as 1.7.1) is mirrored, instead of serving
+        stale results until its 24-hour cache expiry. Version listings are also
+        sorted semantically, so ``1.10.0`` is ranked after ``1.7.0`` rather than
+        before it.
+      bugfixes:
+        - >-
+          The Galaxy v3 base collection-info endpoint
+          (``/api/v3/collections/{namespace}/{name}/``) now returns
+          ``created_at`` and ``updated_at`` (RFC 3339, derived from the earliest
+          and latest artifact modification time). Without these fields
+          ansible-galaxy never invalidates its cached version list and keeps
+          failing to satisfy a freshly mirrored version with
+          ``ERROR! Failed to resolve the requested dependencies map`` until the
+          cache TTL expires.
+        - >-
+          ``listCollectionVersions`` now sorts versions semantically instead of
+          lexically, fixing ``highest_version`` and the versions endpoint for
+          releases such as ``1.10.0`` (previously ranked below ``1.7.0``).
   1.7.0:
     changes:
       release_summary: |

@@ -157,6 +157,120 @@ func TestListCollectionVersionsUsesForwardedScheme(t *testing.T) {
 	}
 }
 
+func TestListCollectionVersionsSortedSemantically(t *testing.T) {
+	s, storage := newTestServer(t)
+
+	nsDir := filepath.Join(storage, "collections", "community")
+	if err := os.MkdirAll(nsDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	// Lexical order would place 1.10.0 before 1.6.0 and 1.7.0.
+	for _, f := range []string{
+		"community-general-1.7.0.tar.gz",
+		"community-general-1.6.0.tar.gz",
+		"community-general-1.10.0.tar.gz",
+	} {
+		if err := os.WriteFile(filepath.Join(nsDir, f), []byte("x"), 0640); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	results := s.listCollectionVersions("https://mirror.example.com", "/api/v3/", "community", "general")
+	got := []string{}
+	for _, r := range results {
+		got = append(got, r.Version)
+	}
+	want := []string{"1.6.0", "1.7.0", "1.10.0"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("version order = %v, want %v", got, want)
+	}
+}
+
+func TestCollectionInfoReportsTimestamps(t *testing.T) {
+	s, storage := newTestServer(t)
+
+	nsDir := filepath.Join(storage, "collections", "community")
+	if err := os.MkdirAll(nsDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nsDir, "community-general-8.4.0.tar.gz"), []byte("x"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nsDir, "community-general-8.5.0.tar.gz"), []byte("x"), 0640); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://mirror.example.com/api/v3/collections/community/general/", nil)
+	req.Host = "mirror.example.com"
+	rec := httptest.NewRecorder()
+	s.HandleGalaxyV3Router(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		CreatedAt    string `json:"created_at"`
+		UpdatedAt    string `json:"updated_at"`
+		HighestVer   struct {
+			Version string `json:"version"`
+		} `json:"highest_version"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v (body=%s)", err, rec.Body.String())
+	}
+	if body.CreatedAt == "" {
+		t.Error("created_at must not be empty")
+	}
+	if body.UpdatedAt == "" {
+		t.Error("updated_at must not be empty")
+	}
+	if body.HighestVer.Version != "8.5.0" {
+		t.Errorf("highest_version = %q, want 8.5.0", body.HighestVer.Version)
+	}
+
+	created, err := time.Parse(time.RFC3339, body.CreatedAt)
+	if err != nil {
+		t.Fatalf("created_at %q is not RFC 3339: %v", body.CreatedAt, err)
+	}
+	updated, err := time.Parse(time.RFC3339, body.UpdatedAt)
+	if err != nil {
+		t.Fatalf("updated_at %q is not RFC 3339: %v", body.UpdatedAt, err)
+	}
+	if updated.Before(created) {
+		t.Errorf("updated_at (%s) precedes created_at (%s)", body.UpdatedAt, body.CreatedAt)
+	}
+
+	// Mirroring a newer version must bump updated_at so ansible-galaxy
+	// invalidates its cached version list.
+	newer := filepath.Join(nsDir, "community-general-8.6.0.tar.gz")
+	if err := os.WriteFile(newer, []byte("x"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	later := updated.Add(time.Hour)
+	if err := os.Chtimes(newer, later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	rec = httptest.NewRecorder()
+	s.HandleGalaxyV3Router(rec, req)
+
+	var again struct {
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &again); err != nil {
+		t.Fatalf("decode response: %v (body=%s)", err, rec.Body.String())
+	}
+	secondUpdated, err := time.Parse(time.RFC3339, again.UpdatedAt)
+	if err != nil {
+		t.Fatalf("updated_at %q is not RFC 3339: %v", again.UpdatedAt, err)
+	}
+	if !secondUpdated.After(updated) {
+		t.Errorf("updated_at did not advance after mirroring a newer version (%s -> %s)", body.UpdatedAt, again.UpdatedAt)
+	}
+}
+
 func TestHandleGalaxyV1RoleVersionsScheme(t *testing.T) {
 	s, storage := newTestServer(t)
 

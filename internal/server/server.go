@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"orbitron/internal/logger"
 	"orbitron/internal/oidc"
 	"orbitron/internal/telemetry"
+	ver "orbitron/internal/version"
 	"orbitron/internal/web"
 )
 
@@ -531,7 +533,53 @@ func (s *Server) listCollectionVersions(baseURL, basePath, namespace, name strin
 			})
 		}
 	}
+
+	// Order versions semantically (os.ReadDir yields lexical order, which would
+	// misrank e.g. 1.10.0 before 1.6.0 in the versions list and highest_version).
+	sort.Slice(results, func(i, j int) bool {
+		return ver.Compare(results[i].Version, results[j].Version) < 0
+	})
 	return results
+}
+
+// collectionTimestamps reports the earliest and latest artifact modification
+// time for a collection as RFC 3339 timestamps. ansible-galaxy keys its cached
+// version list on the collection's updated_at value, so a change here signals
+// that a newly mirrored version must be re-fetched instead of serving a stale
+// list until its 24-hour cache expiry.
+func (s *Server) collectionTimestamps(namespace, name string) (createdAt, updatedAt string) {
+	nsDir := filepath.Join(s.cfg.StoragePath, "collections", namespace)
+	files, err := os.ReadDir(nsDir)
+	if err != nil {
+		return "", ""
+	}
+
+	prefix := fmt.Sprintf("%s-%s-", namespace, name)
+	var earliest, latest time.Time
+	found := false
+	for _, f := range files {
+		if f.IsDir() || !strings.HasPrefix(f.Name(), prefix) || !strings.HasSuffix(f.Name(), ".tar.gz") {
+			continue
+		}
+		info, err := f.Info()
+		if err != nil {
+			continue
+		}
+		mt := info.ModTime()
+		if !found || mt.Before(earliest) {
+			earliest = mt
+		}
+		if !found || mt.After(latest) {
+			latest = mt
+		}
+		found = true
+	}
+	if !found {
+		return "", ""
+	}
+
+	const layout = time.RFC3339
+	return earliest.UTC().Format(layout), latest.UTC().Format(layout)
 }
 
 func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
@@ -618,13 +666,16 @@ func (s *Server) HandleGalaxyV3Router(w http.ResponseWriter, r *http.Request) {
 
 			// Base collection info: /collections/{namespace}/{name}/
 			if len(parts) == 2 {
+				createdAt, updatedAt := s.collectionTimestamps(namespace, name)
 				w.Header().Set("Content-Type", "application/json")
 				resp := fmt.Sprintf(`{
           "namespace": {"name": "%s"},
           "name": "%s",
           "deprecated": false,
+          "created_at": "%s",
+          "updated_at": "%s",
           "highest_version": {"version": "%s"}
-        }`, namespace, name, highestVer)
+        }`, namespace, name, createdAt, updatedAt, highestVer)
 				_, _ = w.Write([]byte(resp))
 				return
 			}
