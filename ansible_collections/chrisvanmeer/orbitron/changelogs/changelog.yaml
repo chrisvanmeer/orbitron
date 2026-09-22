@@ -1,5 +1,39 @@
 ---
 releases:
+  1.8.1:
+    changes:
+      release_summary: |
+        Orbitron 1.8.1 fixes the dashboard SYSTEM LOGS panel introduced in
+        1.8.0, which could get stuck on the static "Awaiting telemetry
+        stream..." placeholder even while the daemon's log file on disk kept
+        growing normally. The panel wired its polled log batches through an
+        htmx event name the embedded htmx 4.0.0 build never fires, so the
+        response was silently discarded on every 5-second poll. It now listens
+        on the actual request-lifecycle event and reads the response body from
+        the htmx 4 request context. As hardening, an empty log file no longer
+        leaves the operator staring at a dead placeholder: the log endpoint
+        serves a stable status line when the configured log file exists but is
+        currently empty (for example freshly created by logrotate).
+      bugfixes:
+        - >-
+          The dashboard SYSTEM LOGS panel no longer lingers on the initial
+          "Awaiting telemetry stream..." placeholder. The append handler was
+          wired to ``hx-on::after-request``, but the embedded htmx 4.0.0 only
+          ever fires ``htmx:after:request`` (the ``::`` shorthand expands
+          ``after-request`` to ``htmx:after-request``, which never fires), so
+          ``hx-swap="none"`` discarded every ``/ui/logs`` response while the
+          configured log file kept growing on disk. The viewer now listens on
+          ``hx-on::after:request`` and reads the response body via the htmx 4
+          context (``event.detail.ctx.text``) instead of the legacy
+          ``xhr.responseText`` detail.
+        - >-
+          An empty or blank log poll no longer leaves a misleading static
+          placeholder when nothing has been rendered yet: the viewer shows a
+          clear "no log data received yet" status line and never clobbers
+          already-rendered history. The ``/ui/logs`` endpoint also returns a
+          stable status line instead of an empty body when the configured log
+          file exists but is currently empty (for example freshly created by
+          logrotate).
   1.8.0:
     changes:
       release_summary: |
