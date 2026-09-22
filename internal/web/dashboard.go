@@ -699,7 +699,7 @@ const htmlTemplate = `
                 <h3 style="margin:0; color:var(--neon-pink);">SYSTEM LOGS // {{LOG_PATH}}</h3>
                 <span style="color:var(--text-dim); font-size:0.8em; cursor:pointer; font-weight:bold;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
             </div>
-            <div class="log-viewer" hx-get="/ui/logs" hx-trigger="load, every 5s" hx-swap="none" hx-on::after-request="window.__appendLog(event.detail.xhr.responseText)" id="log-container">
+            <div class="log-viewer" hx-get="/ui/logs" hx-trigger="load, every 5s" hx-swap="none" hx-on::after:request="window.__appendLog(event.detail.ctx.text)" id="log-container">
                 > Awaiting telemetry stream...
             </div>
         </div>
@@ -832,7 +832,16 @@ const htmlTemplate = `
             };
 
             window.__appendLog = function (respText) {
-                if (!respText) return;
+                if (!respText || !respText.trim()) {
+                    // Empty or blank response (e.g. a freshly created, still
+                    // empty log file): never clobber already-rendered history,
+                    // but if nothing has been drawn yet, hand the operator a
+                    // clear status line instead of a dead placeholder.
+                    if (container.querySelectorAll('.log-line').length === 0) {
+                        container.textContent = '> No log data received yet...';
+                    }
+                    return;
+                }
                 const tmp = document.createElement('div');
                 tmp.innerHTML = respText;
                 const nodes = tmp.querySelectorAll('.log-line');
@@ -1431,6 +1440,12 @@ func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 	content, err := tailFile(d.cfg.LogPath, logTailLimit)
 	if err != nil {
 		content = []string{fmt.Sprintf("> ERROR READING LOGS: %v", err)}
+	} else if len(content) == 0 {
+		// The file exists but is currently empty (freshly created by
+		// logrotate, or truncated). Hand back a stable status line instead of
+		// an empty response, so the viewer never lingers on a dead placeholder
+		// and the append buffer stays anchorable across polls.
+		content = []string{"> Log file is empty; waiting for new entries..."}
 	}
 
 	w.Header().Set("Content-Type", "text/html")

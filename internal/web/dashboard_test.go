@@ -352,6 +352,28 @@ func TestHandleLogsTailsConfiguredLimit(t *testing.T) {
 	}
 }
 
+// TestHandleLogsEmptyFile serves a stable status line (a .log-line div) when
+// the configured log file exists but is empty, so the viewer never lingers on
+// the placeholder or swallows the response entirely.
+func TestHandleLogsEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "orbitron.log")
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := NewDashboard(&config.Config{LogPath: logPath}, nil, nil)
+	rec := httptest.NewRecorder()
+	d.handleLogs(rec, httptest.NewRequest("GET", "/ui/logs", nil))
+
+	if got := rec.Body.String(); !strings.Contains(got, "Log file is empty") {
+		t.Fatalf("empty log file should yield a status line, got: %s", got)
+	}
+	if !strings.Contains(rec.Body.String(), `class="log-line"`) {
+		t.Fatalf("empty log file status should be served as a .log-line div, got: %s", rec.Body.String())
+	}
+}
+
 // TestHandleLogsWithoutFile shows the container-logs hint (not the login page
 // or an error) when log_path is empty.
 func TestHandleLogsWithoutFile(t *testing.T) {
