@@ -1,5 +1,39 @@
 ---
 releases:
+  1.8.0:
+    changes:
+      release_summary: |
+        Orbitron 1.8.0 improves operability behind a reverse proxy and makes
+        the web dashboard log stream usable as a history browser. The daemon
+        now trusts the proxy-provided ``X-Real-IP`` / ``X-Forwarded-For``
+        headers when reporting the client address in access logs and
+        unauthorized-attempt warnings, so the real pull client IP is logged
+        instead of the proxy's loopback address. The SYSTEM LOGS panel tails
+        more history and keeps an append-only session buffer so an operator
+        can scroll back through log lines without the 5-second refresh wiping
+        them. The cache matrix also no longer shuffles the collections on
+        every refresh: rows keep a stable alphabetical order.
+      minor_features:
+        - >-
+          The client IP logged for every HTTP request, and for every
+          unauthorized access/pull warning, is now derived from the
+          ``X-Real-IP`` header, falling back to the first entry of the
+          ``X-Forwarded-For`` chain and then to the socket peer address (with
+          the port stripped), so requests proxied through nginx are attributed
+          to the actual client instead of ``127.0.0.1``.
+        - >-
+          The dashboard SYSTEM LOGS panel now tails the configured log file for
+          the last 500 lines and keeps an append-only session buffer (capped at
+          2000 lines) instead of replacing the visible lines on every 5-second
+          poll, allowing the operator to scroll back through the session's
+          history. On log rotation the buffer rebuilds from the fresh tail.
+      bugfixes:
+        - >-
+          The cache matrix list of collections is now rendered in a stable
+          alphabetical order. Previously the Go map iteration order randomized
+          the row sequence on every 10-second refresh while the default
+          (unsorted) view kept whatever order the server produced, so
+          collections appeared to jump around.
   1.7.1:
     changes:
       release_summary: |
