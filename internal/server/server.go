@@ -21,6 +21,7 @@ import (
 	"orbitron/internal/auth"
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
+	"orbitron/internal/httputil"
 	"orbitron/internal/logger"
 	"orbitron/internal/oidc"
 	"orbitron/internal/telemetry"
@@ -179,7 +180,7 @@ func (s *Server) LoggingMiddleware(next http.Handler) http.Handler {
 		// scrape requests from log output.
 		path := r.URL.Path
 		if !strings.HasPrefix(path, "/ui") && path != "/favicon.ico" && path != "/favicon.svg" && path != "/healthz" && path != "/metrics" {
-			logger.Info("HTTP %s %s (from %s)", r.Method, r.URL.RequestURI(), r.RemoteAddr)
+			logger.Info("HTTP %s %s (from %s)", r.Method, r.URL.RequestURI(), httputil.ClientIP(r))
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -188,11 +189,7 @@ func (s *Server) LoggingMiddleware(next http.Handler) http.Handler {
 func (s *Server) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.authenticateRequest(r) {
-			clientIP := r.Header.Get("X-Forwarded-For")
-			if clientIP == "" {
-				clientIP = r.RemoteAddr
-			}
-			logger.Warn("Unauthorized access attempt from %s (%s %s)", clientIP, r.Method, r.URL.Path)
+			logger.Warn("Unauthorized access attempt from %s (%s %s)", httputil.ClientIP(r), r.Method, r.URL.Path)
 			http.Error(w, "Unauthorized: valid token required", http.StatusUnauthorized)
 			return
 		}
@@ -204,11 +201,7 @@ func (s *Server) PullAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.RequireAuthPull {
 			if !s.authenticateRequest(r) {
-				clientIP := r.Header.Get("X-Forwarded-For")
-				if clientIP == "" {
-					clientIP = r.RemoteAddr
-				}
-				logger.Warn("Unauthorized pull attempt from %s (%s %s)", clientIP, r.Method, r.URL.Path)
+				logger.Warn("Unauthorized pull attempt from %s (%s %s)", httputil.ClientIP(r), r.Method, r.URL.Path)
 				http.Error(w, "Unauthorized: pull authentication required", http.StatusUnauthorized)
 				return
 			}

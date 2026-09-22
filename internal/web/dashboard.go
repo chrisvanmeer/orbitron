@@ -2,6 +2,7 @@ package web
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"html"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"orbitron/internal/auth"
 	"orbitron/internal/build"
 	"orbitron/internal/config"
+	"orbitron/internal/httputil"
 	"orbitron/internal/logger"
 	"orbitron/internal/oidc"
 )
@@ -346,10 +348,7 @@ func (d *Dashboard) oidcRedirectURI(r *http.Request) string {
 }
 
 func clientIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		return ip
-	}
-	return r.RemoteAddr
+	return httputil.ClientIP(r)
 }
 
 func (d *Dashboard) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -626,7 +625,9 @@ const htmlTemplate = `
             flex: 1; background: #000; color: #0f0; padding: 12px;
             overflow-y: auto; border: 1px solid var(--text-dim);
             font-size: 0.85em; line-height: 1.4; margin-top: 10px;
+            white-space: pre-wrap; word-break: break-all;
         }
+        .log-line { margin: 0; }
 
         .stat-label { color: var(--text-dim); font-size: 0.8em; text-transform: uppercase; margin-top: 15px; }
         .stat-value { color: var(--neon-cyan); font-size: 1.0em; font-weight: bold; margin-top: 3px; word-break: break-all; }
@@ -698,7 +699,7 @@ const htmlTemplate = `
                 <h3 style="margin:0; color:var(--neon-pink);">SYSTEM LOGS // {{LOG_PATH}}</h3>
                 <span style="color:var(--text-dim); font-size:0.8em; cursor:pointer; font-weight:bold;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
             </div>
-            <div class="log-viewer" hx-get="/ui/logs" hx-trigger="load, every 5s" id="log-container">
+            <div class="log-viewer" hx-get="/ui/logs" hx-trigger="load, every 5s" hx-swap="none" hx-on::after-request="window.__appendLog(event.detail.xhr.responseText)" id="log-container">
                 > Awaiting telemetry stream...
             </div>
         </div>
@@ -793,36 +794,93 @@ const htmlTemplate = `
             });
         })();
 
-        // Tail -f: keep log viewer anchored to the bottom on each refresh,
-        // unless the user has scrolled up to read history.
+        // Log stream: keep an append-only session buffer so history survives
+        // the 5s polls and the user can scroll back. New batches are appended
+        // after the last already-rendered line (determined by an anchor match);
+        // on log rotation the buffer is rebuilt from the fresh tail.
         (function () {
             const container = document.getElementById('log-container');
             if (!container) return;
+
+            const MAX_BUF = 2000;
             let pinned = true;
             const bottomOf = () => container.scrollHeight - container.scrollTop - container.clientHeight < 40;
             container.addEventListener('scroll', function () {
                 pinned = bottomOf();
             });
-            var logContainer = document.getElementById('log-container');
+
             const rePin = function () {
                 if (pinned || bottomOf()) {
                     container.scrollTop = container.scrollHeight;
                     pinned = true;
                 }
             };
-            if (window.htmx && window.htmx.on) {
-                // htmx 1.x fires "htmx:after:swap"; htmx 2.x fires "htmx:afterSwap".
-                window.htmx.on(container, 'htmx:after:swap', rePin);
-                window.htmx.on(container, 'htmx:afterSwap', rePin);
-            } else {
-                document.addEventListener('htmx:after:swap', rePin);
-                document.addEventListener('htmx:afterSwap', rePin);
-            }
+
+            const renderLines = function (texts) {
+                for (let i = 0; i < texts.length; i++) {
+                    const div = document.createElement('div');
+                    div.className = 'log-line';
+                    div.textContent = texts[i];
+                    container.appendChild(div);
+                }
+                const divs = container.querySelectorAll('.log-line');
+                if (divs.length > MAX_BUF) {
+                    for (let d = 0; d < divs.length - MAX_BUF; d++) {
+                        if (divs[d].parentNode) divs[d].parentNode.removeChild(divs[d]);
+                    }
+                }
+            };
+
+            window.__appendLog = function (respText) {
+                if (!respText) return;
+                const tmp = document.createElement('div');
+                tmp.innerHTML = respText;
+                const nodes = tmp.querySelectorAll('.log-line');
+                if (nodes.length === 0) {
+                    // Non-fragment response (e.g. the "file logging disabled"
+                    // info line): show it verbatim until a real batch arrives.
+                    if (container.querySelectorAll('.log-line').length === 0) {
+                        container.textContent = respText;
+                    }
+                    return;
+                }
+                const texts = [];
+                for (let i = 0; i < nodes.length; i++) texts.push(nodes[i].textContent);
+
+                let buf = window.__logLines || [];
+                if (buf.length === 0) {
+                    // First batch: drop the placeholder and seed the buffer.
+                    container.textContent = '';
+                    buf = texts;
+                    renderLines(texts);
+                } else {
+                    // Find our last rendered line inside the fresh tail and
+                    // keep only what comes after it.
+                    const anchor = buf[buf.length - 1];
+                    let idx = -1;
+                    for (let j = texts.length - 1; j >= 0; j--) {
+                        if (texts[j] === anchor) { idx = j; break; }
+                    }
+                    if (idx < 0) {
+                        // Anchor gone (log rotated / truncated): rebuild.
+                        container.textContent = '';
+                        buf = texts;
+                        renderLines(texts);
+                    } else {
+                        const fresh = texts.slice(idx + 1);
+                        if (fresh.length) {
+                            buf = buf.concat(fresh);
+                            renderLines(fresh);
+                        }
+                    }
+                }
+                if (buf.length > MAX_BUF) buf = buf.slice(buf.length - MAX_BUF);
+                window.__logLines = buf;
+                rePin();
+            };
+
             if (typeof MutationObserver !== 'undefined') {
-                new MutationObserver(function () {
-                    if (!pinned) { pinned = bottomOf(); }
-                    if (pinned || bottomOf()) { container.scrollTop = container.scrollHeight; }
-                }).observe(container, { childList: true, characterData: true, subtree: true });
+                new MutationObserver(rePin).observe(container, { childList: true, characterData: true, subtree: true });
             }
         })();
     </script>
@@ -1029,7 +1087,18 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		for fullName, versions := range colMap {
+		// Iterate in sorted key order so the default (unsorted) table keeps a
+		// stable alphabetical layout across the 10s htmx re-renders. Go map
+		// iteration order is randomized per request and would otherwise make
+		// the collections jump around on every refresh.
+		names := make([]string, 0, len(colMap))
+		for fullName := range colMap {
+			names = append(names, fullName)
+		}
+		sort.Strings(names)
+
+		for _, fullName := range names {
+			versions := colMap[fullName]
 			sort.Sort(sort.Reverse(sort.StringSlice(versions)))
 
 			var rows []cachedRow
@@ -1344,6 +1413,11 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
+// logTailLimit is how many trailing log lines the /ui/logs endpoint returns
+// on every poll. The log viewer keeps an append-only session buffer, so this
+// is both the initial history depth and the batch size for each refresh.
+const logTailLimit = 500
+
 func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if d.cfg.LogPath == "" {
 		w.Header().Set("Content-Type", "text/html")
@@ -1354,14 +1428,14 @@ func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := tailFile(d.cfg.LogPath, 20)
+	content, err := tailFile(d.cfg.LogPath, logTailLimit)
 	if err != nil {
 		content = []string{fmt.Sprintf("> ERROR READING LOGS: %v", err)}
 	}
 
 	w.Header().Set("Content-Type", "text/html")
 	for _, line := range content {
-		_, _ = w.Write([]byte(html.EscapeString(line) + "<br>"))
+		_, _ = w.Write([]byte(`<div class="log-line">` + html.EscapeString(line) + "</div>"))
 	}
 }
 
@@ -1548,41 +1622,81 @@ func formatSize(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
+// tailFile returns the last n lines of fileName. It reads backwards from the
+// end in growing chunks (64KiB doubling) until the window holds at least n
+// complete lines or reaches the start of the file, so a large line count does
+// not require reading the whole file into memory.
 func tailFile(fileName string, lines int) ([]string, error) {
+	if lines < 1 {
+		lines = 1
+	}
+
 	file, err := os.Open(fileName)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = file.Close() }()
 
-	stat, _ := file.Stat()
-	var size = stat.Size()
-	var chunk int64 = 4096
-
-	if chunk > size {
-		chunk = size
-	}
-	buf := make([]byte, chunk)
-
-	if _, err := file.Seek(-chunk, 2); err != nil {
+	stat, err := file.Stat()
+	if err != nil {
 		return nil, err
 	}
-	if _, err := file.Read(buf); err != nil {
+	size := stat.Size()
+	if size == 0 {
+		return nil, nil
+	}
+
+	// Grow the read window until it holds enough complete lines. A window that
+	// starts mid-line (start > 0) carries one partial line at its head, so its
+	// first newline does not complete a full line.
+	start := size - 64*1024
+	if start < 0 {
+		start = 0
+	}
+	for {
+		window := make([]byte, size-start)
+		if _, err := file.ReadAt(window, start); err != nil {
+			return nil, err
+		}
+
+		complete := 0
+		for _, b := range window {
+			if b == '\n' {
+				complete++
+			}
+		}
+		if start > 0 && window[0] != '\n' {
+			complete--
+		}
+
+		if complete >= lines || start == 0 {
+			break
+		}
+		// Double the window: move the start back by the current window length.
+		start -= size - start
+		if start < 0 {
+			start = 0
+		}
+	}
+
+	window := make([]byte, size-start)
+	if _, err := file.ReadAt(window, start); err != nil {
 		return nil, err
 	}
 
-	linesArr := strings.Split(string(buf), "\n")
-
-	if len(linesArr) > 0 && linesArr[len(linesArr)-1] == "" {
-		linesArr = linesArr[:len(linesArr)-1]
+	// Skip a partial first line when the window starts mid-line.
+	if start > 0 && window[0] != '\n' {
+		if i := bytes.IndexByte(window, '\n'); i >= 0 {
+			window = window[i+1:]
+		} else {
+			window = nil
+		}
 	}
 
-	var output []string
+	content := strings.TrimSuffix(string(window), "\n")
+	linesArr := strings.Split(content, "\n")
 	if len(linesArr) > lines {
-		output = linesArr[len(linesArr)-lines:]
-	} else {
-		output = linesArr
+		linesArr = linesArr[len(linesArr)-lines:]
 	}
-
-	return output, nil
+	return linesArr, nil
 }

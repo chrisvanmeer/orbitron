@@ -574,6 +574,16 @@ func TestLoggingMiddlewareSuppressesRoutinePaths(t *testing.T) {
 	if !strings.Contains(buf.String(), "/api/v1/sync/status") {
 		t.Errorf("expected ordinary API path to be logged, got: %s", buf.String())
 	}
+
+	buf.Reset()
+	proxied := httptest.NewRequest(http.MethodGet, "/api/v1/sync/status", nil)
+	proxied.RemoteAddr = "127.0.0.1:51234"
+	proxied.Header.Set("X-Real-IP", "203.0.113.7")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, proxied)
+	if !strings.Contains(buf.String(), "(from 203.0.113.7)") {
+		t.Errorf("expected proxy-forwarded client IP in log output, got: %s", buf.String())
+	}
 }
 
 func TestSyncStatusEndpoint(t *testing.T) {

@@ -1,10 +1,12 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -251,5 +253,137 @@ func TestIdentityForPicksMostReadablePrincipal(t *testing.T) {
 		if got := identityFor(tc.claims); got != tc.want {
 			t.Errorf("identityFor(%+v) = %q, want %q", tc.claims, got, tc.want)
 		}
+	}
+}
+
+// collectionSearchOrder extracts the data-search attributes of collection rows
+// in document order, which is what the default (unsorted) table shows.
+func collectionSearchOrder(body string) []string {
+	re := regexp.MustCompile(`data-search="collection [^"]*"`)
+	var out []string
+	for _, m := range re.FindAllString(body, -1) {
+		out = append(out, strings.TrimSuffix(strings.TrimPrefix(m, `data-search="`), `"`))
+	}
+	return out
+}
+
+// TestStorageCollectionOrderStableAcrossRefreshes guards against the previous
+// random Go map iteration: the collections table is re-rendered on every 10s
+// poll and, with the default (no-sort-column) view, must keep an identical
+// alphabetical order in every request.
+func TestStorageCollectionOrderStableAcrossRefreshes(t *testing.T) {
+	storage := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(storage, "collections/community"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(storage, "collections/ansible"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{
+		"community-general-8.5.0.tar.gz",
+		"community-aws-5.0.0.tar.gz",
+		"ansible-posix-1.5.4.tar.gz",
+		"ansible-utils-3.0.0.tar.gz",
+	} {
+		if err := os.WriteFile(filepath.Join(storage, "collections/"+strings.Split(f, "-")[0], f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	d := NewDashboard(&config.Config{StoragePath: storage}, nil, nil)
+
+	var want []string
+	for i := 0; i < 5; i++ {
+		rec := httptest.NewRecorder()
+		d.handleStorage(rec, httptest.NewRequest("GET", "/ui/storage", nil))
+		order := collectionSearchOrder(rec.Body.String())
+		if len(order) != 4 {
+			t.Fatalf("iteration %d: expected 4 collection rows, got %d\n%s", i, len(order), order)
+		}
+		if want == nil {
+			want = order
+		} else {
+			for j := range want {
+				if order[j] != want[j] {
+					t.Fatalf("iteration %d: collection order jumped: got %v, want %v", i, order, want)
+				}
+			}
+		}
+	}
+
+	for i := 1; i < len(want); i++ {
+		if want[i-1] > want[i] {
+			t.Fatalf("default collection order is not alphabetical: %v", want)
+		}
+	}
+}
+
+// TestHandleLogsTailsConfiguredLimit verifies the log viewer serves up to
+// logTailLimit trailing lines as .log-line divs, newest-last, from the
+// configured log file.
+func TestHandleLogsTailsConfiguredLimit(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "orbitron.log")
+	var buf strings.Builder
+	for i := 1; i <= logTailLimit+100; i++ {
+		fmt.Fprintf(&buf, "line %d\n", i)
+	}
+	if err := os.WriteFile(logPath, []byte(buf.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := NewDashboard(&config.Config{LogPath: logPath}, nil, nil)
+	rec := httptest.NewRecorder()
+	d.handleLogs(rec, httptest.NewRequest("GET", "/ui/logs", nil))
+	body := rec.Body.String()
+
+	if got := strings.Count(body, `class="log-line"`); got != logTailLimit {
+		t.Fatalf("handleLogs returned %d lines, want %d", got, logTailLimit)
+	}
+	first := logTailLimit + 1
+	if !strings.Contains(body, fmt.Sprintf(">line %d<", first)) {
+		t.Fatalf("expected tail to start at line %d (the oldest of the last %d)", first, logTailLimit)
+	}
+	if !strings.Contains(body, fmt.Sprintf(">line %d<", logTailLimit+100)) {
+		t.Fatalf("expected the newest line %d in the tail", logTailLimit+100)
+	}
+	if strings.Contains(body, ">line 1<") {
+		t.Fatalf("tail must not include lines older than the limit")
+	}
+}
+
+// TestHandleLogsWithoutFile shows the container-logs hint (not the login page
+// or an error) when log_path is empty.
+func TestHandleLogsWithoutFile(t *testing.T) {
+	d := NewDashboard(&config.Config{}, nil, nil)
+	rec := httptest.NewRecorder()
+	d.handleLogs(rec, httptest.NewRequest("GET", "/ui/logs", nil))
+	if !strings.Contains(rec.Body.String(), "File logging is disabled") {
+		t.Fatalf("empty log_path should explain logs go to the container runtime, got: %s", rec.Body.String())
+	}
+}
+
+// TestTailFileHandlesLargeLineCounts verifies tailFile keeps working when the
+// requested line count spans many times the initial 64KiB read window.
+func TestTailFileHandlesLargeLineCounts(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "orbitron.log")
+	var buf strings.Builder
+	for i := 1; i <= 20000; i++ {
+		fmt.Fprintf(&buf, "line %d\n", i)
+	}
+	if err := os.WriteFile(logPath, []byte(buf.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := tailFile(logPath, 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5000 {
+		t.Fatalf("tailFile returned %d lines, want 5000", len(got))
+	}
+	if got[0] != "line 15001" || got[len(got)-1] != "line 20000" {
+		t.Fatalf("unexpected tail content: first=%q last=%q", got[0], got[len(got)-1])
 	}
 }
