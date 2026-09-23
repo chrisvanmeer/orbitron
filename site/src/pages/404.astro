@@ -1,0 +1,315 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+let seed = 20260923;
+const rand = () => {
+	seed = (seed * 1664525 + 1013904223) % 4294967296;
+	return seed / 4294967296;
+};
+const stars = Array.from({ length: 72 }, () => ({
+	top: (rand() * 100).toFixed(2),
+	left: (rand() * 100).toFixed(2),
+	size: (1 + rand() * 2).toFixed(2),
+	delay: (rand() * 4).toFixed(2),
+	dur: (2.5 + rand() * 4).toFixed(2),
+	opacity: (0.25 + rand() * 0.55).toFixed(2),
+}));
+---
+
+<Layout
+	title="404 — Lost in orbit"
+	description="This orbit is empty. The page you were looking for drifted off-grid."
+	bare
+	noindex
+>
+	<section class="err">
+		<div class="scene" aria-hidden="true">
+			{stars.map((s) => (
+				<span
+					class="star"
+					style={`top:${s.top}%;left:${s.left}%;width:${s.size}px;height:${s.size}px;opacity:${s.opacity};animation-delay:${s.delay}s;animation-duration:${s.dur}s`}
+				/>
+			))}
+
+			<div class="planet p-violet">
+				<span class="ringband" />
+			</div>
+			<div class="planet p-cyan" />
+			<div class="planet p-pink" />
+		</div>
+
+		<div class="mark" aria-hidden="true">
+			<span class="ring" style="--tilt:-28deg">
+				<span class="spin" style="--dur:9s;--accent:var(--cyan)" />
+			</span>
+			<span class="ring" style="--tilt:30deg">
+				<span class="spin reverse" style="--dur:14s;--accent:var(--violet)" />
+			</span>
+			<span class="ring" style="--tilt:88deg">
+				<span class="spin" style="--dur:20s;--accent:var(--pink)" />
+			</span>
+			<span class="core" />
+		</div>
+
+		<p class="eyebrow err-eyebrow">// error 404 · signal lost</p>
+		<h1 class="err-code" aria-label="404">
+			4<em>0</em>4
+		</h1>
+		<p class="err-sub">Such empty.</p>
+		<p class="err-desc">
+			This page drifted out of orbit. The star you were looking for is beyond the rings.
+		</p>
+
+		<div class="err-actions">
+			<a class="btn btn-primary" href="/">Return to orbit</a>
+			<a class="btn btn-ghost" href="/#quickstart">View quickstart</a>
+		</div>
+	</section>
+</Layout>
+
+<style>
+	.err {
+		position: relative;
+		min-height: 100svh;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+		padding: 6rem 24px;
+		gap: 1.4rem;
+		overflow: hidden;
+	}
+
+	.scene {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+
+	.star {
+		position: absolute;
+		border-radius: 50%;
+		background: #fff;
+		animation: twinkle var(--dur, 4s) ease-in-out infinite;
+	}
+
+	@keyframes twinkle {
+		0%,
+		100% {
+			opacity: 0.15;
+			transform: scale(0.7);
+		}
+		50% {
+			opacity: 1;
+			transform: scale(1.15);
+		}
+	}
+
+	.planet {
+		position: absolute;
+		border-radius: 50%;
+		animation: drift 14s ease-in-out infinite alternate;
+	}
+
+	.p-violet {
+		width: 84px;
+		height: 84px;
+		top: 12%;
+		right: 14%;
+		background: radial-gradient(circle at 32% 28%, #c7d2ff 0%, #5773ff 38%, #20214d 78%);
+		box-shadow: 0 0 40px 6px rgba(87, 115, 255, 0.5);
+		animation-duration: 17s;
+	}
+
+	.p-violet .ringband {
+		position: absolute;
+		inset: 6px -26px;
+		border: 5px solid rgba(165, 180, 252, 0.55);
+		border-radius: 50%;
+		transform: rotate(-18deg);
+		filter: drop-shadow(0 0 8px rgba(165, 180, 252, 0.5));
+		animation: tilt 11s ease-in-out infinite alternate;
+	}
+
+	.p-cyan {
+		width: 46px;
+		height: 46px;
+		bottom: 16%;
+		left: 9%;
+		background: radial-gradient(circle at 34% 30%, #d8fbff 0%, #00f0ff 45%, #063844 82%);
+		box-shadow: 0 0 34px 5px rgba(0, 240, 255, 0.45);
+		animation-duration: 12s;
+		animation-delay: -4s;
+	}
+
+	.p-pink {
+		width: 26px;
+		height: 26px;
+		top: 20%;
+		left: 18%;
+		background: radial-gradient(circle at 34% 30%, #ffd7ea 0%, #ff007a 50%, #38061d 85%);
+		box-shadow: 0 0 26px 4px rgba(255, 0, 122, 0.4);
+		animation-duration: 9s;
+		animation-delay: -7s;
+	}
+
+	@keyframes drift {
+		from {
+			transform: translate3d(-22px, -10px, 0) rotate(-6deg);
+		}
+		to {
+			transform: translate3d(26px, 16px, 0) rotate(9deg);
+		}
+	}
+
+	@keyframes tilt {
+		from {
+			transform: rotate(-24deg);
+		}
+		to {
+			transform: rotate(12deg);
+		}
+	}
+
+	.mark {
+		position: relative;
+		width: 300px;
+		height: 172px;
+		margin-inline: auto;
+		margin-bottom: 0.4rem;
+	}
+
+	.mark::before {
+		content: '';
+		position: absolute;
+		inset: -90px;
+		border-radius: 50%;
+		background: radial-gradient(circle, rgba(87, 115, 255, 0.18) 0%, rgba(0, 240, 255, 0.06) 42%, transparent 70%);
+	}
+
+	.ring {
+		position: absolute;
+		inset: 26px 4px;
+		border: 2px solid rgba(139, 148, 158, 0.35);
+		border-radius: 50%;
+		transform: rotate(var(--tilt));
+	}
+
+	.spin {
+		position: absolute;
+		inset: 0;
+		border-radius: 50%;
+		animation: spin var(--dur) linear infinite;
+	}
+
+	.spin.reverse {
+		animation-direction: reverse;
+	}
+
+	.spin::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border: 2px solid transparent;
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		filter: drop-shadow(0 0 6px var(--accent));
+		opacity: 0.95;
+	}
+
+	.spin::before {
+		content: '';
+		position: absolute;
+		top: -4px;
+		left: calc(50% - 4px);
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--accent);
+		box-shadow: 0 0 12px var(--accent);
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	.core {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: #fff;
+		transform: translate(-50%, -50%);
+		box-shadow:
+			0 0 6px 2px rgba(255, 255, 255, 0.8),
+			0 0 22px 6px rgba(0, 240, 255, 0.4),
+			0 0 48px 16px rgba(87, 115, 255, 0.3);
+	}
+
+	.err-eyebrow {
+		margin-top: 1.6rem;
+	}
+
+	.err-code {
+		font-size: clamp(6.5rem, 24vw, 13rem);
+		line-height: 0.9;
+		letter-spacing: -0.05em;
+		background: linear-gradient(90deg, #fff 5%, var(--cyan) 45%, var(--violet) 70%, var(--pink) 95%);
+		-webkit-background-clip: text;
+		background-clip: text;
+		-webkit-text-fill-color: transparent;
+		filter: drop-shadow(0 0 22px rgba(0, 240, 255, 0.25)) drop-shadow(0 8px 40px rgba(87, 115, 255, 0.3));
+	}
+
+	.err-code em {
+		font-style: normal;
+		animation: glow-pulse 2.6s ease-in-out infinite;
+	}
+
+	@keyframes glow-pulse {
+		0%,
+		100% {
+			filter: drop-shadow(0 0 0 rgba(255, 0, 122, 0));
+			transform: translateY(0);
+		}
+		50% {
+			filter: drop-shadow(0 0 26px rgba(255, 0, 122, 0.75));
+			transform: translateY(-8px);
+		}
+	}
+
+	.err-sub {
+		font-family: var(--font-mono);
+		font-size: clamp(1.1rem, 3vw, 1.5rem);
+		font-weight: 700;
+		letter-spacing: 0.34em;
+		text-transform: uppercase;
+		background: linear-gradient(90deg, var(--cyan), var(--pink));
+		-webkit-background-clip: text;
+		background-clip: text;
+		-webkit-text-fill-color: transparent;
+		margin-bottom: 0.2rem;
+	}
+
+	.err-desc {
+		max-width: 46ch;
+		color: var(--text-dim);
+		font-size: 0.98rem;
+	}
+
+	.err-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.8rem;
+		justify-content: center;
+		margin-top: 1.2rem;
+	}
+</style>

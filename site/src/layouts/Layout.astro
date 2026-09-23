@@ -7,13 +7,22 @@ interface Props {
 	title?: string;
 	description?: string;
 	image?: string;
+	bare?: boolean;
+	noindex?: boolean;
 }
 
+const site = Astro.site?.href ?? 'https://getorbitron.app';
 const {
 	title = 'Orbitron — Ansible Galaxy & Git Mirror Daemon',
 	description = 'A custom, lightweight Ansible Galaxy and Git-based role/collection mirror daemon written in Go. Self-hosted, air-gap ready, drop-in for ansible-galaxy.',
-	image = '/assets/logo.svg',
+	image = 'https://getorbitron.app/og.png',
+	bare = false,
+	noindex = false,
 } = Astro.props;
+
+const isError = Astro.url.pathname.endsWith('/404') || Astro.url.pathname.endsWith('/404/');
+const canonical = isError ? site : new URL(Astro.url.pathname, site).href;
+const absoluteImage = image.startsWith('http') ? image : new URL(image, site).href;
 ---
 
 <html lang="en">
@@ -23,23 +32,31 @@ const {
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
 		<meta name="description" content={description} />
+		<link rel="canonical" href={canonical} />
+		{noindex && <meta name="robots" content="noindex,nofollow" />}
 
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
+		<meta name="theme-color" content="#050505" />
 
 		<meta property="og:type" content="website" />
 		<meta property="og:site_name" content="Orbitron" />
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
-		<meta property="og:image" content={image} />
-		<meta property="og:url" content="https://getorbitron.app" />
+		<meta property="og:image" content={absoluteImage} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:url" content={canonical} />
 		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={title} />
+		<meta name="twitter:description" content={description} />
+		<meta name="twitter:image" content={absoluteImage} />
 	</head>
-	<body>
-		<Navbar />
+	<body class:list={bare && 'bare'}>
+		{!bare && <Navbar />}
 		<main>
 			<slot />
 		</main>
-		<Footer />
+		{!bare && <Footer />}
 	</body>
 </html>

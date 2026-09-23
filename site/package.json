@@ -9,6 +9,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "og": "node scripts/og.mjs",
     "astro": "astro"
   },
   "dependencies": {

@@ -1,0 +1,130 @@
+<svg viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#07080f" />
+      <stop offset="100%" stop-color="#050505" />
+    </linearGradient>
+
+    <radialGradient id="glowViolet" cx="0%" cy="0%" r="70%">
+      <stop offset="0%" stop-color="#5773FF" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="#5773FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="0%" cy="0%" r="70%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowPink" cx="0%" cy="0%" r="70%">
+      <stop offset="0%" stop-color="#FF007A" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#FF007A" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="orbit1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="100%" stop-color="#5773FF" />
+    </linearGradient>
+    <linearGradient id="orbit2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5773FF" />
+      <stop offset="100%" stop-color="#FF007A" />
+    </linearGradient>
+    <linearGradient id="orbit3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF007A" />
+      <stop offset="100%" stop-color="#00F0FF" />
+    </linearGradient>
+
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#A5B4FC" />
+    </linearGradient>
+    <linearGradient id="urlGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="100%" stop-color="#FF007A" />
+    </linearGradient>
+
+    <linearGradient id="divider" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.65" />
+      <stop offset="55%" stop-color="#5773FF" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="#FF007A" stop-opacity="0" />
+    </linearGradient>
+
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGrad)" />
+  <circle cx="150" cy="0" r="440" fill="url(#glowViolet)" />
+  <circle cx="1220" cy="150" r="470" fill="url(#glowCyan)" />
+  <circle cx="40" cy="640" r="400" fill="url(#glowPink)" />
+
+  <!-- Stars -->
+  <g fill="#FFFFFF">
+    <circle cx="90" cy="70" r="2" opacity="0.5" />
+    <circle cx="230" cy="150" r="1.5" opacity="0.4" />
+    <circle cx="420" cy="55" r="2.2" opacity="0.35" />
+    <circle cx="180" cy="520" r="2" opacity="0.45" />
+    <circle cx="340" cy="590" r="1.5" opacity="0.55" />
+    <circle cx="505" cy="120" r="2.5" opacity="0.3" />
+    <circle cx="560" cy="470" r="2" opacity="0.4" />
+    <circle cx="720" cy="60" r="2" opacity="0.45" />
+    <circle cx="940" cy="70" r="2.2" opacity="0.35" />
+    <circle cx="610" cy="560" r="1.6" opacity="0.5" />
+    <circle cx="860" cy="600" r="2" opacity="0.4" />
+    <circle cx="1060" cy="300" r="1.8" opacity="0.45" />
+    <circle cx="1130" cy="560" r="2.2" opacity="0.35" />
+    <circle cx="1170" cy="190" r="1.6" opacity="0.5" />
+    <circle cx="1040" cy="450" r="1.5" opacity="0.4" />
+  </g>
+  <g fill="#FCE50A">
+    <circle cx="300" cy="40" r="2.4" opacity="0.7" />
+    <circle cx="1120" cy="90" r="2" opacity="0.6" />
+  </g>
+  <g fill="#00F0FF">
+    <circle cx="780" cy="540" r="2.4" opacity="0.6" />
+    <circle cx="90" cy="300" r="2" opacity="0.55" />
+  </g>
+
+  <!-- Orbit mark (left) -->
+  <g transform="translate(285, 315)">
+    <circle cx="0" cy="0" r="250" fill="none" stroke="#5773FF" stroke-opacity="0.14" stroke-width="1.5" stroke-dasharray="3 9" />
+
+    <ellipse cx="0" cy="0" rx="170" ry="62" fill="none" stroke="url(#orbit1)" stroke-width="6" transform="rotate(-30)" opacity="0.85" />
+    <ellipse cx="0" cy="0" rx="170" ry="62" fill="none" stroke="url(#orbit2)" stroke-width="6" transform="rotate(30)" opacity="0.85" />
+    <ellipse cx="0" cy="0" rx="170" ry="62" fill="none" stroke="url(#orbit3)" stroke-width="6" transform="rotate(90)" opacity="0.85" />
+
+    <circle cx="147" cy="-85" r="13" fill="#00F0FF" filter="url(#glow)" />
+    <circle cx="147" cy="85" r="13" fill="#FF007A" filter="url(#glow)" />
+    <circle cx="0" cy="170" r="13" fill="#5773FF" filter="url(#glow)" />
+    <circle cx="-147" cy="85" r="8" fill="#00F0FF" opacity="0.6" />
+    <circle cx="-147" cy="-85" r="8" fill="#FF007A" opacity="0.6" />
+    <circle cx="0" cy="-170" r="8" fill="#5773FF" opacity="0.6" />
+
+    <circle cx="0" cy="0" r="30" fill="#FFFFFF" filter="url(#glow)" />
+    <circle cx="0" cy="0" r="12" fill="#050505" />
+  </g>
+
+  <!-- Typography (right) -->
+  <text x="640" y="255" font-family="Helvetica, Arial, sans-serif" font-size="84" font-weight="900" fill="url(#textGrad)" letter-spacing="6">ORBITRON</text>
+  <text x="642" y="310" font-family="Helvetica, Arial, sans-serif" font-size="29" font-weight="500" fill="#8B949E" letter-spacing="1">Ansible Galaxy &amp; Git Mirror Daemon</text>
+
+  <rect x="640" y="350" width="440" height="3" rx="1.5" fill="url(#divider)" />
+
+  <!-- Feature pills -->
+  <g font-family="Menlo, Consolas, monospace" font-size="20" font-weight="600" letter-spacing="1">
+    <rect x="640" y="398" width="372" height="40" rx="20" fill="#0D0E16" stroke="#00F0FF" stroke-opacity="0.5" />
+    <text x="660" y="424" fill="#00F0FF">Native Galaxy V1 + V3 API</text>
+
+    <rect x="640" y="454" width="352" height="40" rx="20" fill="#0D0E16" stroke="#A5B4FC" stroke-opacity="0.4" />
+    <text x="660" y="480" fill="#A5B4FC">Drop-in for ansible-galaxy</text>
+
+    <rect x="640" y="510" width="352" height="40" rx="20" fill="#0D0E16" stroke="#FF007A" stroke-opacity="0.5" />
+    <text x="660" y="536" fill="#FF007A">Air-gap ready · self-hosted</text>
+  </g>
+
+  <!-- URL -->
+  <text x="1080" y="602" text-anchor="end" font-family="Menlo, Consolas, monospace" font-size="26" font-weight="700" letter-spacing="2" fill="url(#urlGrad)">getorbitron.app<span font-size="20" fill="#8B949E">_</span></text>
+</svg>
