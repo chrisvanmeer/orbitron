@@ -31,6 +31,22 @@ jobs:
           config: '.markdownlint.json'
           globs: '**/*.md'
 
+  build-site:
+    name: Build & Smoke-test Site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install & build
+        run: npm ci && npm run build
+      - name: Smoke test (page invariants + internal links)
+        run: npm run smoke
+
   build:
     name: Verify Build
     runs-on: ubuntu-latest

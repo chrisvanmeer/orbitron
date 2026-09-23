@@ -13,10 +13,51 @@ const { label = 'TERMINAL', filename, lang } = Astro.props;
 		<span class="dots"><span></span><span></span><span></span></span>
 		<span class="label">{label}</span>
 		{filename && <span class="filename">{filename}</span>}
+		<button class="copy" type="button" data-copy aria-label="Copy code">
+			<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<rect x="9" y="9" width="13" height="13" rx="2" />
+				<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+			</svg>
+			<span class="copy-label">Copy</span>
+		</button>
 		<span class="lang">{lang}</span>
 	</div>
 	<pre><code><slot /></code></pre>
 </div>
+
+<script>
+	const buttons = document.querySelectorAll<HTMLButtonElement>('[data-copy]');
+
+	async function copyText(text: string): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			const ta = document.createElement('textarea');
+			ta.value = text;
+			ta.style.position = 'fixed';
+			ta.style.opacity = '0';
+			document.body.appendChild(ta);
+			ta.select();
+			document.execCommand('copy');
+			ta.remove();
+		}
+	}
+
+	for (const btn of buttons) {
+		btn.addEventListener('click', async () => {
+			const code = btn.closest('.codeblock')?.querySelector('code');
+			if (!code) return;
+			const label = btn.querySelector('.copy-label');
+			await copyText(code.textContent ?? '');
+			btn.classList.add('done');
+			if (label) label.textContent = 'Copied!';
+			setTimeout(() => {
+				btn.classList.remove('done');
+				if (label) label.textContent = 'Copy';
+			}, 1600);
+		});
+	}
+</script>
 
 <style>
 	.codeblock {
@@ -62,8 +103,38 @@ const { label = 'TERMINAL', filename, lang } = Astro.props;
 		color: var(--text-mid);
 	}
 
-	.lang {
+	.copy {
 		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.3rem 0.65rem;
+		font-family: var(--font-mono);
+		font-size: 0.66rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		color: var(--text-dim);
+		background: rgba(13, 14, 22, 0.7);
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		cursor: pointer;
+		transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+	}
+
+	.copy:hover {
+		color: var(--cyan);
+		border-color: rgba(0, 240, 255, 0.55);
+		box-shadow: 0 0 16px -5px rgba(0, 240, 255, 0.6);
+	}
+
+	.copy.done {
+		color: var(--cyan);
+		border-color: rgba(0, 240, 255, 0.6);
+		background: rgba(0, 240, 255, 0.08);
+	}
+
+	.lang {
+		margin-left: 0.5rem;
 		font-family: var(--font-mono);
 		font-size: 0.66rem;
 		color: var(--pink);

@@ -143,7 +143,7 @@ const current = sidebar.find((s) => s.key === section);
 
 	.doc-body h2 {
 		font-size: clamp(1.6rem, 3vw, 2.2rem);
-		margin: 2.4rem 0 0.8rem;
+		margin: 3.25rem 0 1.1rem;
 		color: var(--text);
 	}
 
@@ -151,16 +151,24 @@ const current = sidebar.find((s) => s.key === section);
 		margin-top: 0;
 	}
 
+	.doc-body h2 + h3 {
+		margin-top: 0.6rem;
+	}
+
 	.doc-body h3 {
 		font-size: 1.15rem;
-		margin: 1.8rem 0 0.6rem;
+		margin: 2.4rem 0 0.85rem;
 		color: var(--text);
+	}
+
+	.doc-body h3 + h2 {
+		margin-top: 3.4rem;
 	}
 
 	.doc-body p {
 		color: var(--text-mid);
 		font-size: 0.95rem;
-		margin: 0.8rem 0;
+		margin: 1.05rem 0;
 		line-height: 1.75;
 	}
 
@@ -201,20 +209,23 @@ const current = sidebar.find((s) => s.key === section);
 		color: var(--pink);
 	}
 
-	.doc-body :global(.codeblock),
-	.doc-body .doc-card + .doc-card {
-		margin-top: 1.2rem;
+	.doc-body :global(.codeblock) {
+		margin-block: 1.6rem;
 	}
 
 	.doc-body :global(.note) {
-		margin-top: 1.4rem;
+		margin-block: 1.75rem;
+	}
+
+	.doc-body .doc-card + .doc-card {
+		margin-top: 0;
 	}
 
 	.doc-cards {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		gap: 1.1rem;
-		margin-top: 1.6rem;
+		margin-block: 1.75rem 0.5rem;
 	}
 
 	.doc-card {
