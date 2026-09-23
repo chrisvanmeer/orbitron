@@ -1,0 +1,63 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+
+const cards = [
+	{
+		href: '/docs/install',
+		title: 'Install',
+		desc: 'Bare metal via --install, the container image, or HashiCorp Nomad — plus CLI & token lifecycle.',
+		go: 'Go to Install →',
+	},
+	{
+		href: '/docs/configuration',
+		title: 'Configuration',
+		desc: 'All config.yml keys, forward proxies, TLS / private CAs for outbound traffic, and SSO/OIDC.',
+		go: 'Go to Configuration →',
+	},
+	{
+		href: '/docs/mirroring',
+		title: 'Mirroring content',
+		desc: 'Feed role & collection manifests, version specifiers, full re-syncs and cache deletion.',
+		go: 'Go to Mirroring →',
+	},
+	{
+		href: '/docs/api',
+		title: 'API reference',
+		desc: 'The management API and the Galaxy V1 + V3 serving endpoints clients talk to.',
+		go: 'Go to API reference →',
+	},
+];
+---
+
+<DocsLayout title="Documentation" description="Guides for installing, configuring, and operating an Orbitron mirror." section="overview">
+	<h2>Documentation</h2>
+	<p>
+		Orbitron is a single static Go binary that mirrors Ansible roles &amp; collections behind a
+		native Galaxy V1 + V3 API. Everything <code>ansible-galaxy</code> already knows — install,
+		update, search — keeps working against it, with zero client changes.
+	</p>
+
+	<div class="doc-cards">
+		{
+			cards.map((c) => (
+				<a class="card doc-card" href={c.href}>
+					<h3>{c.title}</h3>
+					<p>{c.desc}</p>
+					<span class="doc-card-go">{c.go}</span>
+				</a>
+			))
+		}
+	</div>
+
+	<h2>Pick a path</h2>
+	<p>
+		Not sure where to start? The <a href="/#quickstart">quickstart</a> on the homepage walks you
+		through a first mirror in roughly a minute. Then <a href="/docs/install">Install</a> is the
+		right next page for going into production.
+	</p>
+
+	<CodeBlock label="HELLO ORBITRON" filename="terminal" lang="bash">{`$ curl -s http://127.0.0.1:8080/healthz
+  -H "Authorization: Bearer $ORBITRON_TOKEN"
+OK`}</CodeBlock>
+</DocsLayout>

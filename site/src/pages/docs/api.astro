@@ -1,0 +1,242 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Note from '../../components/Note.astro';
+
+const management = [
+	{
+		methods: ['GET'],
+		path: '/healthz',
+		desc: 'Unauthenticated liveness — 200 when the storage path is writable, 503 when degraded.',
+	},
+	{
+		methods: ['POST'],
+		path: '/api/v1/requirements/roles · /collections',
+		desc: 'Ingest role & collection YAML manifests. Content-addressed by SHA-256, mirrored by parallel workers.',
+	},
+	{
+		methods: ['POST', 'GET'],
+		path: '/api/v1/sync · /sync/status',
+		desc: 'Re-run every stored manifest, or poll progress and a bounded history of finished syncs.',
+	},
+	{
+		methods: ['GET'],
+		path: '/api/v1/manifests',
+		desc: 'Lists every stored requirements manifest, grouped by type, with the content sha256 used for idempotent ingestion.',
+	},
+	{
+		methods: ['GET', 'DELETE'],
+		path: '/api/v1/storage',
+		desc: 'Full cached-version inventory. DELETE /storage/{type}/{name}/{version} purges a single cached version.',
+	},
+	{
+		methods: ['POST'],
+		path: '/api/v1/prune',
+		desc: 'Access-based cleanup with retention window — preview with {"dry_run": true}, nothing is deleted.',
+	},
+	{
+		methods: ['GET', 'POST', 'DELETE'],
+		path: '/api/v1/tokens',
+		desc: 'Token lifecycle: create, list, revoke and rotate admin tokens, with optional per-token TTLs.',
+	},
+	{
+		methods: ['GET'],
+		path: '/metrics',
+		desc: 'Prometheus exposition — uptime, cache counts, version totals and storage bytes.',
+	},
+];
+
+const galaxy = [
+	{
+		methods: ['GET'],
+		path: '/api/v1/roles/ · /api/v1/collections/',
+		desc: 'Galaxy V1 API — the surface ansible-galaxy talks to. No client changes needed.',
+	},
+	{
+		methods: ['GET'],
+		path: '/api/v3/',
+		desc: 'Galaxy V3 API — collection indexes and artifact downloads, as served by Galaxy.',
+	},
+];
+---
+
+<DocsLayout
+	title="API reference — Orbitron Docs"
+	description="Orbitron management endpoints and the Galaxy V1 + V3 serving APIs clients talk to."
+	section="api"
+>
+	<h2>API reference</h2>
+	<p>
+		A small, pragmatic surface. The management endpoints below sit next to the Galaxy V1 &amp;
+		V3 serving endpoints on the same TCP tree, so one instance is both control plane and one of
+		the best-behaved Galaxy mirrors your playbooks have talked to.
+	</p>
+
+	<h3>Serving endpoints (the Galaxy half)</h3>
+	<div class="api-card card">
+		<ul class="eps">
+			{
+				galaxy.map((ep) => (
+					<li class="ep">
+						<div class="ep-meta">
+							<span class="methods">
+								{ep.methods.map((m) => <span class:list={['m', `m-${m}`]}>{m}</span>)}
+							</span>
+							<span class="path">{ep.path}</span>
+						</div>
+						<p class="desc">{ep.desc}</p>
+					</li>
+				))
+			}
+		</ul>
+	</div>
+	<p>
+		Point your clients here and requirement installs resolve against the mirror. The
+		<code>ansible.cfg</code> below is the entire client story:
+	</p>
+	<CodeBlock label="CLIENT" filename="ansible.cfg" lang="ini">{`[galaxy]
+server_list = orbitron
+
+[galaxy_server.orbitron]
+url = https://orbitron.internal/api/
+# token = YOUR_ORBITRON_TOKEN  # if require_auth_pull is enabled`}</CodeBlock>
+
+	<h3>Management endpoints</h3>
+	<div class="api-card card">
+		<ul class="eps">
+			{
+				management.map((ep) => (
+					<li class="ep">
+						<div class="ep-meta">
+							<span class="methods">
+								{ep.methods.map((m) => <span class:list={['m', `m-${m}`]}>{m}</span>)}
+							</span>
+							<span class="path">{ep.path}</span>
+						</div>
+						<p class="desc">{ep.desc}</p>
+					</li>
+				))
+			}
+		</ul>
+		<p class="api-note">Every endpoint above except <code>/healthz</code> requires a Bearer token or HTTP Basic auth.</p>
+	</div>
+
+	<h3>Examples</h3>
+	<CodeBlock label="HEALTH" filename="curl" lang="bash">{`curl -i http://127.0.0.1:8080/healthz
+HTTP/1.1 200 OK`}</CodeBlock>
+	<CodeBlock label="MANIFESTS" filename="curl" lang="bash">{`curl http://127.0.0.1:8080/api/v1/manifests \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN"
+{
+  "roles": [{"file": "roles_x_requirements.yml", "sha256": "737690a6..."}],
+  "collections": []
+}`}</CodeBlock>
+	<CodeBlock label="INVENTORY" filename="curl" lang="bash">{`curl http://127.0.0.1:8080/api/v1/storage \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN"
+{
+  "roles": [
+    {"type": "role", "name": "geerlingguy.nginx",
+     "versions": [{"version": "1.2.3", "declared": true, "size_bytes": 20480}]}
+  ],
+  "collections": []
+}`}</CodeBlock>
+	<CodeBlock label="PRUNE PREVIEW" filename="curl" lang="bash">{`curl -X POST http://127.0.0.1:8080/api/v1/prune \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"dry_run": true, "days": 90}'
+{
+  "items": ["/var/lib/orbitron/storage/roles/geerlingguy.nginx/2.0.1"],
+  "freed_bytes": 40960,
+  "executed": false
+}`}</CodeBlock>
+	<Note>
+		<p>
+			Full request/response contracts, error codes and the deterministic requirements hash live in
+			the <a href="https://github.com/chrisvanmeer/orbitron/blob/main/README.md" target="_blank" rel="noopener">README</a>,
+			alongside a Prometheus metric dump and the Grafana dashboard template.
+		</p>
+	</Note>
+</DocsLayout>
+
+<style>
+	.api-card {
+		padding: 1rem 1.4rem;
+		margin: 1.2rem 0;
+	}
+
+	.eps {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.ep {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+		gap: 1.4rem;
+		align-items: baseline;
+		padding: 0.95rem 0;
+	}
+
+	.ep + .ep {
+		border-top: 1px solid var(--border);
+	}
+
+	.ep-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+	}
+
+	.methods {
+		display: inline-flex;
+		gap: 0.25rem;
+	}
+
+	.m {
+		font-family: var(--font-mono);
+		font-size: 0.62rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		padding: 0.14rem 0.4rem;
+		border-radius: 5px;
+		border: 1px solid;
+	}
+
+	.m-GET    { color: var(--cyan);   border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.07); }
+	.m-POST   { color: var(--pink);   border-color: rgba(255, 0, 122, 0.4); background: rgba(255, 0, 122, 0.07); }
+	.m-DELETE { color: var(--yellow); border-color: rgba(252, 238, 10, 0.4); background: rgba(252, 238, 10, 0.07); }
+
+	.path {
+		font-family: var(--font-mono);
+		font-size: 0.86rem;
+		color: var(--text);
+		word-break: break-word;
+	}
+
+	.desc {
+		font-size: 0.87rem;
+		color: var(--text-dim);
+	}
+
+	.api-note {
+		margin-top: 0.4rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+		font-size: 0.82rem;
+		color: var(--text-faint);
+		font-family: var(--font-mono);
+	}
+
+	.api-note :global(code) {
+		color: var(--pink);
+	}
+
+	@media (max-width: 720px) {
+		.ep {
+			grid-template-columns: 1fr;
+			gap: 0.6rem;
+		}
+	}
+</style>

@@ -1,0 +1,95 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Note from '../../components/Note.astro';
+---
+
+<DocsLayout
+	title="Mirroring content — Orbitron Docs"
+	description="Feed role and collection manifests into Orbitron, version specifiers, re-syncs and cache deletion."
+	section="mirroring"
+>
+	<h2>Mirroring content</h2>
+	<p>
+		You feed Orbitron YAML requirement manifests — the same shape Ansible uses. Every manifest is
+		stored, content-addressed by SHA-256 (identical re-submissions dedup), and mirrored by parallel
+		background workers on the spot.
+	</p>
+
+	<h3>Roles</h3>
+	<CodeBlock label="INGEST" filename="roles_requirements.yml" lang="yaml">{`roles:
+  - name: geerlingguy.nginx
+    version: 3.3.1
+  - name: geerlingguy.docker
+    version: 7.1.0
+  - name: RHEL9-CIS
+    src: https://github.com/ansible-lockdown/RHEL9-CIS.git
+    version: 2.0.2`}</CodeBlock>
+	<CodeBlock label="API" filename="curl" lang="bash">{`curl -X POST http://127.0.0.1:8080/api/v1/requirements/roles \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN" \\
+  -H "Content-Type: text/yaml" \\
+  --data-binary @roles_requirements.yml`}</CodeBlock>
+
+	<h3>Collections</h3>
+	<CodeBlock label="INGEST" filename="collections_requirements.yml" lang="yaml">{`collections:
+  - name: community.general
+    version: 8.5.0
+  - name: containers.podman
+    version: 1.12.0`}</CodeBlock>
+	<CodeBlock label="API" filename="curl" lang="bash">{`curl -X POST http://127.0.0.1:8080/api/v1/requirements/collections \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN" \\
+  -H "Content-Type: text/yaml" \\
+  --data-binary @collections_requirements.yml`}</CodeBlock>
+
+	<h3>Version specifiers</h3>
+	<p>
+		The <code>version</code> field accepts the same range specifiers Ansible does. Orbitron
+		resolves them against the published Galaxy indexes at sync time and mirrors the highest
+		matching release — or every published version for <code>all</code> (roles as git tags,
+		collections as tarballs).
+	</p>
+	<ul>
+		<li><code>empty</code> / <code>latest</code> — highest published version</li>
+		<li><code>all</code> — every published version (new releases included on each sync)</li>
+		<li><code>1.4.5</code> / <code>==1.4.5</code> — exact version (or git tag/branch)</li>
+		<li><code>&gt;=1.0.0</code>, <code>&gt;1.0.0,&lt;2.0.0</code> — ranges</li>
+		<li><code>~=1.4.5</code> — compatible release</li>
+		<li><code>!=2.0.0</code> — anything but</li>
+		<li><code>==1.4.*</code> / <code>1.*</code> — wildcard prefix</li>
+	</ul>
+	<Note>
+		<p>
+			Orbitron never re-downloads content it already has on disk — a version present is trusted
+			until deleted. To repair a corrupt or stale copy, purge it first (
+			<code>DELETE /api/v1/storage/...</code> or the prune API) and let the next sync fetch it
+			again.
+		</p>
+	</Note>
+
+	<h3>Force a full re-sync</h3>
+	<CodeBlock label="API" filename="curl" lang="bash">{`curl -X POST http://127.0.0.1:8080/api/v1/sync \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN"
+# poll progress with GET /api/v1/sync/status`}</CodeBlock>
+
+	<h3>Delete cached versions</h3>
+	<CodeBlock label="API" filename="curl" lang="bash">{`# single cached role version
+curl -X DELETE http://127.0.0.1:8080/api/v1/storage/roles/geerlingguy.nginx/1.2.3 \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN"
+
+# single cached collection version
+curl -X DELETE http://127.0.0.1:8080/api/v1/storage/collections/community.general/8.5.0 \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN"`}</CodeBlock>
+
+	<h3>Declarative, from Ansible</h3>
+	<p>
+		The official <code>chrisvanmeer.orbitron</code> collection covers the full lifecycle — install,
+		configure, bootstrap tokens, mirror wait-for-sync and day-two pruning — with six HTTP modules
+		and two roles, so your fleet stays idempotent.
+	</p>
+	<CodeBlock label="ANSIBLE" filename="terminal" lang="bash">{`$ ansible-galaxy collection install chrisvanmeer.orbitron
+$ ansible-playbook -i hosts orbitron_daemon.yml
+
+# roles:
+#   chrisvanmeer.orbitron.orbitron        # install + operate daemon
+#   chrisvanmeer.orbitron.orbitron_mirror # declare roles/collections`}</CodeBlock>
+</DocsLayout>

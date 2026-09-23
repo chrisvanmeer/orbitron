@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <defs>
+    <linearGradient id="ring1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="100%" stop-color="#5773FF" />
+    </linearGradient>
+    <linearGradient id="ring2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5773FF" />
+      <stop offset="100%" stop-color="#FF003C" />
+    </linearGradient>
+    <linearGradient id="ring3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF003C" />
+      <stop offset="100%" stop-color="#00F0FF" />
+    </linearGradient>
+    <radialGradient id="bg" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#0B0C14" />
+      <stop offset="100%" stop-color="#050505" />
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="600" height="600" rx="132" fill="url(#bg)" />
+
+  <g transform="translate(300, 300)">
+    <circle cx="0" cy="0" r="238" fill="none" stroke="#5773FF" stroke-opacity="0.12" stroke-width="2" stroke-dasharray="4 18" />
+
+    <ellipse cx="0" cy="0" rx="150" ry="56" fill="none" stroke="url(#ring1)" stroke-width="7" transform="rotate(-30)" opacity="0.9" />
+    <ellipse cx="0" cy="0" rx="150" ry="56" fill="none" stroke="url(#ring2)" stroke-width="7" transform="rotate(30)" opacity="0.9" />
+    <ellipse cx="0" cy="0" rx="150" ry="56" fill="none" stroke="url(#ring3)" stroke-width="7" transform="rotate(90)" opacity="0.9" />
+
+    <circle cx="130" cy="-75" r="14" fill="#00F0FF" filter="url(#glow)" />
+    <circle cx="130" cy="75" r="14" fill="#FF003C" filter="url(#glow)" />
+    <circle cx="0" cy="150" r="14" fill="#5773FF" filter="url(#glow)" />
+    <circle cx="-130" cy="75" r="9" fill="#00F0FF" opacity="0.6" />
+    <circle cx="-130" cy="-75" r="9" fill="#FF003C" opacity="0.6" />
+    <circle cx="0" cy="-150" r="9" fill="#5773FF" opacity="0.6" />
+
+    <circle cx="0" cy="0" r="34" fill="#FFFFFF" filter="url(#glow)" />
+    <circle cx="0" cy="0" r="13" fill="#050505" />
+  </g>
+</svg>

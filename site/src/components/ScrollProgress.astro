@@ -1,0 +1,48 @@
+---
+---
+
+<div class="scrollbar" data-scrollbar aria-hidden="true"></div>
+
+<script>
+	const bar = document.querySelector('[data-scrollbar]');
+	const ids = ['features', 'architecture', 'dashboard', 'quickstart', 'api', 'ecosystem'];
+	const links = [...document.querySelectorAll<HTMLAnchorElement>('.nav-links a[href^="#"]')];
+
+	const updateBar = () => {
+		const max = document.documentElement.scrollHeight - window.innerHeight;
+		if (bar) bar.style.width = `${Math.min(100, (window.scrollY / Math.max(1, max)) * 100)}%`;
+	};
+
+	const sections = ids.map((id) => document.getElementById(id)).filter(Boolean);
+
+	const setActive = () => {
+		let current: Element | null = null;
+		for (const el of sections) {
+			if (el.getBoundingClientRect().top <= 140) current = el;
+		}
+		for (const a of links) a.classList.toggle('active', a.hash.slice(1) === current?.id);
+	};
+
+	window.addEventListener('scroll', () => {
+		updateBar();
+		setActive();
+	}, { passive: true });
+	window.addEventListener('resize', updateBar, { passive: true });
+
+	updateBar();
+	setActive();
+</script>
+
+<style>
+	.scrollbar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		height: 3px;
+		width: 0;
+		z-index: 60;
+		background: linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+		box-shadow: 0 0 12px rgba(0, 240, 255, 0.6);
+		pointer-events: none;
+	}
+</style>

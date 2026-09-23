@@ -37,6 +37,8 @@ const absoluteImage = image.startsWith('http') ? image : new URL(image, site).hr
 
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/site.webmanifest" />
 		<meta name="theme-color" content="#050505" />
 
 		<meta property="og:type" content="website" />
@@ -51,6 +53,39 @@ const absoluteImage = image.startsWith('http') ? image : new URL(image, site).hr
 		<meta name="twitter:title" content={title} />
 		<meta name="twitter:description" content={description} />
 		<meta name="twitter:image" content={absoluteImage} />
+
+		{!isError && (
+			<script type="application/ld+json" set:html={JSON.stringify({
+				'@context': 'https://schema.org',
+				'@graph': [
+					{
+						'@type': 'SoftwareApplication',
+						name: 'Orbitron',
+						applicationCategory: 'DeveloperApplication',
+						operatingSystem: 'Linux, macOS, FreeBSD',
+						description,
+						url: 'https://getorbitron.app',
+						author: { '@type': 'Person', name: 'Chris van Meer' },
+						license: 'https://www.gnu.org/licenses/gpl-3.0.html',
+						offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+						features: [
+							'Ansible Galaxy V1 + V3 mirror API',
+							'Git-backed role mirroring',
+							'Access-based retention and pruning',
+							'Web dashboard with SSO/OIDC',
+							'Prometheus metrics',
+						],
+					},
+					{
+						'@type': 'WebSite',
+						name: 'Orbitron',
+						url: 'https://getorbitron.app',
+						publisher: { '@type': 'Person', name: 'Chris van Meer' },
+						funder: { '@type': 'Organization', name: 'AT Computing' },
+					},
+				],
+			})} />
+		)}
 	</head>
 	<body class:list={bare && 'bare'}>
 		{!bare && <Navbar />}

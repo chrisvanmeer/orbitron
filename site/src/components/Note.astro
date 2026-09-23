@@ -1,0 +1,74 @@
+---
+interface Props {
+	variant?: 'info' | 'warn';
+}
+
+const { variant = 'info' } = Astro.props;
+---
+
+<aside class:list={['note', `note-${variant}`]}>
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+		<path d="M12 9v4" />
+		<path d="M12 17h.01" />
+	</svg>
+	<div class="note-content">
+		<slot />
+	</div>
+</aside>
+
+<style>
+	.note {
+		display: flex;
+		gap: 0.9rem;
+		align-items: flex-start;
+		padding: 1.1rem 1.3rem;
+		background: linear-gradient(180deg, rgba(87, 115, 255, 0.08), rgba(13, 14, 22, 0.5));
+		border: 1px solid rgba(87, 115, 255, 0.3);
+		border-radius: var(--radius);
+	}
+
+	.note-warn {
+		background: linear-gradient(180deg, rgba(252, 238, 10, 0.07), rgba(13, 14, 22, 0.5));
+		border-color: rgba(252, 238, 10, 0.3);
+	}
+
+	.note svg {
+		width: 20px;
+		height: 20px;
+		flex: none;
+		color: var(--yellow);
+		margin-top: 0.15rem;
+	}
+
+	.note-warn svg {
+		color: var(--yellow);
+	}
+
+	.note-content {
+		font-size: 0.88rem;
+		color: var(--text-mid);
+		line-height: 1.7;
+		max-width: 65ch;
+	}
+
+	.note-content :global(p) {
+		font-size: 0.88rem;
+		color: var(--text-mid);
+		line-height: 1.7;
+		margin: 0;
+	}
+
+	.note-content :global(strong) {
+		color: var(--text);
+	}
+
+	.note-content :global(code) {
+		font-family: var(--font-mono);
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.07);
+		padding: 0.05rem 0.3rem;
+		border-radius: 5px;
+		font-size: 0.9em;
+	}
+</style>

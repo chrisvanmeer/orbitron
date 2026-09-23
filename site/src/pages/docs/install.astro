@@ -1,0 +1,98 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Note from '../../components/Note.astro';
+---
+
+<DocsLayout
+	title="Install — Orbitron Docs"
+	description="Install Orbitron bare metal, with the container image, or on HashiCorp Nomad."
+	section="install"
+>
+	<h2>Install</h2>
+	<p>
+		Every release ships static binaries for Linux AMD64 and ARM64, plus a multi-arch container
+		image. Pick whichever fits your fleet — all three end up with the same daemon and the same
+		Galaxy API on top.
+	</p>
+
+	<h3>Bare metal (systemd)</h3>
+	<p>
+		Fetch a binary from the <a href="https://github.com/chrisvanmeer/orbitron/releases" target="_blank" rel="noopener">releases page</a>. Then
+		<code>--install</code> as root bootstraps everything: the <code>orbitron</code> user and group,
+		directories, config files, a systemd unit and a logrotate script — then enables and starts the
+		daemon.
+	</p>
+	<CodeBlock label="SETUP" filename="terminal" lang="bash">{`$ sudo ./bin/orbitron --install
+$ sudo systemctl status orbitron        # active (running)
+
+# create an admin token (script-friendly: -q)
+$ sudo orbitron --generate-token -q
+
+# hot-reload config.yml, no downtime
+$ sudo systemctl reload orbitron`}</CodeBlock>
+	<p>
+		<code>systemctl reload</code> sends a <code>SIGHUP</code>: the daemon re-reads
+		<code>/etc/orbitron/config.yml</code>, re-validates it (including OIDC discovery when enabled)
+		and rebuilds the HTTP server on the same address. If the new config fails to validate, the
+		running daemon is left untouched.
+	</p>
+	<Note>
+		<p>
+			<strong>Uninstall</strong> is symmetric: <code>sudo ./bin/orbitron --uninstall</code> stops
+			and disables the unit, cleans storage paths and manifests, and removes users and binaries.
+		</p>
+	</Note>
+
+	<h3>Docker / Compose</h3>
+	<p>
+		The GHCR image runs non-root with git and openssh-client bundled. Config is rendered entirely
+		from <code>ORBITRON_*</code> environment variables — no file to mount. Persist the cache on a
+		volume.
+	</p>
+	<CodeBlock label="DEPLOY" filename="docker-compose.yml" lang="yaml">{`services:
+  orbitron:
+    image: ghcr.io/chrisvanmeer/orbitron:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ORBITRON_LISTEN_ADDR: "0.0.0.0:8080"
+      ORBITRON_STORAGE_PATH: "/var/lib/orbitron/storage"
+      ORBITRON_REQUIRE_AUTH_PULL: "false"
+    volumes:
+      - orbitron-cache:/var/lib/orbitron/storage
+
+volumes:
+  orbitron-cache:`}</CodeBlock>
+	<p>On first start the admin token is printed to the container logs:</p>
+	<CodeBlock label="TOKEN" filename="terminal" lang="bash">{`$ docker compose logs orbitron | grep "ADMIN TOKEN"
+orbitron  | [2026-09-23 08:12:04] ADMIN TOKEN: obt_xxxx...`}</CodeBlock>
+
+	<h3>HashiCorp Nomad</h3>
+	<p>
+		A battle-tested <code>orbitron.nomad.hcl</code> ships in the repo — service, volume, health
+		check against <code>/healthz</code> and secrets via env already wired up.
+	</p>
+	<CodeBlock label="DEPLOY" filename="terminal" lang="bash">{`$ nomad run orbitron.nomad.hcl
+$ nomad status orbitron`}</CodeBlock>
+
+	<h3>CLI &amp; tokens</h3>
+	<CodeBlock label="CLI" filename="terminal" lang="bash">{`# Generate an administrative Bearer token
+sudo orbitron --generate-token
+
+# Raw token output for script exports
+export ORBITRON_TOKEN=$(sudo orbitron --generate-token -q)
+
+# Revoke a token
+sudo orbitron --revoke-token <TOKEN>
+
+# Interactively scan + prune unreferenced versions (window: --days, default 90)
+sudo orbitron --prune
+
+# Run with a custom config
+orbitron --config /etc/orbitron/config.yml
+
+# Show version
+orbitron --version`}</CodeBlock>
+</DocsLayout>

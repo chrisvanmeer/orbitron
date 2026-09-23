@@ -1,0 +1,259 @@
+---
+import Layout from './Layout.astro';
+
+export interface Props {
+	title: string;
+	description: string;
+	section: 'overview' | 'install' | 'configuration' | 'mirroring' | 'api';
+}
+
+const { title, description, section } = Astro.props;
+
+const sidebar: { label: string; href: string; key: Props['section'] }[] = [
+	{ label: 'Overview', href: '/docs', key: 'overview' },
+	{ label: 'Install', href: '/docs/install', key: 'install' },
+	{ label: 'Configuration', href: '/docs/configuration', key: 'configuration' },
+	{ label: 'Mirroring content', href: '/docs/mirroring', key: 'mirroring' },
+	{ label: 'API reference', href: '/docs/api', key: 'api' },
+];
+
+const current = sidebar.find((s) => s.key === section);
+---
+
+<Layout title={title} description={description}>
+	<div class="doc">
+		<aside class="doc-aside">
+			<p class="eyebrow">Docs</p>
+			<nav class="doc-nav" aria-label="Docs">
+				{
+					sidebar.map((s) => (
+						<a class:list={['doc-link', { active: s.key === section }]} href={s.href}>
+							{s.label}
+						</a>
+					))
+				}
+			</nav>
+			<div class="doc-extra">
+				<a href="https://github.com/chrisvanmeer/orbitron/blob/main/README.md" target="_blank" rel="noopener">
+					Full reference on GitHub
+				</a>
+			</div>
+		</aside>
+
+		<article class="doc-body">
+			<nav class="breadcrumb" aria-label="Breadcrumb">
+				<a href="/">Home</a>
+				<span>/</span>
+				<a href="/docs">Docs</a>
+				{current && (
+					<>
+						<span>/</span>
+						<span class="crumb-current">{current.label}</span>
+					</>
+				)}
+			</nav>
+
+			<slot />
+		</article>
+	</div>
+</Layout>
+
+<style>
+	.doc {
+		display: grid;
+		grid-template-columns: 240px minmax(0, 1fr);
+		gap: clamp(2rem, 5vw, 4rem);
+		width: min(1120px, 100% - 40px);
+		margin-inline: auto;
+		padding-block: clamp(40px, 6vw, 72px) clamp(64px, 9vw, 118px);
+	}
+
+	.doc-aside {
+		position: sticky;
+		top: 92px;
+		align-self: start;
+		display: flex;
+		flex-direction: column;
+		gap: 1.2rem;
+	}
+
+	.doc-nav {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.doc-link {
+		padding: 0.5rem 0.8rem;
+		border-radius: 10px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--text-dim);
+		border: 1px solid transparent;
+		transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+	}
+
+	.doc-link:hover {
+		color: var(--text);
+	}
+
+	.doc-link.active {
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.06);
+		border-color: rgba(0, 240, 255, 0.35);
+	}
+
+	.doc-extra a {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		color: var(--text-faint);
+		transition: color 0.2s ease;
+	}
+
+	.doc-extra a:hover {
+		color: var(--pink);
+	}
+
+	.breadcrumb {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: var(--font-mono);
+		font-size: 0.74rem;
+		color: var(--text-faint);
+		margin-bottom: 2rem;
+	}
+
+	.breadcrumb a {
+		color: var(--text-dim);
+		transition: color 0.2s ease;
+	}
+
+	.breadcrumb a:hover {
+		color: var(--cyan);
+	}
+
+	.crumb-current {
+		color: var(--text);
+	}
+
+	.doc-body {
+		min-width: 0;
+	}
+
+	.doc-body h2 {
+		font-size: clamp(1.6rem, 3vw, 2.2rem);
+		margin: 2.4rem 0 0.8rem;
+		color: var(--text);
+	}
+
+	.doc-body h2:first-of-type {
+		margin-top: 0;
+	}
+
+	.doc-body h3 {
+		font-size: 1.15rem;
+		margin: 1.8rem 0 0.6rem;
+		color: var(--text);
+	}
+
+	.doc-body p {
+		color: var(--text-mid);
+		font-size: 0.95rem;
+		margin: 0.8rem 0;
+		line-height: 1.75;
+	}
+
+	.doc-body p code,
+	.doc-body li code {
+		font-family: var(--font-mono);
+		font-size: 0.86em;
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.07);
+		padding: 0.05rem 0.32rem;
+		border-radius: 5px;
+	}
+
+	.doc-body a {
+		color: var(--cyan);
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+
+	.doc-body a:hover {
+		color: var(--pink);
+		text-decoration-color: var(--pink);
+	}
+
+	.doc-body ul {
+		margin: 0.8rem 0;
+		padding-left: 1.2rem;
+		color: var(--text-mid);
+		font-size: 0.95rem;
+		line-height: 1.75;
+	}
+
+	.doc-body li + li {
+		margin-top: 0.35rem;
+	}
+
+	.doc-body li::marker {
+		color: var(--pink);
+	}
+
+	.doc-body :global(.codeblock),
+	.doc-body .doc-card + .doc-card {
+		margin-top: 1.2rem;
+	}
+
+	.doc-body :global(.note) {
+		margin-top: 1.4rem;
+	}
+
+	.doc-cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 1.1rem;
+		margin-top: 1.6rem;
+	}
+
+	.doc-card {
+		display: block;
+		padding: 1.3rem 1.4rem;
+	}
+
+	.doc-card h3 {
+		margin: 0 0 0.5rem;
+		font-size: 1.05rem;
+	}
+
+	.doc-card p {
+		margin: 0;
+		font-size: 0.86rem;
+		color: var(--text-dim);
+		line-height: 1.65;
+	}
+
+	.doc-card-go {
+		display: inline-block;
+		margin-top: 0.8rem;
+		font-family: var(--font-mono);
+		font-size: 0.74rem;
+		color: var(--cyan);
+	}
+
+	@media (max-width: 820px) {
+		.doc {
+			grid-template-columns: 1fr;
+		}
+
+		.doc-aside {
+			position: static;
+		}
+
+		.doc-nav {
+			flex-direction: row;
+			flex-wrap: wrap;
+		}
+	}
+</style>

@@ -1,0 +1,97 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Note from '../../components/Note.astro';
+---
+
+<DocsLayout
+	title="Configuration — Orbitron Docs"
+	description="Orbitron config.yml keys, forward proxy, outbound TLS & private CAs, and SSO/OIDC."
+	section="configuration"
+>
+	<h2>Configuration</h2>
+	<p>
+		The bare-metal install writes a fully commented <code>/etc/orbitron/config.yml</code>. In
+		containers the same keys map 1:1 to <code>ORBITRON_</code>-prefixed environment variables.
+	</p>
+
+	<CodeBlock label="CONFIG" filename="/etc/orbitron/config.yml" lang="yaml">{`listen_addr: "127.0.0.1:8080"
+storage_path: "/var/lib/orbitron/storage"
+log_path: "/var/log/orbitron/orbitron.log"
+tokens_file: "/etc/orbitron/tokens.json"
+
+# Require Bearer Token / Basic Auth for client pulls
+require_auth_pull: false
+
+# Concurrent download/clone workers during syncs
+max_concurrency: 4
+
+# Default lifetime of newly generated tokens in days (0 = never expire)
+token_ttl_days: 0
+
+# Optional forward proxy for upstream Galaxy + git traffic
+http_proxy: ""
+https_proxy: ""
+no_proxy: ""
+
+# Outbound TLS policy (Galaxy API, downloads, git remotes, OIDC)
+tls:
+  ca_file: ""                     # PEM bundle for private-CA-signed services
+  insecure_skip_tls_verify: false
+
+# SSO for the /ui dashboard
+oidc:
+  enabled: false
+  issuer: ""
+  client_id: ""
+  client_secret: ""
+  session_ttl_hours: 8`}</CodeBlock>
+
+	<h3>Forward proxy (Squid &amp; co.)</h3>
+	<p>
+		When the mirror host has no direct internet route — or you want outbound Galaxy and git
+		traffic to pass a single choke point — point the proxy keys at your forward proxy:
+	</p>
+	<CodeBlock label="CONFIG" filename="/etc/orbitron/config.yml" lang="yaml">{`http_proxy: "http://squid.example.com:3128"
+https_proxy: "http://squid.example.com:3128"
+no_proxy: "localhost,127.0.0.1,.example.com"`}</CodeBlock>
+	<p>
+		When left empty, Orbitron falls back to the standard <code>HTTP_PROXY</code> /
+		<code>HTTPS_PROXY</code> / <code>NO_PROXY</code> environment variables. Exactly one proxy is
+		used per request: <code>https_proxy</code> proxies <code>https://</code> requests and falls
+		back to <code>http_proxy</code> when unset (and vice versa). <code>no_proxy</code> takes
+		exact hostnames, <code>.domain</code> / <code>*.domain</code> suffixes, a bare <code>*</code>,
+		or CIDR ranges.
+	</p>
+
+	<h3>TLS &amp; private CAs</h3>
+	<p>
+		Outbound calls — Galaxy API, collection downloads, git HTTPS remotes and OIDC discovery — can
+		talk to services signed by an internal CA. Point <code>tls.ca_file</code> at a PEM bundle with
+		those CA(s), and your trust anchors are used for all of them. For labs,
+		<code>insecure_skip_tls_verify</code> is the blunt <code>curl -k</code> equivalent.
+	</p>
+	<Note>
+		<p>
+			<strong>Reverse proxy skin:</strong> run the daemon bound to <code>127.0.0.1</code> behind
+			Nginx, Traefik or HAProxy, and terminate TLS there. Orbitron honors
+			<code>X-Forwarded-Proto</code> / <code>X-Forwarded-For</code>; point your load balancer
+			health check at the unauthenticated <code>GET /healthz</code>. A full Nginx example lives
+			in the <a href="https://github.com/chrisvanmeer/orbitron/blob/main/README.md" target="_blank" rel="noopener">README</a>.
+		</p>
+	</Note>
+
+	<h3>SSO / OIDC (Keycloak)</h3>
+	<p>
+		Optional OpenID Connect for the web dashboard: the <code>/ui</code> login page gains a
+		<i>"Sign in with SSO"</i> button alongside the access-token login. An SSO session opens the
+		dashboard exactly like a valid admin token would.
+	</p>
+	<p>
+		Set <code>oidc.issuer</code> to the full realm URL (e.g.
+		<code>https://keycloak.example.org/realms/orbitron</code>), register the redirect URI
+		<code>&lt;host&gt;/ui/oidc/callback</code> in Keycloak, restart — and verify with
+		<code>systemctl reload orbitron</code>. Keycloak-side configuration steps and
+		requirement-notes for running Keycloak behind the same reverse proxy are in the README.
+	</p>
+</DocsLayout>

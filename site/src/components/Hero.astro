@@ -35,6 +35,10 @@ const stats = [
 				</svg>
 				GitHub
 			</a>
+			<a class="btn badge" href="https://github.com/chrisvanmeer/orbitron/stargazers" target="_blank" rel="noopener">
+				<span class="badge-star">★</span>
+				<span class="badge-text">Star on GitHub</span>
+			</a>
 		</div>
 
 		<div class="hero-code card">
@@ -126,6 +130,27 @@ url = https://orbitron.internal/api/`}</CodeBlock>
 		gap: 1rem;
 		margin-top: 2.2rem;
 		flex-wrap: wrap;
+	}
+
+	.badge {
+		border-color: rgba(252, 238, 10, 0.45);
+		background: rgba(252, 238, 10, 0.06);
+		color: var(--text);
+	}
+
+	.badge:hover {
+		border-color: var(--yellow);
+		box-shadow: 0 0 20px -6px rgba(252, 238, 10, 0.7);
+		transform: translateY(-2px);
+	}
+
+	.badge-star {
+		color: var(--yellow);
+	}
+
+	.badge-text {
+		color: var(--text-mid);
+		font-weight: 500;
 	}
 
 	.hero-code {
