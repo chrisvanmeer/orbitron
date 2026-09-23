@@ -57,7 +57,6 @@ const cards = [
 		right next page for going into production.
 	</p>
 
-	<CodeBlock label="HELLO ORBITRON" filename="terminal" lang="bash">{`$ curl -s http://127.0.0.1:8080/healthz
-  -H "Authorization: Bearer $ORBITRON_TOKEN"
-OK`}</CodeBlock>
+	<CodeBlock label="HELLO ORBITRON" filename="terminal" lang="bash">{`$ curl -sI http://127.0.0.1:8080/healthz
+HTTP/1.1 200 OK`}</CodeBlock>
 </DocsLayout>

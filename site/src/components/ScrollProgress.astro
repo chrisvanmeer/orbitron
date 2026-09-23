@@ -6,7 +6,7 @@
 <script>
 	const bar = document.querySelector('[data-scrollbar]');
 	const ids = ['features', 'architecture', 'dashboard', 'quickstart', 'api', 'ecosystem'];
-	const links = [...document.querySelectorAll<HTMLAnchorElement>('.nav-links a[href^="#"]')];
+	const links = [...document.querySelectorAll<HTMLAnchorElement>('.nav-links a[href^="#"], .nav-links a[href^="/#"]')];
 
 	const updateBar = () => {
 		const max = document.documentElement.scrollHeight - window.innerHeight;

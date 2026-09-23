@@ -182,13 +182,13 @@ const current = sidebar.find((s) => s.key === section);
 		border-radius: 5px;
 	}
 
-	:global(.doc-body a) {
+	:global(.doc-body a:not(.doc-card)) {
 		color: var(--cyan);
 		text-decoration: underline;
 		text-underline-offset: 3px;
 	}
 
-	:global(.doc-body a:hover) {
+	:global(.doc-body a:not(.doc-card):hover) {
 		color: var(--pink);
 		text-decoration-color: var(--pink);
 	}

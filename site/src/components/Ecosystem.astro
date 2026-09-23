@@ -3,7 +3,7 @@ const targets = [
 	{
 		name: 'systemd',
 		desc: '--install auto-creates unit, logrotate, user & config. SIGHUP hot reload.',
-		href: '#quickstart',
+		href: '/#quickstart',
 	},
 	{
 		name: 'Docker / GHCR',
@@ -23,12 +23,12 @@ const targets = [
 	{
 		name: 'Reverse proxy',
 		desc: 'Terminate TLS with Nginx, Traefik or HAProxy — X-Forwarded-* honored, /healthz LB-ready.',
-		href: '#quickstart',
+		href: '/#quickstart',
 	},
 	{
 		name: 'Prometheus & Grafana',
 		desc: '/metrics endpoint plus a ready-made dashboard — cache counts, versions, block-level storage bytes.',
-		href: '#api',
+		href: '/#api',
 	},
 ];
 
@@ -49,7 +49,7 @@ const badges = ['linux/amd64', 'linux/arm64', 'GPL-3.0', 'Go 1.26', 'HTMX 4', 'P
 		<div class="eco-grid">
 			{
 				targets.map((t) => (
-					<a class="eco-card" href={t.href} target={t.href.startsWith('#') ? undefined : '_blank'} rel="noopener">
+					<a class="eco-card" href={t.href} target={t.href.startsWith('/#') ? undefined : '_blank'} rel="noopener">
 						<span class="eco-name">{t.name}</span>
 						<span class="eco-desc">{t.desc}</span>
 						<span class="eco-arrow" aria-hidden="true">↗</span>

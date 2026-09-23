@@ -20,6 +20,65 @@ const flow = [
 		d: 'Role downloads are streamed as on-the-fly .tar.gz; collections are served with full V3 metadata. ansible-galaxy sees a normal Galaxy server.',
 	},
 ];
+
+const callouts = [
+	{
+		acc: 'co-cyan',
+		tx: 845,
+		ty: 710,
+		ax: 170,
+		ay: 380,
+		title: 'orbitron core',
+		sub: 'API + metrics in one binary',
+		detail: [
+			'Management API + Galaxy V1+V3 serving on one port',
+			'Bearer / Basic auth on every admin endpoint',
+			'Concurrent sync workers, SIGHUP config hot-reload',
+		],
+	},
+	{
+		acc: 'co-violet',
+		tx: 451,
+		ty: 920,
+		ax: 170,
+		ay: 700,
+		title: 'orbitron ui',
+		sub: 'self-hosted HTMX dashboard',
+		detail: [
+			'HTMX dashboard, zero build step',
+			'Optional SSO via OIDC',
+			'Live storage inventory, sync status & cache bytes',
+		],
+	},
+	{
+		acc: 'co-pink',
+		tx: 742,
+		ty: 990,
+		ax: 170,
+		ay: 1000,
+		title: 'content cache',
+		sub: 'deduped artifacts on disk',
+		detail: [
+			'SHA-256 content-addressed, deduplicated',
+			'.access.json tracks every read for pruning & telemetry',
+			'Roles as checkout trees, collections as artifacts',
+		],
+	},
+	{
+		acc: 'co-yellow',
+		tx: 954,
+		ty: 1460,
+		ax: 170,
+		ay: 1280,
+		title: 'outbound gateway',
+		sub: 'Galaxy · GitHub · GitLab',
+		detail: [
+			'Galaxy V1/V3 + GitHub/GitLab HTTPS upstreams',
+			'Optional forward proxy for restricted networks',
+			'Private CA bundles for outbound TLS',
+		],
+	},
+];
 ---
 
 <section class="section" id="architecture">
@@ -36,13 +95,72 @@ const flow = [
 		<div class="arch-grid">
 			<div class="arch-art">
 				<div class="frame card">
-					<Image
-						src={architectureSvg}
-						alt="Orbitron architecture diagram"
-						width={1596}
-						height={2024}
-						loading="lazy"
-					/>
+					<div class="arch-figure">
+						<div class="arch-rail">
+							{
+								callouts.map((c, i) => (
+									<div
+										class={`rail-item ${c.acc}`}
+										data-rail={i}
+										style={`top:${((c.ay / 2024) * 100).toFixed(2)}%;`}
+									>
+										<span class="rail-dot"></span>
+										<span class="rail-text">
+											<span class="rail-title">{c.title}</span>
+											<span class="rail-sub">{c.sub}</span>
+										</span>
+									</div>
+								))
+							}
+						</div>
+
+						<div class="arch-img">
+							<Image
+								src={architectureSvg}
+								alt="Orbitron architecture diagram"
+								width={1596}
+								height={2024}
+								loading="lazy"
+							/>
+							<svg
+								class="callouts"
+								viewBox="0 0 1596 2024"
+								preserveAspectRatio="xMidYMid meet"
+								aria-hidden="true"
+							>
+								{
+									callouts.map((c, i) => (
+										<g class={`co ${c.acc}`} data-callout={i}>
+											<path
+												class="co-line"
+												d={`M 0 ${c.ay} C 300 ${c.ay}, ${c.tx - 220} ${c.ty}, ${c.tx} ${c.ty}`}
+											/>
+											<circle class="co-halo" cx={c.tx} cy={c.ty} r="11" />
+											<circle class="co-dot" cx={c.tx} cy={c.ty} r="4.5" />
+											<circle class="co-anchor" cx="10" cy={c.ay} r="3" />
+										</g>
+									))
+								}
+							</svg>
+
+							{
+								callouts.map((c, i) => (
+									<div
+										class={`arch-pop ${c.acc}`}
+										data-pop={i}
+										style={`left:${((c.tx / 1596) * 100).toFixed(2)}%;top:${((c.ty / 2024) * 100).toFixed(2)}%;`}
+									>
+										<span class="pop-title">{c.title}</span>
+										<ul class="pop-details">
+											{c.detail.map((d) => (
+												<li>{d}</li>
+											))}
+										</ul>
+									</div>
+								))
+							}
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -63,43 +181,253 @@ const flow = [
 	</div>
 </section>
 
+<script>
+	const callouts = [...document.querySelectorAll<SVGElement>('[data-callout]')];
+	const pops = [...document.querySelectorAll<HTMLElement>('[data-pop]')];
+	const rails = [...document.querySelectorAll<HTMLElement>('[data-rail]')];
+	for (const r of rails) {
+		const co = callouts[Number(r.dataset.rail)];
+		const pop = pops[Number(r.dataset.rail)];
+		if (co && pop) {
+			r.addEventListener('mouseenter', () => pop.classList.add('open'));
+			r.addEventListener('mouseleave', () => pop.classList.remove('open'));
+			co.addEventListener('mouseenter', () => pop.classList.add('open'));
+			co.addEventListener('mouseleave', () => pop.classList.remove('open'));
+		}
+	}
+</script>
+
 <style>
 	.arch-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-		gap: 2.5rem;
-		align-items: start;
+		display: block;
 	}
 
 	.arch-art {
-		position: sticky;
-		top: 84px;
+		max-width: min(1040px, 100%);
+		margin-inline: auto;
 	}
 
 	.frame {
-		padding: 0.8rem;
+		padding: 0.5rem;
 		overflow: hidden;
 	}
 
-	.frame img {
+	.arch-figure {
+		position: relative;
+		display: grid;
+		grid-template-columns: clamp(190px, 24vw, 250px) 1fr;
+		align-items: stretch;
+	}
+
+	.arch-rail {
+		position: relative;
+		min-width: 0;
+	}
+
+	.rail-item {
+		position: absolute;
+		left: 0;
+		right: 0;
+		transform: translateY(-50%);
+		display: flex;
+		align-items: flex-start;
+		gap: 0.55rem;
+		padding: 0.4rem 0.55rem;
+		border: 1px solid transparent;
+		border-radius: 10px;
+		cursor: help;
+		transition: background 0.15s ease, border-color 0.15s ease;
+	}
+
+	.rail-item:hover {
+		background: rgba(255, 255, 255, 0.035);
+		border-color: color-mix(in srgb, var(--acc) 45%, transparent);
+	}
+
+	.rail-dot {
+		flex: none;
+		width: 8px;
+		height: 8px;
+		margin-top: 0.4rem;
+		border-radius: 50%;
+		background: var(--acc);
+		box-shadow: 0 0 10px var(--acc);
+	}
+
+	.rail-text {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.rail-title {
+		font-family: var(--font-mono);
+		font-size: 0.78rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		color: var(--text);
+	}
+
+	.rail-sub {
+		font-family: var(--font-mono);
+		font-size: 0.64rem;
+		letter-spacing: 0.06em;
+		color: var(--text-faint);
+		line-height: 1.45;
+	}
+
+	.arch-img {
+		position: relative;
+		line-height: 0;
+		min-width: 0;
+	}
+
+	.arch-img img {
 		width: 100%;
 		height: auto;
 		border-radius: 10px;
+		display: block;
 	}
+
+	.callouts {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+
+	.callouts .co {
+		pointer-events: auto;
+		cursor: help;
+	}
+
+	.arch-pop {
+		pointer-events: none;
+		position: absolute;
+		z-index: 5;
+		width: min(300px, 52vw);
+		transform: translate(-50%, calc(-100% - 22px));
+		padding: 0.85rem 1rem;
+		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.85);
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+	}
+
+	.arch-pop.open {
+		opacity: 1;
+		visibility: visible;
+		transform: translate(-50%, calc(-100% - 32px));
+	}
+
+	.arch-pop.co-cyan { --acc: var(--cyan); border-color: rgba(0, 240, 255, 0.4); }
+	.arch-pop.co-violet { --acc: var(--violet); border-color: rgba(87, 115, 255, 0.45); }
+	.arch-pop.co-pink { --acc: var(--pink); border-color: rgba(255, 0, 122, 0.4); }
+	.arch-pop.co-yellow { --acc: var(--yellow); border-color: rgba(252, 238, 10, 0.4); }
+
+	.pop-title {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--text);
+	}
+
+	.pop-title::before {
+		content: '';
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--acc);
+		box-shadow: 0 0 10px var(--acc);
+	}
+
+	.pop-details {
+		margin: 0.55rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.pop-details li {
+		font-size: 0.78rem;
+		line-height: 1.5;
+		color: var(--text-dim);
+		padding-left: 1rem;
+		position: relative;
+	}
+
+	.pop-details li::before {
+		content: '›';
+		position: absolute;
+		left: 0;
+		color: var(--acc);
+	}
+
+	.co { opacity: 1; animation: co-fade 0.7s ease backwards; }
+	.co:nth-of-type(1) { animation-delay: 0.1s; }
+	.co:nth-of-type(2) { animation-delay: 0.25s; }
+	.co:nth-of-type(3) { animation-delay: 0.4s; }
+	.co:nth-of-type(4) { animation-delay: 0.55s; }
+
+	@keyframes co-fade {
+		from { opacity: 0; transform: translateY(6px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	.co-line {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-dasharray: 4 6;
+	}
+
+	.co-halo {
+		fill: currentColor;
+		opacity: 0.16;
+	}
+
+	.co-dot,
+	.co-anchor {
+		fill: currentColor;
+	}
+
+	.rail-item.co-cyan { --acc: var(--cyan); }
+	.rail-item.co-violet { --acc: var(--violet); }
+	.rail-item.co-pink { --acc: var(--pink); }
+	.rail-item.co-yellow { --acc: var(--yellow); }
+
+	.co.co-cyan { color: var(--cyan); }
+	.co.co-violet { color: var(--violet); }
+	.co.co-pink { color: var(--pink); }
+	.co.co-yellow { color: var(--yellow); }
 
 	.flow {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
 		gap: 1rem;
+		margin-top: 1.75rem;
 		counter-reset: step;
 	}
 
 	.step {
 		display: flex;
-		gap: 1.1rem;
+		flex-direction: column;
+		gap: 0.9rem;
 		align-items: flex-start;
 		padding: 1.2rem 1.2rem;
 		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
@@ -111,7 +439,7 @@ const flow = [
 	}
 
 	.step:hover {
-		transform: translateX(4px);
+		transform: translateY(-3px);
 		border-color: var(--border-strong);
 	}
 
@@ -138,6 +466,10 @@ const flow = [
 		white-space: nowrap;
 	}
 
+	.step-body {
+		min-width: 0;
+	}
+
 	.step-body h3 {
 		font-size: 0.98rem;
 		margin-bottom: 0.35rem;
@@ -157,12 +489,23 @@ const flow = [
 		font-size: 0.9em;
 	}
 
-	@media (max-width: 900px) {
-		.arch-grid {
+	@media (max-width: 960px) {
+		.arch-rail {
+			display: none;
+		}
+
+		.arch-figure {
 			grid-template-columns: 1fr;
 		}
-		.arch-art {
-			position: static;
+
+		.flow {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	@media (max-width: 560px) {
+		.flow {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>
