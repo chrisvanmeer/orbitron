@@ -1,0 +1,131 @@
+---
+import BentoCard from './BentoCard.astro';
+---
+
+<section class="section" id="features">
+	<div class="wrap">
+		<div class="section-head">
+			<span class="eyebrow">Capabilities</span>
+			<h2>Built for isolated, pinned, repeatable automation</h2>
+			<p>
+				Orbitron caches whatever your pipelines need — roles, collections, git-backed sources — and
+				serves them as an authentic Galaxy endpoint. Everything ships in one dependency-free binary.
+			</p>
+		</div>
+
+		<div class="grid">
+			<BentoCard span="half" accent="cyan" title="Native Galaxy V1 + V3 API">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M8 3H5a2 2 0 0 0-2 2v3" />
+					<path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+					<path d="M3 16v3a2 2 0 0 0 2 2h3" />
+					<path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+					<path d="m8 12 3 3 5-3" />
+				</svg>
+				Drop-in for <code>ansible-galaxy role install</code> and <code>collection install</code>.
+				Point <code>ansible.cfg</code> at it — no client changes, no retraining. Roles stream as
+				on-the-fly <code>.tar.gz</code> archives; collections serve real Galaxy V3 metadata.
+			</BentoCard>
+
+			<BentoCard span="half" accent="violet" title="Official Ansible collection">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+					<path d="M14 2v6h6" />
+					<path d="m9 15 2 2 4-4" />
+				</svg>
+				Manage the daemon purely with Ansible: <code>chrisvanmeer.orbitron</code> ships six HTTP
+				modules (<code>info</code>, <code>token</code>, <code>manifest</code>, <code>sync</code>,
+				<code>purge</code>, <code>prune</code>) and two roles — <code>orbitron</code> for install &amp;
+				lifecycle, <code>orbitron_mirror</code> for declarative mirroring. One playbook run, from
+				empty host to serving cache.
+			</BentoCard>
+
+			<BentoCard span="third" accent="violet" title="One static binary">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M6 17h12" />
+					<path d="M6 17V7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v10" />
+					<path d="M4 17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2M9 8h6" />
+				</svg>
+				Compiled with <code>CGO_ENABLED=0</code> for <code>linux/amd64</code> and
+				<code>linux/arm64</code>. Zero runtime dependencies — drop it on a bare-metal box, a container,
+				or a Nomad allocation and it runs.
+			</BentoCard>
+
+			<BentoCard span="third" accent="cyan" title="Parallel background sync">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M17 2v4M14 17a5 5 0 0 0 8 3" />
+					<path d="M20.7 7.5A7 7 0 0 0 7 8" />
+					<path d="M7 22v-4" />
+					<path d="M14 14a5 5 0 0 0-8-3" />
+					<path d="M3.3 16.5A7 7 0 0 0 17 16" />
+				</svg>
+				Ingest YAML requirements manifests once. Roles and collections are cloned and downloaded by
+				concurrent workers, stored under content-addressed SHA-256 hashes, and replayed on every full re-sync.
+			</BentoCard>
+
+			<BentoCard span="third" accent="yellow" title="Ansible-compatible version specifiers">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 2v4" />
+					<path d="M6 4l2 3.5" />
+					<path d="M18 4l-2 3.5" />
+					<path d="M4 9h16" />
+					<path d="M6 9l1 9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-9" />
+					<path d="M10 13h.01M14 13h.01" />
+				</svg>
+				<code>latest</code>, <code>all</code>, <code>=1.4.5</code>, <code>&gt;=1.0.0</code>,
+				<code>~=1.4.5</code>, <code>&lt;2.0</code> and wildcards — a zero-dependency PEP 440-subset
+				engine with proper semantic ordering. Never re-downloads what it already has on disk.
+			</BentoCard>
+
+			<BentoCard span="third" accent="pink" title="Access-based pruning">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M3 12a9 9 0 1 0 9-9" />
+					<circle cx="12" cy="12" r="2.4" />
+					<path d="M12 3v9" />
+				</svg>
+				<code>--prune --days N</code> removes versions never served inside the retention window,
+				backed by an atomic per-storage access index. Preview candidates with
+				<code>POST /api/v1/prune</code> with <code>&#123;"dry_run": true&#125;</code>. Never-accessed versions are always kept.
+			</BentoCard>
+
+			<BentoCard span="third" accent="violet" title="Cyberpunk web dashboard">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<rect x="3" y="4" width="18" height="14" rx="2" />
+					<path d="M3 9h18" />
+					<path d="m7 14 2-2-2-2M11 14l2-2-2-2" />
+				</svg>
+				The <code>/ui</code> cache matrix: sortable storage inventory with block-level disk usage,
+				tail-f log streaming, and system telemetry. Embedded HTMX, no CDN calls — air-gap ready.
+				Type the mirror's name and see what happens.
+			</BentoCard>
+
+			<BentoCard span="third" accent="pink" title="Authentication & SSO that fits your stack">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<rect x="3" y="11" width="18" height="11" rx="2" />
+					<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+				</svg>
+				Bearer tokens and HTTP Basic by default, plus optional OpenID Connect SSO (Keycloak) for the
+				dashboard — PKCE S256, group gating, HTTP-only session cookies. Protect client pulls with
+				<code>require_auth_pull</code> or keep them open.
+			</BentoCard>
+
+			<BentoCard span="full" accent="cyan" title="Observability out of the box">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M4 20v-6M10 20V8M16 20v-10M22 20V4" />
+				</svg>
+				Prometheus metrics on <code>/metrics</code> — uptime, cache counts, version totals,
+				namespaces, and real block-allocated byte usage at item and version granularity — paired with
+				a ready-made Grafana dashboard (<code>orbitron_v13_current.json</code>) that tracks multiple
+				daemons behind one Prometheus via an <code>Orbitron instance</code> template variable.
+			</BentoCard>
+		</div>
+	</div>
+</section>
+
+<style>
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(6, 1fr);
+		gap: 1.1rem;
+	}
+</style>

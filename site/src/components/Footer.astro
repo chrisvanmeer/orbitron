@@ -1,0 +1,160 @@
+---
+const about = [
+	{ name: 'Galaxy V1 + V3 endpoints', href: '#features', kind: 'api' },
+	{ name: 'Storage inventory & prune API', href: '#features', kind: 'api' },
+	{ name: 'Manifest & sync APIs', href: '#quickstart', kind: 'api' },
+	{ name: 'Prometheus /metrics', href: '#features', kind: 'api' },
+	{ name: '/ui dashboard', href: '#dashboard', kind: 'api' },
+];
+
+const resources = [
+	{ name: 'GitHub', href: 'https://github.com/chrisvanmeer/orbitron', external: true },
+	{ name: 'Releases & binaries', href: 'https://github.com/chrisvanmeer/orbitron/releases', external: true },
+	{ name: 'Ansible Galaxy', href: 'https://galaxy.ansible.com/chrisvanmeer/orbitron', external: true },
+	{ name: 'Container image', href: 'https://github.com/chrisvanmeer/orbitron/pkgs/container/orbitron', external: true },
+	{ name: 'Architecture source', href: 'https://github.com/chrisvanmeer/orbitron/blob/main/assets/architecture.excalidraw', external: true },
+];
+---
+
+<footer class="footer">
+	<div class="wrap">
+		<div class="top">
+			<div class="footer-brand">
+				<div class="brand-row">
+					<svg viewBox="0 0 60 60" width="30" height="30" aria-hidden="true">
+						<circle cx="30" cy="30" r="15" fill="none" stroke="#00f0ff" stroke-width="2.5" />
+						<ellipse cx="30" cy="30" rx="25" ry="9" fill="none" stroke="#ff007a" stroke-width="2" transform="rotate(-24 30 30)" />
+						<ellipse cx="30" cy="30" rx="25" ry="9" fill="none" stroke="#fcee0a" stroke-width="1.4" transform="rotate(38 30 30)" opacity="0.9" />
+						<circle cx="46" cy="13" r="2.6" fill="#fcee0a" />
+						<circle cx="14" cy="47" r="2.2" fill="#ff007a" />
+					</svg>
+					<span class="footer-wordmark">ORBITRON</span>
+				</div>
+				<p class="footer-desc">
+					Ansible Galaxy &amp; Git mirror daemon — a custom, lightweight role/collection mirror,
+					written in Go, designed for air-gapped and enterprise networks.
+				</p>
+			</div>
+
+			<nav class="footer-col" aria-label="Service">
+				<h4>Service</h4>
+				{
+					about.map((a) => (
+						<a href={a.href}>{a.name}</a>
+					))
+				}
+			</nav>
+
+			<nav class="footer-col" aria-label="Resources">
+				<h4>Resources</h4>
+				{
+					resources.map((r) => (
+						<a href={r.href} target={r.external ? '_blank' : undefined} rel="noopener">
+							{r.name} {r.external && <span class="ext">↗</span>}
+						</a>
+					))
+				}
+			</nav>
+		</div>
+
+		<div class="bottom">
+			<p>© 2026 Chris van Meer</p>
+			<p>Licensed under <a href="https://github.com/chrisvanmeer/orbitron/blob/main/LICENSE" target="_blank" rel="noopener">GNU GPL v3.0</a></p>
+		</div>
+	</div>
+</footer>
+
+<style>
+	.footer {
+		border-top: 1px solid var(--border);
+		background: linear-gradient(180deg, transparent, rgba(5, 5, 5, 0.7));
+		padding-block: 3rem 2rem;
+	}
+
+	.top {
+		display: grid;
+		grid-template-columns: 1.6fr 1fr 1fr;
+		gap: 2rem;
+	}
+
+	.brand-row {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+	}
+
+	.footer-wordmark {
+		font-weight: 900;
+		letter-spacing: 0.24em;
+		font-size: 1rem;
+		background: linear-gradient(90deg, #fff, var(--indigo));
+		-webkit-background-clip: text;
+		background-clip: text;
+		-webkit-text-fill-color: transparent;
+	}
+
+	.footer-desc {
+		margin-top: 1rem;
+		color: var(--text-dim);
+		font-size: 0.88rem;
+		max-width: 46ch;
+	}
+
+	.footer-col {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+	}
+
+	.footer-col h4 {
+		font-size: 0.74rem;
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+		color: var(--text-faint);
+		font-family: var(--font-mono);
+		margin-bottom: 0.4rem;
+	}
+
+	.footer-col a {
+		color: var(--text-mid);
+		font-size: 0.88rem;
+		transition: color 0.2s ease;
+	}
+
+	.footer-col a:hover {
+		color: var(--cyan);
+	}
+
+	.ext {
+		color: var(--text-faint);
+		font-size: 0.75em;
+	}
+
+	.bottom {
+		margin-top: 3rem;
+		padding-top: 1.4rem;
+		border-top: 1px solid var(--border);
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+		color: var(--text-faint);
+		font-size: 0.82rem;
+		font-family: var(--font-mono);
+	}
+
+	.bottom a {
+		color: var(--text-dim);
+	}
+
+	.bottom a:hover {
+		color: var(--pink);
+	}
+
+	@media (max-width: 760px) {
+		.top {
+			grid-template-columns: 1fr;
+			gap: 1.8rem;
+		}
+	}
+</style>

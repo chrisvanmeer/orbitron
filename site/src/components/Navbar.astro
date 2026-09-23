@@ -1,0 +1,94 @@
+---
+const links = [
+	{ href: '#features', label: 'Features' },
+	{ href: '#architecture', label: 'Architecture' },
+	{ href: '#dashboard', label: 'Dashboard' },
+	{ href: '#quickstart', label: 'Quickstart' },
+	{ href: '#api', label: 'API' },
+	{ href: '#ecosystem', label: 'Ecosystem' },
+];
+---
+
+<header class="nav">
+	<div class="wrap nav-inner">
+		<a class="brand" href="#top" aria-label="Orbitron home">
+			<svg viewBox="0 0 60 60" width="28" height="28" aria-hidden="true">
+				<circle cx="30" cy="30" r="15" fill="none" stroke="#00f0ff" stroke-width="2.5" />
+				<ellipse cx="30" cy="30" rx="25" ry="9" fill="none" stroke="#ff007a" stroke-width="2" transform="rotate(-24 30 30)" />
+				<ellipse cx="30" cy="30" rx="25" ry="9" fill="none" stroke="#fcee0a" stroke-width="1.4" transform="rotate(38 30 30)" opacity="0.9" />
+				<circle cx="46" cy="13" r="2.6" fill="#fcee0a" />
+				<circle cx="14" cy="47" r="2.2" fill="#ff007a" />
+			</svg>
+			<span class="brand-name">ORBITRON</span>
+		</a>
+
+		<nav class="nav-links" aria-label="Primary">
+			{links.map((l) => <a href={l.href}>{l.label}</a>)}
+		</nav>
+
+		<a class="btn btn-primary nav-cta" href="#quickstart">Get Started</a>
+	</div>
+</header>
+
+<style>
+	.nav {
+		position: sticky;
+		top: 0;
+		z-index: 40;
+		backdrop-filter: blur(14px);
+		-webkit-backdrop-filter: blur(14px);
+		background: rgba(5, 5, 5, 0.72);
+		border-bottom: 1px solid var(--border);
+	}
+
+	.nav-inner {
+		display: flex;
+		align-items: center;
+		gap: 2rem;
+		height: 64px;
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin-right: auto;
+	}
+
+	.brand-name {
+		font-weight: 900;
+		letter-spacing: 0.24em;
+		font-size: 0.95rem;
+		background: linear-gradient(90deg, #fff, var(--indigo));
+		-webkit-background-clip: text;
+		background-clip: text;
+		-webkit-text-fill-color: transparent;
+	}
+
+	.nav-links {
+		display: flex;
+		gap: 1.6rem;
+	}
+
+	.nav-links a {
+		color: var(--text-dim);
+		font-size: 0.86rem;
+		font-weight: 500;
+		transition: color 0.2s ease;
+	}
+
+	.nav-links a:hover {
+		color: var(--cyan);
+	}
+
+	.nav-cta {
+		padding: 0.55rem 1.1rem;
+		font-size: 0.78rem;
+	}
+
+	@media (max-width: 720px) {
+		.nav-links {
+			display: none;
+		}
+	}
+</style>

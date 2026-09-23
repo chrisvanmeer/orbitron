@@ -1,0 +1,45 @@
+---
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+import '../styles/global.css';
+
+interface Props {
+	title?: string;
+	description?: string;
+	image?: string;
+}
+
+const {
+	title = 'Orbitron — Ansible Galaxy & Git Mirror Daemon',
+	description = 'A custom, lightweight Ansible Galaxy and Git-based role/collection mirror daemon written in Go. Self-hosted, air-gap ready, drop-in for ansible-galaxy.',
+	image = '/assets/logo.svg',
+} = Astro.props;
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="Orbitron" />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:image" content={image} />
+		<meta property="og:url" content="https://getorbitron.app" />
+		<meta name="twitter:card" content="summary_large_image" />
+	</head>
+	<body>
+		<Navbar />
+		<main>
+			<slot />
+		</main>
+		<Footer />
+	</body>
+</html>

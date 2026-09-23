@@ -1,0 +1,167 @@
+---
+const targets = [
+	{
+		name: 'systemd',
+		desc: '--install auto-creates unit, logrotate, user & config. SIGHUP hot reload.',
+		href: '#quickstart',
+	},
+	{
+		name: 'Docker / GHCR',
+		desc: 'Multi-arch image, non-root, env-var config, /data volume, built-in healthcheck.',
+		href: 'https://github.com/chrisvanmeer/orbitron/pkgs/container/orbitron',
+	},
+	{
+		name: 'HashiCorp Nomad',
+		desc: 'Ready-made jobspec with /healthz check and a persistent host volume.',
+		href: 'https://github.com/chrisvanmeer/orbitron',
+	},
+	{
+		name: 'Ansible collection',
+		desc: 'chrisvanmeer.orbitron — six HTTP modules, install & mirror roles.',
+		href: 'https://galaxy.ansible.com/chrisvanmeer/orbitron',
+	},
+	{
+		name: 'Reverse proxy',
+		desc: 'Terminate TLS with Nginx, Traefik or HAProxy — X-Forwarded-* honored, /healthz LB-ready.',
+		href: '#quickstart',
+	},
+	{
+		name: 'Prometheus & Grafana',
+		desc: '/metrics endpoint plus a ready-made dashboard — cache counts, versions, block-level storage bytes.',
+		href: '#api',
+	},
+];
+
+const badges = ['linux/amd64', 'linux/arm64', 'GPL-3.0', 'Go 1.26', 'HTMX 4', 'PEP 440'];
+---
+
+<section class="section eco" id="ecosystem">
+	<div class="wrap">
+		<div class="section-head">
+			<span class="eyebrow">Ecosystem</span>
+			<h2>Runs where your fleet runs</h2>
+			<p>
+				One binary, every home. Orchestrate it like the rest of your platform, or let the Ansible
+				collection do the orchestrating for you.
+			</p>
+		</div>
+
+		<div class="eco-grid">
+			{
+				targets.map((t) => (
+					<a class="eco-card" href={t.href} target={t.href.startsWith('#') ? undefined : '_blank'} rel="noopener">
+						<span class="eco-name">{t.name}</span>
+						<span class="eco-desc">{t.desc}</span>
+						<span class="eco-arrow" aria-hidden="true">↗</span>
+					</a>
+				))
+			}
+		</div>
+
+		<ul class="badges">
+			{badges.map((b) => <li>{b}</li>)}
+		</ul>
+	</div>
+</section>
+
+<style>
+	.eco-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1rem;
+	}
+
+	.eco-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		padding: 1.4rem 1.4rem;
+		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		position: relative;
+		overflow: hidden;
+		transition: transform 0.2s ease, border-color 0.2s ease;
+	}
+
+	.eco-card:hover {
+		transform: translateY(-4px);
+		border-color: rgba(255, 0, 122, 0.45);
+	}
+
+	.eco-card::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: radial-gradient(300px 150px at 80% 0%, rgba(255, 0, 122, 0.12), transparent 70%);
+		opacity: 0;
+		transition: opacity 0.25s ease;
+	}
+
+	.eco-card:hover::after {
+		opacity: 1;
+	}
+
+	.eco-name {
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 1rem;
+		color: var(--text);
+	}
+
+	.eco-card:hover .eco-name {
+		color: var(--pink);
+	}
+
+	.eco-desc {
+		font-size: 0.85rem;
+		color: var(--text-dim);
+	}
+
+	.eco-arrow {
+		position: absolute;
+		top: 1.1rem;
+		right: 1.2rem;
+		color: var(--text-faint);
+		font-size: 1rem;
+		transition: color 0.2s ease, transform 0.2s ease;
+	}
+
+	.eco-card:hover .eco-arrow {
+		color: var(--pink);
+		transform: translate(2px, -2px);
+	}
+
+	.badges {
+		list-style: none;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.7rem;
+		margin: 2.4rem 0 0;
+		padding: 0;
+		justify-content: center;
+	}
+
+	.badges li {
+		font-family: var(--font-mono);
+		font-size: 0.74rem;
+		letter-spacing: 0.08em;
+		color: var(--text-dim);
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		padding: 0.35rem 0.9rem;
+		background: rgba(13, 14, 22, 0.6);
+	}
+
+	@media (max-width: 880px) {
+		.eco-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
+	@media (max-width: 560px) {
+		.eco-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

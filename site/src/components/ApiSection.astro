@@ -1,0 +1,166 @@
+---
+const endpoints = [
+	{
+		methods: ['GET'],
+		path: '/healthz',
+		desc: 'Unauthenticated liveness for load balancers & orchestrators — 200 when the storage path is writable, 503 when degraded.',
+	},
+	{
+		methods: ['POST'],
+		path: '/api/v1/requirements/roles · /collections',
+		desc: 'Ingest role &amp; collection YAML manifests. Content-addressed by SHA-256 and deduplicated; parallel workers mirror on the spot.',
+	},
+	{
+		methods: ['POST', 'GET'],
+		path: '/api/v1/sync · /sync/status',
+		desc: 'Re-run every stored manifest, or poll progress and a bounded history of finished syncs.',
+	},
+	{
+		methods: ['GET', 'DELETE'],
+		path: '/api/v1/storage',
+		desc: 'Full cached-version inventory. DELETE /storage/{type}/{name}/{version} purges a single cached version.',
+	},
+	{
+		methods: ['POST'],
+		path: '/api/v1/prune',
+		desc: 'Access-based cleanup with retention window — preview exactly what would be deleted with {"dry_run": true}.',
+	},
+	{
+		methods: ['GET', 'POST', 'DELETE'],
+		path: '/api/v1/tokens',
+		desc: 'Token lifecycle: create, list, revoke and rotate admin tokens, with optional per-token TTLs.',
+	},
+	{
+		methods: ['GET'],
+		path: '/metrics',
+		desc: 'Prometheus exposition — uptime, cache counts, version totals and block-level storage bytes.',
+	},
+];
+---
+
+<section class="section" id="api">
+	<div class="wrap">
+		<div class="section-head">
+			<span class="eyebrow">HTTP API</span>
+			<h2>Management endpoints that play nice</h2>
+			<p>
+				A small, pragmatic API surface — ingest content, watch syncs, inspect storage and run
+				day-two operations. The Galaxy V1 &amp; V3 serving endpoints live on the same tree.
+			</p>
+		</div>
+
+		<div class="api-card card">
+			<ul class="eps">
+				{
+					endpoints.map((ep) => (
+						<li class="ep">
+							<div class="ep-meta">
+								<span class="methods">
+									{ep.methods.map((m) => <span class:list={['m', `m-${m}`]}>{m}</span>)}
+								</span>
+								<span class="path">{ep.path}</span>
+							</div>
+							<p class="desc" set:html={ep.desc} />
+						</li>
+					))
+				}
+			</ul>
+
+			<p class="api-note">
+				Every endpoint above except <code>/healthz</code> requires a Bearer token or HTTP Basic auth.
+			</p>
+		</div>
+	</div>
+</section>
+
+<style>
+	.api-card {
+		padding: 1rem 1.4rem;
+	}
+
+	.eps {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.ep {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+		gap: 1.4rem;
+		align-items: baseline;
+		padding: 0.95rem 0;
+	}
+
+	.ep + .ep {
+		border-top: 1px solid var(--border);
+	}
+
+	.ep-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+	}
+
+	.methods {
+		display: inline-flex;
+		gap: 0.25rem;
+	}
+
+	.m {
+		font-family: var(--font-mono);
+		font-size: 0.62rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		padding: 0.14rem 0.4rem;
+		border-radius: 5px;
+		border: 1px solid;
+	}
+
+	.m-GET    { color: var(--cyan);   border-color: rgba(0, 240, 255, 0.4); background: rgba(0, 240, 255, 0.07); }
+	.m-POST   { color: var(--pink);   border-color: rgba(255, 0, 122, 0.4); background: rgba(255, 0, 122, 0.07); }
+	.m-DELETE { color: var(--yellow); border-color: rgba(252, 238, 10, 0.4); background: rgba(252, 238, 10, 0.07); }
+
+	.path {
+		font-family: var(--font-mono);
+		font-size: 0.86rem;
+		color: var(--text);
+		word-break: break-word;
+	}
+
+	.desc {
+		font-size: 0.87rem;
+		color: var(--text-dim);
+	}
+
+	.desc :global(code) {
+		font-family: var(--font-mono);
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.07);
+		padding: 0.05rem 0.3rem;
+		border-radius: 5px;
+		font-size: 0.9em;
+	}
+
+	.api-note {
+		margin-top: 0.4rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+		font-size: 0.82rem;
+		color: var(--text-faint);
+		font-family: var(--font-mono);
+	}
+
+	.api-note :global(code) {
+		color: var(--pink);
+	}
+
+	@media (max-width: 720px) {
+		.ep {
+			grid-template-columns: 1fr;
+			gap: 0.6rem;
+		}
+	}
+</style>

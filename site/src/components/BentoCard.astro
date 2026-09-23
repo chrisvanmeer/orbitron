@@ -1,0 +1,101 @@
+---
+interface Props {
+	title: string;
+	span?: 'half' | 'third' | 'full';
+	accent?: 'cyan' | 'pink' | 'violet' | 'yellow';
+}
+
+const { title, span = 'third', accent = 'cyan' } = Astro.props;
+---
+
+<div class:list={['bento', `span-${span}`, `accent-${accent}`]}>
+	<div class="icon">
+		<slot name="icon" />
+	</div>
+	<h3>{title}</h3>
+	<div class="body">
+		<slot />
+	</div>
+</div>
+
+<style>
+	.bento {
+		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 1.6rem 1.5rem;
+		position: relative;
+		overflow: hidden;
+		transition: transform 0.22s ease, border-color 0.22s ease;
+	}
+
+	.bento:hover {
+		transform: translateY(-4px);
+		border-color: var(--border-strong);
+	}
+
+	.bento::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: radial-gradient(360px 200px at var(--x, 20%) 0%, var(--glow, rgba(0, 240, 255, 0.14)), transparent 70%);
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.25s ease;
+	}
+
+	.bento:hover::after {
+		opacity: 1;
+	}
+
+	.icon {
+		width: 44px;
+		height: 44px;
+		border-radius: 12px;
+		display: grid;
+		place-items: center;
+		color: var(--accent-c);
+		background: color-mix(in srgb, var(--accent-c) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent-c) 30%, transparent);
+		margin-bottom: 1.1rem;
+	}
+
+	.icon :global(svg) {
+		width: 22px;
+		height: 22px;
+	}
+
+	h3 {
+		font-size: 1.05rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.body {
+		font-size: 0.9rem;
+		color: var(--text-dim);
+	}
+
+	.body :global(code) {
+		font-family: var(--font-mono);
+		font-size: 0.84em;
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.07);
+		padding: 0.05rem 0.3rem;
+		border-radius: 5px;
+	}
+
+	.accent-cyan   { --accent-c: var(--cyan);   --glow: rgba(0, 240, 255, 0.14); }
+	.accent-pink   { --accent-c: var(--pink);   --glow: rgba(255, 0, 122, 0.14); }
+	.accent-violet { --accent-c: var(--violet); --glow: rgba(87, 115, 255, 0.18); }
+	.accent-yellow { --accent-c: var(--yellow); --glow: rgba(252, 238, 10, 0.12); }
+
+	.span-half   { grid-column: span 3; }
+	.span-third  { grid-column: span 2; }
+	.span-full   { grid-column: span 6; }
+
+	@media (max-width: 880px) {
+		.span-half, .span-third, .span-full {
+			grid-column: span 6;
+		}
+	}
+</style>

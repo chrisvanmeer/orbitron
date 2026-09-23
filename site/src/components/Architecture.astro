@@ -1,0 +1,168 @@
+---
+import { Image } from 'astro:assets';
+import architectureSvg from '../assets/architecture.svg';
+
+const flow = [
+	{
+		t: 'Ingest manifests',
+		d: 'POST YAML role & collection requirements to the management API. Each manifest is content-addressed by SHA-256 and deduplicated on identical re-submission.',
+	},
+	{
+		t: 'Sync in parallel',
+		d: 'Concurrent workers resolve versions against Galaxy V1/V3, download collection tarballs and shallow-clone git sources (--depth 1). Versions already on disk are never re-fetched.',
+	},
+	{
+		t: 'Store on disk',
+		d: 'Roles keep unpacked checkout trees; collections are stored as artifacts — both tracked through an atomic access index (.access.json) for pruning and telemetry.',
+	},
+	{
+		t: 'Serve like Galaxy',
+		d: 'Role downloads are streamed as on-the-fly .tar.gz; collections are served with full V3 metadata. ansible-galaxy sees a normal Galaxy server.',
+	},
+];
+---
+
+<section class="section" id="architecture">
+	<div class="wrap">
+		<div class="section-head">
+			<span class="eyebrow">Architecture</span>
+			<h2>Ingest once. Sync. Serve forever.</h2>
+			<p>
+				A tightly modelled pipeline — one daemon, three jobs: pull from the upstream world, cache
+				locally, and hand artifacts back over authentic Galaxy endpoints.
+			</p>
+		</div>
+
+		<div class="arch-grid">
+			<div class="arch-art">
+				<div class="frame card">
+					<Image
+						src={architectureSvg}
+						alt="Orbitron architecture diagram"
+						width={1596}
+						height={2024}
+						loading="lazy"
+					/>
+				</div>
+			</div>
+
+			<ol class="flow">
+				{
+					flow.map((step, i) => (
+						<li class="step">
+							<span class="step-num">0{i + 1}</span>
+							<div class="step-body">
+								<h3>{step.t}</h3>
+								<p>{step.d}</p>
+							</div>
+						</li>
+					))
+				}
+			</ol>
+		</div>
+	</div>
+</section>
+
+<style>
+	.arch-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+		gap: 2.5rem;
+		align-items: start;
+	}
+
+	.arch-art {
+		position: sticky;
+		top: 84px;
+	}
+
+	.frame {
+		padding: 0.8rem;
+		overflow: hidden;
+	}
+
+	.frame img {
+		width: 100%;
+		height: auto;
+		border-radius: 10px;
+	}
+
+	.flow {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		counter-reset: step;
+	}
+
+	.step {
+		display: flex;
+		gap: 1.1rem;
+		align-items: flex-start;
+		padding: 1.2rem 1.2rem;
+		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		position: relative;
+		overflow: hidden;
+		transition: transform 0.2s ease, border-color 0.2s ease;
+	}
+
+	.step:hover {
+		transform: translateX(4px);
+		border-color: var(--border-strong);
+	}
+
+	.step::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		background: linear-gradient(180deg, var(--cyan), var(--pink));
+		opacity: 0.7;
+	}
+
+	.step-num {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.08);
+		border: 1px solid rgba(0, 240, 255, 0.25);
+		border-radius: 8px;
+		padding: 0.2rem 0.45rem;
+		white-space: nowrap;
+	}
+
+	.step-body h3 {
+		font-size: 0.98rem;
+		margin-bottom: 0.35rem;
+	}
+
+	.step-body p {
+		font-size: 0.87rem;
+		color: var(--text-dim);
+	}
+
+	.step-body :global(code) {
+		font-family: var(--font-mono);
+		color: var(--pink);
+		background: rgba(255, 0, 122, 0.07);
+		padding: 0.05rem 0.3rem;
+		border-radius: 5px;
+		font-size: 0.9em;
+	}
+
+	@media (max-width: 900px) {
+		.arch-grid {
+			grid-template-columns: 1fr;
+		}
+		.arch-art {
+			position: static;
+		}
+	}
+</style>

@@ -1,0 +1,89 @@
+---
+const btns = [
+	{
+		label: 'Read the docs on GitHub',
+		href: 'https://github.com/chrisvanmeer/orbitron',
+		primary: true,
+	},
+	{
+		label: 'Download a release',
+		href: 'https://github.com/chrisvanmeer/orbitron/releases',
+		primary: false,
+	},
+];
+---
+
+<section class="section cta">
+	<div class="wrap cta-card card">
+		<div class="cta-inner">
+			<p class="eyebrow">self-host · cache · serve</p>
+			<h2>Keep automation moving, even offline</h2>
+			<p class="cta-copy">
+				Grab the binary, feed it a requirements file, and let your fleet install roles and
+				collections at LAN speed — pinned, cached and yours forever.
+			</p>
+			<div class="cta-btns">
+				{
+					btns.map((b) => (
+						<a
+							class:list={['btn', b.primary ? 'btn-primary' : 'btn-ghost']}
+							href={b.href}
+							target="_blank"
+							rel="noopener"
+						>
+							{b.label}
+						</a>
+					))
+				}
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.cta {
+		padding-bottom: clamp(48px, 7vw, 96px);
+	}
+
+	.cta-card {
+		padding: clamp(2rem, 5vw, 3.5rem);
+		text-align: center;
+		overflow: hidden;
+	}
+
+	.cta-card.card::before {
+		opacity: 1;
+	}
+
+	.cta-inner {
+		max-width: 620px;
+		margin-inline: auto;
+	}
+
+	.cta-card .eyebrow {
+		justify-content: center;
+	}
+
+	.cta-card h2 {
+		margin-top: 1rem;
+		font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+		line-height: 1.1;
+		background: linear-gradient(90deg, #fff 10%, var(--indigo));
+		-webkit-background-clip: text;
+		background-clip: text;
+		-webkit-text-fill-color: transparent;
+	}
+
+	.cta-copy {
+		margin-top: 1.2rem;
+		color: var(--text-dim);
+	}
+
+	.cta-btns {
+		display: flex;
+		justify-content: center;
+		gap: 1rem;
+		margin-top: 2rem;
+		flex-wrap: wrap;
+	}
+</style>

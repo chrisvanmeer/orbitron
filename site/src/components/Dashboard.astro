@@ -1,0 +1,167 @@
+---
+import { Image } from 'astro:assets';
+import uiPng from '../assets/ui.png';
+
+const highlights = [
+	{
+		t: 'Cache Matrix',
+		d: 'Every cached role and collection with sortable TYPE / NAME / VERSION / LAST ACCESS / DISK USAGE columns, a live search filter, and collapsed multi-version rows that unfold on click.',
+	},
+	{
+		t: 'Tail-f log stream',
+		d: 'A sliding ▲ LOG STREAM drawer behaves like tail -f — pinned to new lines, releasing when you scroll up. 500-line tail, 2000-line scrollback.',
+	},
+	{
+		t: 'System telemetry',
+		d: 'The ◄ SYS METRICS sidebar reports uplink status, cache activity, cache disk usage, mount free space, OS, architecture and last boot. Auto-refreshing.',
+	},
+	{
+		t: 'Air-gap friendly',
+		d: 'HTMX is embedded in memory — no external CDN calls. Cookie-based auth, or SSO via Keycloak. Type the mirror’s name for a surprise.',
+	},
+];
+---
+
+<section class="section dash" id="dashboard">
+	<div class="wrap">
+		<div class="section-head">
+			<span class="eyebrow">The /ui dashboard</span>
+			<h2>Operations on the bridge of a spaceship</h2>
+			<p>
+				Full-screen, zero-dependency, terminal-themed monitoring built into the binary. Keep an eye
+				on your mirror from a login page that looks like it belongs in a cyberpunk film.
+			</p>
+		</div>
+
+		<div class="dash-grid">
+			<div class="browser">
+				<div class="browser-bar">
+					<span class="dots"><span></span><span></span><span></span></span>
+					<span class="addr">orbitron // authentication</span>
+				</div>
+				<Image
+					src={uiPng}
+					alt="Orbitron cyberpunk web dashboard screenshot"
+					width={2648}
+					height={1700}
+					widths={[640, 1024, 1600, 2648]}
+					sizes="(min-width: 900px) min(65vw, 62rem), 100vw"
+					loading="lazy"
+				/>
+			</div>
+
+			<ul class="dash-list">
+				{
+					highlights.map((h) => (
+						<li class="dash-item">
+							<h3>{h.t}</h3>
+							<p>{h.d}</p>
+						</li>
+					))
+				}
+			</ul>
+		</div>
+	</div>
+</section>
+
+<style>
+	.dash {
+		background: linear-gradient(180deg, transparent, rgba(13, 14, 22, 0.5) 20%, rgba(13, 14, 22, 0.5) 80%, transparent);
+	}
+
+	.dash-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+		gap: 2.2rem;
+		align-items: start;
+	}
+
+	.browser {
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: var(--bg-deep);
+		box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(0, 240, 255, 0.06);
+	}
+
+	.browser-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		padding: 0.65rem 0.9rem;
+		border-bottom: 1px solid var(--border);
+		background: rgba(5, 5, 5, 0.6);
+	}
+
+	.dots {
+		display: inline-flex;
+		gap: 0.35rem;
+	}
+	.dots span {
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: #2a3038;
+	}
+	.dots span:nth-child(1) { background: var(--red); }
+	.dots span:nth-child(2) { background: var(--yellow); }
+	.dots span:nth-child(3) { background: var(--cyan); }
+
+	.addr {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		color: var(--text-dim);
+		background: rgba(139, 148, 158, 0.08);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 0.2rem 0.7rem;
+		margin-inline: auto;
+	}
+
+	.browser img {
+		width: 100%;
+		height: auto;
+	}
+
+	.dash-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+	}
+
+	.dash-item {
+		padding: 1.1rem 1.2rem;
+		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		transition: border-color 0.2s ease, transform 0.2s ease;
+	}
+
+	.dash-item:hover {
+		border-color: rgba(0, 240, 255, 0.35);
+		transform: translateY(-2px);
+	}
+
+	.dash-item h3 {
+		font-size: 0.95rem;
+		color: var(--cyan);
+		font-family: var(--font-mono);
+		font-weight: 600;
+		margin-bottom: 0.35rem;
+		letter-spacing: 0.02em;
+	}
+
+	.dash-item p {
+		font-size: 0.87rem;
+		color: var(--text-dim);
+	}
+
+	@media (max-width: 900px) {
+		.dash-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

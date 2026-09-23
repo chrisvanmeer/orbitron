@@ -1,0 +1,84 @@
+---
+interface Props {
+	label?: string;
+	filename?: string;
+	lang?: string;
+}
+
+const { label = 'TERMINAL', filename, lang } = Astro.props;
+---
+
+<div class="codeblock card">
+	<div class="codehead">
+		<span class="dots"><span></span><span></span><span></span></span>
+		<span class="label">{label}</span>
+		{filename && <span class="filename">{filename}</span>}
+		<span class="lang">{lang}</span>
+	</div>
+	<pre><code><slot /></code></pre>
+</div>
+
+<style>
+	.codeblock {
+		overflow: hidden;
+		border-radius: var(--radius);
+	}
+
+	.codehead {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		padding: 0.7rem 1rem;
+		border-bottom: 1px solid var(--border);
+		background: rgba(5, 5, 5, 0.4);
+	}
+
+	.dots {
+		display: inline-flex;
+		gap: 0.35rem;
+	}
+
+	.dots span {
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: #2a3038;
+	}
+
+	.dots span:nth-child(1) { background: var(--red); }
+	.dots span:nth-child(2) { background: var(--yellow); }
+	.dots span:nth-child(3) { background: var(--cyan); }
+
+	.label {
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		letter-spacing: 0.16em;
+		color: var(--text-faint);
+	}
+
+	.filename {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		color: var(--text-mid);
+	}
+
+	.lang {
+		margin-left: auto;
+		font-family: var(--font-mono);
+		font-size: 0.66rem;
+		color: var(--pink);
+	}
+
+	pre {
+		margin: 0;
+		padding: 1.1rem 1.2rem;
+		overflow-x: auto;
+		font-size: 0.8rem;
+		line-height: 1.65;
+	}
+
+	code {
+		font-family: var(--font-mono);
+		color: #c7d4e3;
+	}
+</style>

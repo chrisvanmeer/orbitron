@@ -1,0 +1,295 @@
+---
+import CodeBlock from './CodeBlock.astro';
+
+const paths = [
+	{
+		id: 'bare',
+		label: 'Bare metal',
+		title: 'Install as a systemd service',
+		desc: 'Fetch a static binary from the releases page, then --install bootstraps the orbitron user, directories, systemd unit and logrotate in one shot. systemctl reload = hot SIGHUP re-config.',
+		file: 'terminal',
+		language: 'bash',
+		code: `$ sudo ./bin/orbitron --install
+$ sudo systemctl status orbitron
+
+# create an admin token (script-friendly: -q)
+$ sudo orbitron --generate-token -q
+
+# hot-reload config.yml, no downtime
+$ sudo systemctl reload orbitron`,
+	},
+	{
+		id: 'docker',
+		label: 'Docker / Compose',
+		title: 'Run the GHCR image',
+		desc: 'Multi-arch image (amd64 + arm64), non-root, git and openssh-client bundled. Config is rendered from ORBITRON_* env vars — no file to mount. Persist your cache on a volume.',
+		file: 'orbitron docker compose',
+		language: 'bash',
+		code: `$ docker compose up -d
+[+] Running 1/1
+ ✔ Container orbitron  Started
+
+$ docker compose logs orbitron | grep "ADMIN TOKEN"
+orbitron  | [2026-09-23 08:12:04] ADMIN TOKEN: obt_xxxx...
+# also available via ghcr.io/chrisvanmeer/orbitron:latest`,
+	},
+	{
+		id: 'ansible',
+		label: 'Ansible collection',
+		title: 'Declarative, with the official collection',
+		desc: 'chrisvanmeer.orbitron covers the full lifecycle from Ansible: install, configure, bootstrap tokens, mirror wait-for-sync and day-two pruning — six HTTP modules plus two roles.',
+		file: 'orbitron_daemon.yml',
+		language: 'bash',
+		code: `$ ansible-galaxy collection install chrisvanmeer.orbitron
+$ ansible-playbook -i hosts orbitron_daemon.yml
+
+# roles:
+#   chrisvanmeer.orbitron.orbitron        # install + operate daemon
+#   chrisvanmeer.orbitron.orbitron_mirror # declare roles/collections`,
+	},
+];
+---
+
+<section class="section" id="quickstart">
+	<div class="wrap">
+		<div class="section-head">
+			<span class="eyebrow">Quickstart</span>
+			<h2>Up and mirroring in minutes</h2>
+			<p>
+				Three ways to run a mirror — bare metal, container, or fully managed by Ansible. Same
+				superpower underneath: a Galaxy endpoint your playbooks already know how to talk to.
+			</p>
+		</div>
+
+		<div class="qs-card card" data-quickstart>
+			<div class="tabs" role="tablist" aria-label="Installation paths">
+				{
+					paths.map((p, i) => (
+						<button
+							class:list={['tab', { active: i === 0 }]}
+							role="tab"
+							aria-selected={i === 0 ? 'true' : 'false'}
+							data-path={p.id}
+						>
+							{p.label}
+						</button>
+					))
+				}
+			</div>
+
+			{
+				paths.map((p, i) => (
+					<div class:list={['path', { active: i === 0 }]} data-panel={p.id}>
+						<h3 class="path-title">{p.title}</h3>
+						<p class="path-desc">{p.desc}</p>
+						<CodeBlock label="DEPLOY" filename={p.file} lang={p.language}>{p.code}</CodeBlock>
+					</div>
+				))
+			}
+		</div>
+
+		<div class="flow-grid">
+			<div>
+				<h3 class="flow-title">1 · Feed it</h3>
+				<p class="flow-sub">Post a YAML requirements manifest — roles, collections or git-backed sources.</p>
+				<CodeBlock label="INGEST" filename="roles_requirements.yml" lang="yaml">{`roles:
+  - name: geerlingguy.nginx
+    version: ">=2.0.0"
+  - name: RHEL9-CIS
+    src: https://github.com/ansible-lockdown/RHEL9-CIS.git
+    version: 2.0.2`}</CodeBlock>
+				<CodeBlock label="API" filename="curl" lang="bash">{`curl -X POST https://orbitron.internal/api/v1/requirements/roles \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN" \\
+  -H "Content-Type: text/yaml" \\
+  --data-binary @roles_requirements.yml`}</CodeBlock>
+			</div>
+
+			<div>
+				<h3 class="flow-title">2 · Consume it</h3>
+				<p class="flow-sub">Point ansible-galaxy at the mirror. That is the whole setup.</p>
+				<CodeBlock label="CLIENT" filename="ansible.cfg" lang="ini">{`[galaxy]
+server_list = orbitron
+
+[galaxy_server.orbitron]
+url = https://orbitron.internal/api/
+# token = YOUR_ORBITRON_TOKEN  # if require_auth_pull`}</CodeBlock>
+				<CodeBlock label="FETCH" filename="terminal" lang="bash">{`$ ansible-galaxy role install -r roles_requirements.yml
+$ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock>
+			</div>
+		</div>
+
+		<div class="note">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+				<path d="M12 9v4" />
+				<path d="M12 17h.01" />
+			</svg>
+			<p>
+				<strong>Put it behind a reverse proxy.</strong> Terminate TLS with <span>Nginx</span>,
+				<span>Traefik</span> or <span>HAProxy</span> in front of the daemon — Orbitron honors
+				<code>X-Forwarded-Proto</code> / <code>X-Forwarded-For</code>, and <code>ansible.cfg</code>
+				above talks native HTTPS. Point load balancer health checks at the unauthenticated
+				<code>GET /healthz</code> (<code>200</code> when storage is writable). This keeps API calls,
+				tokens and any git credentials in mirrored <code>src</code> URLs encrypted in transit.
+			</p>
+		</div>
+	</div>
+</section>
+
+<script>
+	const root = document.querySelector('[data-quickstart]');
+	const tabs = root.querySelectorAll('[role="tab"]');
+	const panels = root.querySelectorAll('[data-panel]');
+
+	tabs.forEach((tab) => {
+		tab.addEventListener('click', () => {
+			tabs.forEach((t) => {
+				t.classList.toggle('active', t === tab);
+				t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+			});
+			panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === tab.dataset.path));
+		});
+	});
+</script>
+
+<style>
+	.qs-card {
+		padding: 1rem;
+	}
+
+	.qs-card.card::before {
+		opacity: 1;
+	}
+
+	.tabs {
+		display: flex;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+		padding: 0.35rem;
+		background: rgba(5, 5, 5, 0.5);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		margin-bottom: 1.6rem;
+		width: fit-content;
+	}
+
+	.tab {
+		appearance: none;
+		background: transparent;
+		border: none;
+		border-radius: 8px;
+		padding: 0.55rem 1.1rem;
+		font-family: var(--font-mono);
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		color: var(--text-dim);
+		cursor: pointer;
+		transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+	}
+
+	.tab:hover {
+		color: var(--text);
+	}
+
+	.tab.active {
+		color: var(--bg-deep);
+		background: linear-gradient(90deg, var(--cyan), var(--violet));
+		box-shadow: 0 0 22px -6px rgba(0, 240, 255, 0.7);
+	}
+
+	.path {
+		display: none;
+		padding: 0.2rem 0.4rem 0.4rem;
+	}
+
+	.path.active {
+		display: block;
+	}
+
+	.path-title {
+		font-size: 1.25rem;
+		margin-bottom: 0.4rem;
+	}
+
+	.path-desc {
+		color: var(--text-dim);
+		font-size: 0.92rem;
+		max-width: 60ch;
+		margin-bottom: 1.4rem;
+	}
+
+	.flow-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1.2rem;
+		margin-top: 2.2rem;
+	}
+
+	.note {
+		display: flex;
+		gap: 0.9rem;
+		align-items: flex-start;
+		margin-top: 1.6rem;
+		padding: 1.1rem 1.3rem;
+		background: linear-gradient(180deg, rgba(87, 115, 255, 0.08), rgba(13, 14, 22, 0.5));
+		border: 1px solid rgba(87, 115, 255, 0.3);
+		border-radius: var(--radius);
+	}
+
+	.note svg {
+		width: 20px;
+		height: 20px;
+		flex: none;
+		color: var(--yellow);
+		margin-top: 0.15rem;
+	}
+
+	.note p {
+		font-size: 0.88rem;
+		color: var(--text-mid);
+	}
+
+	.note strong {
+		color: var(--text);
+	}
+
+	.note span {
+		font-family: var(--font-mono);
+		color: var(--indigo);
+	}
+
+	.note code {
+		font-family: var(--font-mono);
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.07);
+		padding: 0.05rem 0.3rem;
+		border-radius: 5px;
+		font-size: 0.9em;
+	}
+
+	.flow-title {
+		font-size: 1.05rem;
+		margin-bottom: 0.35rem;
+		font-family: var(--font-mono);
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		color: var(--cyan);
+	}
+
+	.flow-sub {
+		color: var(--text-dim);
+		font-size: 0.9rem;
+		margin-bottom: 1.2rem;
+	}
+
+	.flow-grid :global(.codeblock + .codeblock) {
+		margin-top: 1rem;
+	}
+
+	@media (max-width: 900px) {
+		.flow-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
