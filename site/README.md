@@ -16,7 +16,7 @@ Start the dev server in background mode when needed: `astro dev --background`.
 
 ## Structure
 
-```
+```text
 astro.config.mjs    site URL + build config
 public/
   assets/           logo.svg, architecture.svg, ui.png (copied from repo assets/)
