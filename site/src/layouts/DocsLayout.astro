@@ -141,39 +141,39 @@ const current = sidebar.find((s) => s.key === section);
 		min-width: 0;
 	}
 
-	.doc-body h2 {
+	:global(.doc-body h2) {
 		font-size: clamp(1.6rem, 3vw, 2.2rem);
 		margin: 3.25rem 0 1.1rem;
 		color: var(--text);
 	}
 
-	.doc-body h2:first-of-type {
+	:global(.doc-body h2:first-of-type) {
 		margin-top: 0;
 	}
 
-	.doc-body h2 + h3 {
+	:global(.doc-body h2 + h3) {
 		margin-top: 0.6rem;
 	}
 
-	.doc-body h3 {
+	:global(.doc-body h3) {
 		font-size: 1.15rem;
 		margin: 2.4rem 0 0.85rem;
 		color: var(--text);
 	}
 
-	.doc-body h3 + h2 {
+	:global(.doc-body h3 + h2) {
 		margin-top: 3.4rem;
 	}
 
-	.doc-body p {
+	:global(.doc-body p) {
 		color: var(--text-mid);
 		font-size: 0.95rem;
 		margin: 1.05rem 0;
 		line-height: 1.75;
 	}
 
-	.doc-body p code,
-	.doc-body li code {
+	:global(.doc-body p code),
+	:global(.doc-body li code) {
 		font-family: var(--font-mono);
 		font-size: 0.86em;
 		color: var(--cyan);
@@ -182,18 +182,18 @@ const current = sidebar.find((s) => s.key === section);
 		border-radius: 5px;
 	}
 
-	.doc-body a {
+	:global(.doc-body a) {
 		color: var(--cyan);
 		text-decoration: underline;
 		text-underline-offset: 3px;
 	}
 
-	.doc-body a:hover {
+	:global(.doc-body a:hover) {
 		color: var(--pink);
 		text-decoration-color: var(--pink);
 	}
 
-	.doc-body ul {
+	:global(.doc-body ul) {
 		margin: 0.8rem 0;
 		padding-left: 1.2rem;
 		color: var(--text-mid);
@@ -201,11 +201,11 @@ const current = sidebar.find((s) => s.key === section);
 		line-height: 1.75;
 	}
 
-	.doc-body li + li {
+	:global(.doc-body li + li) {
 		margin-top: 0.35rem;
 	}
 
-	.doc-body li::marker {
+	:global(.doc-body li::marker) {
 		color: var(--pink);
 	}
 
@@ -217,35 +217,35 @@ const current = sidebar.find((s) => s.key === section);
 		margin-block: 1.75rem;
 	}
 
-	.doc-body .doc-card + .doc-card {
+	:global(.doc-body .doc-card + .doc-card) {
 		margin-top: 0;
 	}
 
-	.doc-cards {
+	:global(.doc-cards) {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		gap: 1.6rem;
 		margin-block: 2rem 0.75rem;
 	}
 
-	.doc-card {
+	:global(.doc-card) {
 		display: block;
 		padding: 1.3rem 1.4rem;
 	}
 
-	.doc-card h3 {
+	:global(.doc-card h3) {
 		margin: 0 0 0.5rem;
 		font-size: 1.05rem;
 	}
 
-	.doc-card p {
+	:global(.doc-card p) {
 		margin: 0;
 		font-size: 0.86rem;
 		color: var(--text-dim);
 		line-height: 1.65;
 	}
 
-	.doc-card-go {
+	:global(.doc-card-go) {
 		display: inline-block;
 		margin-top: 0.8rem;
 		font-family: var(--font-mono);
