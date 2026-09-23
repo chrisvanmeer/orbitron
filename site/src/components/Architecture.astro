@@ -9,7 +9,7 @@ const flow = [
 	},
 	{
 		t: 'Sync in parallel',
-		d: 'Concurrent workers resolve versions against Galaxy V1/V3, download collection tarballs and shallow-clone git sources (--depth 1). Versions already on disk are never re-fetched.',
+		d: 'Concurrent workers resolve versions against Galaxy V1/V3 or a git remote, download collection .tar.gz artifacts and shallow-clone sources straight from GitHub/GitLab (--depth 1). Versions already on disk are never re-fetched.',
 	},
 	{
 		t: 'Store on disk',
@@ -17,7 +17,7 @@ const flow = [
 	},
 	{
 		t: 'Serve like Galaxy',
-		d: 'Role downloads are streamed as on-the-fly .tar.gz; collections are served with full V3 metadata. ansible-galaxy sees a normal Galaxy server.',
+		d: 'Roles — cached as unpacked git checkouts — stream out as on-the-fly .tar.gz; collections are served from their stored .tar.gz with full V3 metadata. ansible-galaxy sees a normal Galaxy server.',
 	},
 ];
 

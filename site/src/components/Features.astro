@@ -8,8 +8,9 @@ import BentoCard from './BentoCard.astro';
 			<span class="eyebrow">Capabilities</span>
 			<h2>Built for isolated, pinned, repeatable automation</h2>
 			<p>
-				Orbitron caches whatever your pipelines need — roles, collections, git-backed sources — and
-				serves them as an authentic Galaxy endpoint. Everything ships in one dependency-free binary.
+			Orbitron caches whatever your pipelines need — roles, collections, git-backed sources — pulled
+			from Ansible Galaxy or cached straight from GitHub &amp; GitLab, and serves them as an authentic
+			Galaxy endpoint. Everything ships in one dependency-free binary.
 			</p>
 		</div>
 
@@ -23,8 +24,10 @@ import BentoCard from './BentoCard.astro';
 					<path d="m8 12 3 3 5-3" />
 				</svg>
 				Drop-in for <code>ansible-galaxy role install</code> and <code>collection install</code>.
-				Point <code>ansible.cfg</code> at it — no client changes, no retraining. Roles stream as
-				on-the-fly <code>.tar.gz</code> archives; collections serve real Galaxy V3 metadata.
+				Point <code>ansible.cfg</code> at it — no client changes, no retraining. Roles are cached as
+				unpacked git checkouts and streamed as on-the-fly <code>.tar.gz</code>; collections are stored
+				as <code>.tar.gz</code> artifacts served with real Galaxy V3 metadata. Pull from Ansible
+				Galaxy — or cache straight from GitHub.
 			</BentoCard>
 
 			<BentoCard span="half" accent="violet" title="Official Ansible collection">
