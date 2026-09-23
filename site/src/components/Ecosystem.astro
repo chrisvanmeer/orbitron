@@ -17,8 +17,8 @@ const targets = [
 	},
 	{
 		name: 'Ansible collection',
-		desc: 'chrisvanmeer.orbitron — six HTTP modules, install & mirror roles.',
-		href: 'https://galaxy.ansible.com/chrisvanmeer/orbitron',
+		desc: 'chrisvanmeer.orbitron — install, manage & mirror declaratively. Full guide in the docs.',
+		href: '/docs/ansible',
 	},
 	{
 		name: 'Reverse proxy',
@@ -49,7 +49,7 @@ const badges = ['linux/amd64', 'linux/arm64', 'GPL-3.0', 'Go 1.26', 'HTMX 4', 'P
 		<div class="eco-grid">
 			{
 				targets.map((t) => (
-					<a class="eco-card" href={t.href} target={t.href.startsWith('/#') ? undefined : '_blank'} rel="noopener">
+					<a class="eco-card" href={t.href} target={t.href.startsWith('http') ? '_blank' : undefined} rel="noopener">
 						<span class="eco-name">{t.name}</span>
 						<span class="eco-desc">{t.desc}</span>
 						<span class="eco-arrow" aria-hidden="true">↗</span>

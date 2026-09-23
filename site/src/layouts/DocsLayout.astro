@@ -4,7 +4,7 @@ import Layout from './Layout.astro';
 export interface Props {
 	title: string;
 	description: string;
-	section: 'overview' | 'install' | 'configuration' | 'mirroring' | 'api';
+	section: 'overview' | 'install' | 'ansible' | 'configuration' | 'mirroring' | 'api';
 }
 
 const { title, description, section } = Astro.props;
@@ -12,6 +12,7 @@ const { title, description, section } = Astro.props;
 const sidebar: { label: string; href: string; key: Props['section'] }[] = [
 	{ label: 'Overview', href: '/docs', key: 'overview' },
 	{ label: 'Install', href: '/docs/install', key: 'install' },
+	{ label: 'Ansible collection', href: '/docs/ansible', key: 'ansible' },
 	{ label: 'Configuration', href: '/docs/configuration', key: 'configuration' },
 	{ label: 'Mirroring content', href: '/docs/mirroring', key: 'mirroring' },
 	{ label: 'API reference', href: '/docs/api', key: 'api' },

@@ -10,6 +10,12 @@ const cards = [
 		go: 'Go to Install →',
 	},
 	{
+		href: '/docs/ansible',
+		title: 'Ansible collection',
+		desc: 'Manage the whole lifecycle with chrisvanmeer.orbitron — two roles, six HTTP modules, fully idempotent.',
+		go: 'Go to Ansible collection →',
+	},
+	{
 		href: '/docs/configuration',
 		title: 'Configuration',
 		desc: 'All config.yml keys, forward proxies, TLS / private CAs for outbound traffic, and SSO/OIDC.',
@@ -36,7 +42,8 @@ const cards = [
 		Orbitron is a single static Go binary that mirrors Ansible roles &amp; collections — from
 		Ansible Galaxy or straight from GitHub — behind a native Galaxy V1 + V3 API. Everything
 		<code>ansible-galaxy</code> already knows — install, update, search — keeps working against it,
-		with zero client changes.
+		with zero client changes. Prefer Ansible for operations? The
+		<a href="/docs/ansible">official collection</a> installs, configures and mirrors for you.
 	</p>
 
 	<div class="doc-cards">

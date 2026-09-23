@@ -41,6 +41,8 @@ import BentoCard from './BentoCard.astro';
 				<code>purge</code>, <code>prune</code>) and two roles — <code>orbitron</code> for install &amp;
 				lifecycle, <code>orbitron_mirror</code> for declarative mirroring. One playbook run, from
 				empty host to serving cache.
+				<br />
+				<a class="bento-link" href="/docs/ansible">Manage it from Ansible — read the guide →</a>
 			</BentoCard>
 
 			<BentoCard span="third" accent="violet" title="One static binary">
@@ -130,5 +132,20 @@ import BentoCard from './BentoCard.astro';
 		display: grid;
 		grid-template-columns: repeat(6, 1fr);
 		gap: 1.1rem;
+	}
+
+	.bento-link {
+		display: inline-block;
+		margin-top: 0.9rem;
+		font-family: var(--font-mono);
+		font-size: 0.76rem;
+		color: var(--cyan);
+		border-bottom: 1px solid rgba(0, 240, 255, 0.35);
+		transition: color 0.2s ease, border-color 0.2s ease;
+	}
+
+	.bento-link:hover {
+		color: var(--pink);
+		border-color: var(--pink);
 	}
 </style>

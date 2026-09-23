@@ -17,6 +17,7 @@ const PAGES = [
 	'404.html',
 	'docs/index.html',
 	'docs/install/index.html',
+	'docs/ansible/index.html',
 	'docs/configuration/index.html',
 	'docs/mirroring/index.html',
 	'docs/api/index.html',
@@ -51,14 +52,14 @@ for (const file of FILES) {
 	ok(`file ${file}`);
 }
 
-// 2. Sitemap has exactly the 6 URLs.
+// 2. Sitemap has exactly the 7 URLs.
 const sitemap = readFileSync(join(dist, 'sitemap.xml'), 'utf8');
 const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-if (locs.length !== 6) fail(`sitemap has ${locs.length} URLs, expected 6`);
-for (const loc of ['', 'docs/', 'docs/install/', 'docs/configuration/', 'docs/mirroring/', 'docs/api/']) {
+if (locs.length !== 7) fail(`sitemap has ${locs.length} URLs, expected 7`);
+for (const loc of ['', 'docs/', 'docs/install/', 'docs/ansible/', 'docs/configuration/', 'docs/mirroring/', 'docs/api/']) {
 	if (!locs.includes(`https://getorbitron.app/${loc}`)) fail(`sitemap missing https://getorbitron.app/${loc}`);
 }
-ok('sitemap 6 urls');
+ok('sitemap 7 urls');
 
 // 3. JSON-LD: present + valid on index, absent on 404; 404 is noindex.
 const indexHtml = readFileSync(join(dist, 'index.html'), 'utf8');

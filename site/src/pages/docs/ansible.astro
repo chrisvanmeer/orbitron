@@ -1,0 +1,215 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import Note from '../../components/Note.astro';
+
+const modules = [
+	{
+		name: 'orbitron_info',
+		desc: 'Read-only facts: health, storage inventory, manifests, sync status and tokens.',
+	},
+	{
+		name: 'orbitron_token',
+		desc: 'Create, rotate and revoke admin tokens — idempotent by label, with optional TTLs.',
+	},
+	{
+		name: 'orbitron_manifest',
+		desc: 'Store role/collection requirements manifests — idempotent by content hash.',
+	},
+	{
+		name: 'orbitron_sync',
+		desc: 'Trigger a full re-sync and optionally wait for it to finish.',
+	},
+	{
+		name: 'orbitron_purge',
+		desc: 'Remove one cached role or collection version.',
+	},
+	{
+		name: 'orbitron_prune',
+		desc: 'Access-based prune with a retention window — dry-run preview by default.',
+	},
+];
+---
+
+<DocsLayout
+	title="Ansible collection — Orbitron Docs"
+	description="Install and manage Orbitron with the official chrisvanmeer.orbitron Ansible collection: two roles, six HTTP modules, fully idempotent."
+	section="ansible"
+>
+	<h2>Ansible collection</h2>
+	<p>
+		The official <code>chrisvanmeer.orbitron</code> collection manages Orbitron with Ansible itself.
+		One playbook run takes an empty host to a serving mirror: install the daemon, render
+		<code>config.yml</code>, bootstrap an admin token, declare roles &amp; collections to mirror
+		(with wait-for-sync), and take care of day-two operations like purging and pruning. Everything
+		is idempotent — rerunning an unchanged, fully mirrored playbook reports no changes.
+	</p>
+
+	<Note>
+		<p>
+			<strong>Requirements</strong>: ansible-core ≥ 2.16 on the controller, Linux targets (amd64 /
+			arm64) with systemd, and <code>become: true</code> for the <code>orbitron</code> role. The
+			<code>orbitron_*</code> modules also work against an already-running daemon.
+		</p>
+	</Note>
+
+	<h3>Install the collection</h3>
+	<CodeBlock label="GALAXY" filename="terminal" lang="bash">{`# latest
+$ ansible-galaxy collection install chrisvanmeer.orbitron
+
+# pin a version for reproducible runs
+$ ansible-galaxy collection install chrisvanmeer.orbitron:1.8.1`}</CodeBlock>
+	<p>
+		The source lives in the <a href="https://github.com/chrisvanmeer/orbitron/tree/main/ansible_collections/chrisvanmeer/orbitron" target="_blank" rel="noopener">repository</a>,
+		and the collection is published on <a href="https://galaxy.ansible.com/collections/chrisvanmeer/orbitron" target="_blank" rel="noopener">Ansible Galaxy</a>.
+	</p>
+
+	<h3>From empty host to serving cache</h3>
+	<p>
+		The two roles chain together: <code>orbitron</code> installs and operates the daemon, then
+		<code>orbitron_mirror</code> declares what to mirror and waits until it is synced.
+	</p>
+	<CodeBlock label="PLAYBOOK" filename="orbitron_daemon.yml" lang="yaml">{`---
+- name: Install Orbitron and mirror a set of collections
+  hosts: mirrors
+  become: true
+
+  roles:
+    - role: chrisvanmeer.orbitron.orbitron
+    - role: chrisvanmeer.orbitron.orbitron_mirror
+      vars:
+        orbitron_mirror_url: "http://127.0.0.1:8080"
+        orbitron_mirror_token: "{{ orbitron_admin_token }}"
+        orbitron_mirror_roles:
+          - name: geerlingguy.nginx
+            version: "3.3.1"
+        orbitron_mirror_collections:
+          - name: community.general
+            version: "8.4.0"
+          - name: community.docker
+            version: "3.6.0"`}</CodeBlock>
+
+	<h3>The <code>orbitron</code> role — install &amp; lifecycle</h3>
+	<p>
+		Resolves and downloads the release binary, bootstraps the system user, directories, systemd unit
+		and logrotate through <code>--install</code>, renders <code>/etc/orbitron/config.yml</code>,
+		ensures the service runs and is healthy, and generates (or reuses) an initial admin token.
+		Leftovers are removed cleanly with <code>orbitron_state: absent</code>.
+	</p>
+	<CodeBlock label="ROLE" filename="orbitron_daemon.yml" lang="yaml">{`- hosts: mirrors
+  become: true
+  roles:
+    - role: chrisvanmeer.orbitron.orbitron
+      vars:
+        # leave orbitron_version unset to install the latest release
+        orbitron_version: v1.3.2
+        orbitron_listen_addr: 0.0.0.0:8080
+        orbitron_token_ttl_days: 90
+        # optional: forward proxy for outbound Galaxy / git traffic
+        orbitron_http_proxy: http://squid.internal:3128
+        # optional: prune versions not served within 60 days (dry-run by default)
+        orbitron_prune_days: 60
+        orbitron_prune_dry_run: true`}</CodeBlock>
+	<p>
+		After the run, <code>orbitron_admin_token</code> holds the effective admin token (your
+		<code>orbitron_token</code> vault value, or one generated and persisted to
+		<code>/root/.orbitron_token</code> with mode 0600), and <code>orbitron_version</code> the installed
+		release. Air-gapped installs point <code>orbitron_binary_src</code> at a pre-downloaded binary
+		and optionally <code>orbitron_checksum</code> at its SHA-256.
+	</p>
+
+	<h3>The <code>orbitron_mirror</code> role — declarative mirroring</h3>
+	<p>
+		Declares role &amp; collection requirements — either as the structured
+		<code>orbitron_mirror_roles</code> / <code>orbitron_mirror_collections</code> lists, or as
+		requirements-file paths (<code>orbitron_mirror_role_manifest_path</code> /
+		<code>orbitron_mirror_collection_manifest_path</code>) — then waits for the sync
+		(<code>orbitron_mirror_wait_sync: true</code>). Idempotent by version: pinned versions already
+		mirrored report <code>ok</code>; force a full re-check with
+		<code>orbitron_mirror_sync_force: true</code>.
+	</p>
+
+	<h3>Modules</h3>
+	<p>Six HTTP modules wrap the <a href="/docs/api">management API</a> 1:1:</p>
+	<ul class="mod-list">
+		{
+			modules.map((m) => (
+				<li>
+					<code>{m.name}</code> — {m.desc}
+				</li>
+			))
+		}
+	</ul>
+	<p>
+		Every module accepts <code>url</code> (default <code>http://127.0.0.1:8080</code>),
+		<code>token</code> (also available via the <code>ORBITRON_TOKEN</code> environment variable),
+		<code>validate_certs</code> and <code>timeout</code>.
+	</p>
+
+	<h3>Day-two operations</h3>
+	<CodeBlock label="TASKS" filename="day_two.yml" lang="yaml">{`- name: Store a requirements manifest (idempotent by content hash)
+  chrisvanmeer.orbitron.orbitron_manifest:
+    token: "{{ orbitron_admin_token }}"
+    type: collections
+    collections:
+      - name: ansible.posix
+        version: all
+
+- name: Trigger a full re-sync and wait for it
+  chrisvanmeer.orbitron.orbitron_sync:
+    token: "{{ orbitron_admin_token }}"
+    wait: true
+
+- name: Preview pruning — versions not served in 60 days (dry-run by default)
+  chrisvanmeer.orbitron.orbitron_prune:
+    token: "{{ orbitron_admin_token }}"
+    days: 60
+
+- name: Drop a stale cached role version
+  chrisvanmeer.orbitron.orbitron_purge:
+    token: "{{ orbitron_admin_token }}"
+    kind: role
+    name: geerlingguy.nginx
+    version: 3.3.0`}</CodeBlock>
+
+	<h3>Token lifecycle</h3>
+	<CodeBlock label="TASKS" filename="tokens.yml" lang="yaml">{`- name: Create (or reuse) a short-lived CI token
+  chrisvanmeer.orbitron.orbitron_token:
+    url: "http://127.0.0.1:8080"
+    token: "{{ orbitron_bootstrap_token }}"
+    label: ci-builder
+    ttl_days: 30
+  register: ci_token
+  no_log: true
+
+- name: Gather facts and assert the mirror is healthy
+  chrisvanmeer.orbitron.orbitron_info:
+    token: "{{ ci_token.orbitron.token }}"
+  register: info
+
+- name: Fail when the mirror is unhealthy
+  ansible.builtin.assert:
+    that:
+      - info.orbitron.health.status == "ok"`}</CodeBlock>
+
+	<Note>
+		<p>
+			<strong>Security</strong>: keep <code>orbitron_token</code> in a vault, mark tasks that capture
+			freshly generated token secrets with <code>no_log: true</code>, and enable
+			<code>validate_certs: true</code> when using <code>https</code> URLs. The
+			<code>orbitron</code> role runs <code>--install</code> and service commands, so it must run
+			with <code>become: true</code>.
+		</p>
+	</Note>
+</DocsLayout>
+
+<style>
+	.mod-list li :global(code) {
+		font-family: var(--font-mono);
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.07);
+		padding: 0.05rem 0.32rem;
+		border-radius: 5px;
+		font-size: 0.86em;
+	}
+</style>

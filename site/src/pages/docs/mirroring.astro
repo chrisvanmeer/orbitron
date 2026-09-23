@@ -84,7 +84,8 @@ curl -X DELETE http://127.0.0.1:8080/api/v1/storage/collections/community.genera
 	<p>
 		The official <code>chrisvanmeer.orbitron</code> collection covers the full lifecycle — install,
 		configure, bootstrap tokens, mirror wait-for-sync and day-two pruning — with six HTTP modules
-		and two roles, so your fleet stays idempotent.
+		and two roles, so your fleet stays idempotent. Full guide in the
+		<a href="/docs/ansible">Ansible collection</a> docs.
 	</p>
 	<CodeBlock label="ANSIBLE" filename="terminal" lang="bash">{`$ ansible-galaxy collection install chrisvanmeer.orbitron
 $ ansible-playbook -i hosts orbitron_daemon.yml
