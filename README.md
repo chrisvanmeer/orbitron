@@ -11,6 +11,14 @@ enterprise environments to cache, store, and serve Ansible roles and collections
 
 ---
 
+## Architecture
+
+<div align="center">
+  <img src="assets/architecture.svg" alt="Orbitron Architecture" width="100%">
+</div>
+
+---
+
 ## Key Features
 
 * **Galaxy V1 & V3 API Support**: Complete compatibility with `ansible-galaxy role install` and
@@ -934,28 +942,28 @@ galaxy_server = http://localhost:8080
 
 ### Container environment variables
 
-| Variable                     | Default                  | Description                                                      |
-| ---------------------------- | ------------------------ | ---------------------------------------------------------------- |
-| `ORBITRON_LISTEN_ADDR`       | `0.0.0.0:8080`           | Address the daemon binds inside the container.                   |
-| `ORBITRON_STORAGE_PATH`      | `/data`                  | Storage root for roles, collections and manifests.               |
-| `ORBITRON_LOG_PATH`          | *stdout*                 | Log file inside the container; empty logs to stdout.             |
-| `ORBITRON_TOKENS_FILE`       | `${STORAGE}/tokens.json` | Token registry file.                                             |
-| `ORBITRON_REQUIRE_AUTH_PULL` | `false`                  | Require a token to pull/download cached content.                 |
-| `ORBITRON_MAX_CONCURRENCY`   | `4`                      | Concurrent download/clone workers during syncs.                  |
-| `ORBITRON_TOKEN_TTL_DAYS`    | `0`                      | Lifetime of generated admin tokens in days (`0` = never expire). |
-| `ORBITRON_HTTP_PROXY`        | *empty*                  | Forward proxy for `http://` outbound requests.                   |
-| `ORBITRON_HTTPS_PROXY`       | *empty*                  | Forward proxy for `https://` outbound requests.                  |
-| `ORBITRON_NO_PROXY`          | *empty*                  | Comma-separated proxy exclusions.                                |
-| `ORBITRON_TLS_CA_FILE`       | *empty*                  | Path to a PEM CA bundle (mounted file) trusted for outbound HTTPS. |
-| `ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY` | `false`        | Disable outbound TLS verification (like `curl -k`).              |
-| `ORBITRON_AUTO_TOKEN`        | `true`                   | Generate an admin token on first start if none exists.           |
-| `ORBITRON_OIDC_ENABLED`      | `false`                  | Enable SSO (OIDC) login for the web dashboard.                   |
-| `ORBITRON_OIDC_ISSUER`       | *empty*                  | Full Keycloak realm URL (`https://kc/realms/<realm>`).           |
-| `ORBITRON_OIDC_CLIENT_ID`    | *empty*                  | Keycloak confidential client id.                                 |
-| `ORBITRON_OIDC_CLIENT_SECRET`| *empty*                  | Keycloak client secret.                                          |
-| `ORBITRON_OIDC_SESSION_TTL_HOURS` | `8`                 | Dashboard session lifetime (`0` = 8h).                           |
-| `ORBITRON_OIDC_REDIRECT_URI` | *empty*                  | Explicit callback URI; empty auto-derives `<scheme>://<host>/ui/oidc/callback`. |
-| `ORBITRON_OIDC_ALLOWED_GROUPS` | *empty*                | Comma-separated Keycloak groups whose members may log in (empty = unrestricted). |
+| Variable                                | Default                  | Description                                                                      |
+| --------------------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
+| `ORBITRON_LISTEN_ADDR`                  | `0.0.0.0:8080`           | Address the daemon binds inside the container.                                   |
+| `ORBITRON_STORAGE_PATH`                 | `/data`                  | Storage root for roles, collections and manifests.                               |
+| `ORBITRON_LOG_PATH`                     | *stdout*                 | Log file inside the container; empty logs to stdout.                             |
+| `ORBITRON_TOKENS_FILE`                  | `${STORAGE}/tokens.json` | Token registry file.                                                             |
+| `ORBITRON_REQUIRE_AUTH_PULL`            | `false`                  | Require a token to pull/download cached content.                                 |
+| `ORBITRON_MAX_CONCURRENCY`              | `4`                      | Concurrent download/clone workers during syncs.                                  |
+| `ORBITRON_TOKEN_TTL_DAYS`               | `0`                      | Lifetime of generated admin tokens in days (`0` = never expire).                 |
+| `ORBITRON_HTTP_PROXY`                   | *empty*                  | Forward proxy for `http://` outbound requests.                                   |
+| `ORBITRON_HTTPS_PROXY`                  | *empty*                  | Forward proxy for `https://` outbound requests.                                  |
+| `ORBITRON_NO_PROXY`                     | *empty*                  | Comma-separated proxy exclusions.                                                |
+| `ORBITRON_TLS_CA_FILE`                  | *empty*                  | Path to a PEM CA bundle (mounted file) trusted for outbound HTTPS.               |
+| `ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY` | `false`                  | Disable outbound TLS verification (like `curl -k`).                              |
+| `ORBITRON_AUTO_TOKEN`                   | `true`                   | Generate an admin token on first start if none exists.                           |
+| `ORBITRON_OIDC_ENABLED`                 | `false`                  | Enable SSO (OIDC) login for the web dashboard.                                   |
+| `ORBITRON_OIDC_ISSUER`                  | *empty*                  | Full Keycloak realm URL (`https://kc/realms/<realm>`).                           |
+| `ORBITRON_OIDC_CLIENT_ID`               | *empty*                  | Keycloak confidential client id.                                                 |
+| `ORBITRON_OIDC_CLIENT_SECRET`           | *empty*                  | Keycloak client secret.                                                          |
+| `ORBITRON_OIDC_SESSION_TTL_HOURS`       | `8`                      | Dashboard session lifetime (`0` = 8h).                                           |
+| `ORBITRON_OIDC_REDIRECT_URI`            | *empty*                  | Explicit callback URI; empty auto-derives `<scheme>://<host>/ui/oidc/callback`.  |
+| `ORBITRON_OIDC_ALLOWED_GROUPS`          | *empty*                  | Comma-separated Keycloak groups whose members may log in (empty = unrestricted). |
 
 ### Persistence
 
@@ -1014,21 +1022,21 @@ Orbitron exposes daemon and storage metrics at `/metrics` using standard Prometh
 
 ### Exposed Metrics
 
-| Metric                                              | Type    | Description                                                                  |
-| :-------------------------------------------------- | :------ | :--------------------------------------------------------------------------- |
-| `orbitron_uptime_seconds`                           | Counter | Total daemon uptime in seconds.                                              |
-| `orbitron_roles_total`                              | Gauge   | Number of distinct cached role names (as listed in the dashboard).           |
-| `orbitron_collections_total`                        | Gauge   | Number of distinct cached collection names (as listed in the dashboard).     |
-| `orbitron_role_versions_total`                      | Gauge   | Number of cached role versions across all roles.                             |
-| `orbitron_collection_versions_total`                | Gauge   | Number of cached collection versions across all collections.                 |
-| `orbitron_cached_versions_total`                    | Gauge   | Number of cached versions of roles and collections combined.                 |
-| `orbitron_namespaces_total`                         | Gauge   | Number of distinct collection namespaces in the cache.                       |
-| `orbitron_storage_bytes`                            | Gauge   | Block-allocated disk usage of all cached roles and collections in bytes.     |
-| `orbitron_roles_bytes`                              | Gauge   | Block-allocated disk usage of cached role versions in bytes.                 |
-| `orbitron_collections_bytes`                        | Gauge   | Block-allocated disk usage of cached collection archives in bytes.           |
-| `orbitron_cached_item_bytes{type,name}`             | Gauge   | Disk usage of one cached role or collection across all of its versions.      |
-| `orbitron_cached_version_bytes{type,name,version}`  | Gauge   | Disk usage of a single cached role or collection version.                    |
-| `orbitron_active_tokens_total`                      | Gauge   | Number of registered Bearer tokens.                                          |
+| Metric                                             | Type    | Description                                                              |
+| :------------------------------------------------- | :------ | :----------------------------------------------------------------------- |
+| `orbitron_uptime_seconds`                          | Counter | Total daemon uptime in seconds.                                          |
+| `orbitron_roles_total`                             | Gauge   | Number of distinct cached role names (as listed in the dashboard).       |
+| `orbitron_collections_total`                       | Gauge   | Number of distinct cached collection names (as listed in the dashboard). |
+| `orbitron_role_versions_total`                     | Gauge   | Number of cached role versions across all roles.                         |
+| `orbitron_collection_versions_total`               | Gauge   | Number of cached collection versions across all collections.             |
+| `orbitron_cached_versions_total`                   | Gauge   | Number of cached versions of roles and collections combined.             |
+| `orbitron_namespaces_total`                        | Gauge   | Number of distinct collection namespaces in the cache.                   |
+| `orbitron_storage_bytes`                           | Gauge   | Block-allocated disk usage of all cached roles and collections in bytes. |
+| `orbitron_roles_bytes`                             | Gauge   | Block-allocated disk usage of cached role versions in bytes.             |
+| `orbitron_collections_bytes`                       | Gauge   | Block-allocated disk usage of cached collection archives in bytes.       |
+| `orbitron_cached_item_bytes{type,name}`            | Gauge   | Disk usage of one cached role or collection across all of its versions.  |
+| `orbitron_cached_version_bytes{type,name,version}` | Gauge   | Disk usage of a single cached role or collection version.                |
+| `orbitron_active_tokens_total`                     | Gauge   | Number of registered Bearer tokens.                                      |
 
 Byte values follow the dashboard's DISK USAGE column: block-allocated size
 (`st_blocks * 512`), falling back to the logical file size on filesystems
