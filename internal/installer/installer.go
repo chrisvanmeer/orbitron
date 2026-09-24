@@ -96,7 +96,15 @@ func RunInstall() error {
 		fmt.Printf("  ℹ Configuration file already exists at %s (skipping)\n", ConfigFile)
 	}
 
-	// 7. Create Systemd Service File
+	// 7. Seed the embedded Ansible collection into the cache (following the
+	// configured storage_path). Only adds it when the bundled version is
+	// newer than anything already cached, so upgrades are backwards
+	// compatible and never touch existing state.
+	if err := seedBundledCollection(uid, gid); err != nil {
+		fmt.Printf("  ⚠  Warning: failed to seed embedded Ansible collection: %v\n", err)
+	}
+
+	// 8. Create Systemd Service File
 	systemdContent := `[Unit]
 Description=Orbitron Ansible Galaxy Mirror Daemon
 After=network.target
@@ -118,7 +126,7 @@ WantedBy=multi-user.target
 	}
 	fmt.Printf("  ✔ Created systemd service at %s (User=orbitron)\n", SystemdFile)
 
-	// 8. Configure Logrotate if directory exists
+	// 9. Configure Logrotate if directory exists
 	if _, err := os.Stat(LogrotateDir); !os.IsNotExist(err) {
 		logrotateContent := `/var/log/orbitron/*.log {
     daily
@@ -139,7 +147,7 @@ WantedBy=multi-user.target
 		fmt.Printf("  ✔ Configured logrotate rules at %s\n", LogrotateFile)
 	}
 
-	// 9. Reload systemd, enable and start service
+	// 10. Reload systemd, enable and start service
 	_ = exec.Command("systemctl", "daemon-reload").Run()
 
 	if err := exec.Command("systemctl", "enable", "orbitron").Run(); err != nil {

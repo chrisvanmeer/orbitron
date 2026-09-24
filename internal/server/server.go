@@ -24,6 +24,7 @@ import (
 	"orbitron/internal/httputil"
 	"orbitron/internal/logger"
 	"orbitron/internal/oidc"
+	"orbitron/internal/seed"
 	"orbitron/internal/telemetry"
 	ver "orbitron/internal/version"
 	"orbitron/internal/web"
@@ -743,6 +744,17 @@ func (s *Server) Start() error {
 		logger.Error("Failed to prune expired tokens on startup: %v", err)
 	} else if pruned > 0 {
 		logger.Info("Pruned %d expired token(s) on startup", pruned)
+	}
+
+	// Seed the bundled Ansible collection into the cache on every daemon start.
+	// For bare-metal "swap the binary and restart" upgrades this is the one-shot
+	// seeding step; a plain daemon restart is a no-op (a same-or-newer version is
+	// already cached). Failures are non-fatal so a unwritable read-only storage
+	// never blocks booting.
+	if res, err := seed.SeedCache(s.cfg.StoragePath); err != nil {
+		logger.Warn("Could not seed bundled Ansible collection into cache: %v", err)
+	} else if res.Seeded {
+		logger.Info("Seeded bundled %s.%s %s into cache (%d bytes)", seed.Namespace, seed.Name, res.Version, len(seed.CollectionTarGz))
 	}
 
 	// Prometheus Telemetry Endpoint (Protected with token auth via AuthMiddleware)

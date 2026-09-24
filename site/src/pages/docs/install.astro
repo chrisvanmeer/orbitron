@@ -46,6 +46,27 @@ $ sudo systemctl reload orbitron`}</CodeBlock>
 		and rebuilds the HTTP server on the same address. If the new config fails to validate, the
 		running daemon is left untouched.
 	</p>
+
+	<h3>Bundled Ansible collection</h3>
+	<p>
+		Every binary embeds the official <code>chrisvanmeer.orbitron</code> collection at build time,
+		and the cache is seeded with it <strong>out of the box</strong>. Seeding runs from
+		<code>--install</code> and again on every daemon start — so upgrading is as simple as swapping
+		the binary and restarting: the daemon sees the newer embedded version on boot and seeds it once.
+		The seed follows your configured <code>storage_path</code> (default
+		<code>/var/lib/orbitron/storage</code>, but point it anywhere you like — the cache layout and
+		the seed follow that path). A fresh mirror can therefore install it immediately, without
+		upstream Galaxy:
+	</p>
+	<CodeBlock label="CLIENT" filename="terminal" lang="bash">{`$ ansible-galaxy collection install -s http://127.0.0.1:8080 chrisvanmeer.orbitron
+# -> the bundled version is already in the cache and resolves instantly`}</CodeBlock>
+	<p>
+		Seeding only fires when the embedded version is <strong>newer</strong> than anything the cache
+		already holds. Re-running <code>--install</code> or restarting a machine that already runs
+		Orbitron — newer or older — never overwrites, downgrades, or duplicates existing collection
+		data, so upgrades need no migration. The seeded version is declared through a default
+		requirements manifest, which keeps it safe from pruning.
+	</p>
 	<Note>
 		<p>
 			<strong>Uninstall</strong> is symmetric: <code>sudo ./bin/orbitron --uninstall</code> stops

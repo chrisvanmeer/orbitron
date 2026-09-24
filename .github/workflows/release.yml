@@ -19,6 +19,24 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install ansible-core
+        run: pip install ansible-core
+
+      # The embedded seed in the source tree may predate the tag (e.g. a tag
+      # pushed before make seed FORCE_SEED=1 was committed, or timestamps lost
+      # by checkout). Rebuild it from the tagged collection sources so every
+      # released binary seeds the exact version it was built from. FORCE_SEED=1
+      # bypasses the mtime heuristic, which is unreliable in CI.
+      - name: Regenerate embedded seed from the tagged collection
+        run: make seed FORCE_SEED=1
+
+      - name: Verify seed parity
+        run: make verify-seed
+
       - name: Cross-compile Binaries
         run: |
           mkdir -p dist

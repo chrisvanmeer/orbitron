@@ -56,6 +56,9 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Verify embedded seed matches galaxy.yml
+        run: make verify-seed
+
       - name: Build Orbitron binary
         run: make build
 

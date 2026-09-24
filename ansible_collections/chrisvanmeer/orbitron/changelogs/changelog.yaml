@@ -1,5 +1,28 @@
 ---
 releases:
+  1.9.0:
+    changes:
+      release_summary: |
+        Orbitron 1.9.0 bundles the ``chrisvanmeer.orbitron`` collection into
+        the daemon binary itself, so a freshly installed mirror serves the
+        collection out of the box. The bundled artifact is seeded into the
+        local cache during ``orbitron --install`` and on every daemon start,
+        and is declared in a default requirements manifest - which means an
+        ``ansible-galaxy collection install`` against the mirror resolves even
+        on a completely offline host before any manifest has been pushed. The
+        release tooling now derives the documentation version pin, the
+        artefacts and the GitHub Actions build pipeline from a single
+        ``galaxy.yml`` version.
+      minor_features:
+        - >-
+          The Orbitron binary now embeds the official ``chrisvanmeer.orbitron``
+          collection and seeds it into the local cache automatically during
+          ``--install`` and on the first daemon start. The cache only ever
+          gains a bundled version that is strictly newer than what is already
+          on disk, so an existing newer copy is never overwritten and a
+          downgraded binary never clobbers a newer cached artifact. The seeded
+          artifact is also declared in a deduplicated default requirements
+          manifest so access-based pruning keeps it available.
   1.8.1:
     changes:
       release_summary: |
