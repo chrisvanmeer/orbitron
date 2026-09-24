@@ -250,6 +250,10 @@ $ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock
 		margin-top: 2.2rem;
 	}
 
+	.flow-grid > div {
+		min-width: 0;
+	}
+
 	.note {
 		display: flex;
 		gap: 0.9rem;
@@ -313,7 +317,7 @@ $ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock
 
 	@media (max-width: 900px) {
 		.flow-grid {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 </style>
