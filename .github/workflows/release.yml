@@ -61,7 +61,7 @@ jobs:
           name: Orbitron Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-          overwrite: true
+          overwrite_files: true
           generate_release_notes: true
           files: dist/*
         env:
