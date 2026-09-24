@@ -22,10 +22,13 @@ $ sudo systemctl reload orbitron`,
 		id: 'docker',
 		label: 'Docker / Compose',
 		title: 'Run the GHCR image',
-		desc: 'Multi-arch image (amd64 + arm64), non-root, git and openssh-client bundled. Config is rendered from ORBITRON_* env vars — no file to mount. Persist your cache on a volume.',
-		file: 'orbitron docker compose',
+		desc: 'Multi-arch image (amd64 + arm64), non-root, git and openssh-client bundled. Config is rendered from ORBITRON_* env vars — no file to mount. Persist your cache on a volume. Clone the repo first: the docker-compose.yml in the repo root wires up the image, ports, env and the named cache volume.',
+		file: 'terminal',
 		language: 'bash',
-		code: `$ docker compose up -d
+		code: `$ git clone https://github.com/chrisvanmeer/orbitron.git
+$ cd orbitron
+$ docker compose up -d
+# uses docker-compose.yml from the repo root
 [+] Running 1/1
  ✔ Container orbitron  Started
 

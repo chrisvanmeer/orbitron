@@ -78,9 +78,14 @@ $ sudo systemctl reload orbitron`}</CodeBlock>
 	<p>
 		The GHCR image runs non-root with git and openssh-client bundled. Config is rendered entirely
 		from <code>ORBITRON_*</code> environment variables — no file to mount. Persist the cache on a
-		volume.
+		volume. The repo ships a ready-made <code>docker-compose.yml</code> at its root — clone the
+		repo and run it from the clone:
 	</p>
-	<CodeBlock label="DEPLOY" filename="docker-compose.yml" lang="yaml">{`services:
+	<CodeBlock label="DEPLOY" filename="terminal" lang="bash">{`$ git clone https://github.com/chrisvanmeer/orbitron.git
+$ cd orbitron
+$ docker compose up -d
+# uses docker-compose.yml from the repo root`}</CodeBlock>
+	<CodeBlock label="COMPOSE" filename="docker-compose.yml" lang="yaml">{`services:
   orbitron:
     image: ghcr.io/chrisvanmeer/orbitron:latest
     restart: unless-stopped
@@ -101,10 +106,15 @@ orbitron  | [2026-09-23 08:12:04] ADMIN TOKEN: obt_xxxx...`}</CodeBlock>
 
 	<h3>HashiCorp Nomad</h3>
 	<p>
-		A battle-tested <code>orbitron.nomad.hcl</code> ships in the repo — service, volume, health
-		check against <code>/healthz</code> and secrets via env already wired up.
+		A battle-tested <code>orbitron.nomad.hcl</code> ships in the repo root — service, volume,
+		health check against <code>/healthz</code> and secrets via env already wired up. Clone the
+		repo and run the jobspec from the clone (read the full walk-through in the
+		<a href="https://github.com/chrisvanmeer/orbitron/blob/main/README.md" target="_blank" rel="noopener">README</a>,
+		including the host volume you register on the client before the first run):
 	</p>
-	<CodeBlock label="DEPLOY" filename="terminal" lang="bash">{`$ nomad run orbitron.nomad.hcl
+	<CodeBlock label="DEPLOY" filename="terminal" lang="bash">{`$ git clone https://github.com/chrisvanmeer/orbitron.git
+$ cd orbitron
+$ nomad run orbitron.nomad.hcl
 $ nomad status orbitron`}</CodeBlock>
 
 	<h3>CLI &amp; tokens</h3>

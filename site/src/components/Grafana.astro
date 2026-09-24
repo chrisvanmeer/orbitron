@@ -1,0 +1,164 @@
+---
+import { Image } from 'astro:assets';
+import grafanaPng from '../assets/grafana.png';
+
+const highlights = [
+	{
+		t: 'Multi-daemon',
+		d: 'A single dashboard follows every Orbitron instance behind the same Prometheus via the Orbitron instance template variable.',
+	},
+	{
+		t: 'Storage & versions',
+		d: 'Disk usage, role/collection counts and blocked storage bytes over time — per item and per cached version.',
+	},
+	{
+		t: 'Overview stats',
+		d: 'Uptime, namespaces, tokens and more in stat panels — two visual variants ship in the repo.',
+	},
+];
+---
+
+<section class="section grafa" id="grafana">
+	<div class="wrap">
+		<div class="section-head">
+			<span class="eyebrow">Observability</span>
+			<h2>Ship a mirror, not dashboards</h2>
+			<p>
+				A ready-made Grafana dashboard accompanies the Prometheus endpoint — import it and point it
+				at the scrape targets. Both variants (<code>orbitron_v13_current.json</code> and
+				<code>orbitron_v12_legacy.json</code>) bind to the data source you pick on import.
+			</p>
+		</div>
+
+		<div class="grafa-grid">
+			<div class="browser">
+				<div class="browser-bar">
+					<span class="dots"><span></span><span></span><span></span></span>
+					<span class="addr">grafana // orbitron overview</span>
+				</div>
+				<Image
+					src={grafanaPng}
+					alt="Orbitron Grafana dashboard screenshot"
+					width={3024}
+					height={1898}
+					widths={[640, 1024, 1600, 3024]}
+					sizes="(min-width: 900px) min(65vw, 62rem), 100vw"
+					loading="lazy"
+				/>
+			</div>
+
+			<ul class="grafa-list">
+				{
+					highlights.map((h) => (
+						<li class="grafa-item">
+							<h3>{h.t}</h3>
+							<p>{h.d}</p>
+						</li>
+					))
+				}
+			</ul>
+		</div>
+	</div>
+</section>
+
+<style>
+	.grafa {
+		background: linear-gradient(180deg, transparent, rgba(13, 14, 22, 0.5) 20%, rgba(13, 14, 22, 0.5) 80%, transparent);
+	}
+
+	.grafa-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+		gap: 2.2rem;
+		align-items: start;
+	}
+
+	.browser {
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: var(--bg-deep);
+		box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 0, 122, 0.06);
+	}
+
+	.browser-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		padding: 0.65rem 0.9rem;
+		border-bottom: 1px solid var(--border);
+		background: rgba(5, 5, 5, 0.6);
+	}
+
+	.dots {
+		display: inline-flex;
+		gap: 0.35rem;
+	}
+	.dots span {
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: #2a3038;
+	}
+	.dots span:nth-child(1) { background: var(--red); }
+	.dots span:nth-child(2) { background: var(--yellow); }
+	.dots span:nth-child(3) { background: var(--cyan); }
+
+	.addr {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		color: var(--text-dim);
+		background: rgba(139, 148, 158, 0.08);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 0.2rem 0.7rem;
+		margin-inline: auto;
+	}
+
+	.browser img {
+		width: 100%;
+		height: auto;
+	}
+
+	.grafa-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+	}
+
+	.grafa-item {
+		padding: 1.1rem 1.2rem;
+		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		transition: border-color 0.2s ease, transform 0.2s ease;
+	}
+
+	.grafa-item:hover {
+		border-color: rgba(255, 0, 122, 0.35);
+		transform: translateY(-2px);
+	}
+
+	.grafa-item h3 {
+		font-size: 0.95rem;
+		color: var(--pink);
+		font-family: var(--font-mono);
+		font-weight: 600;
+		margin-bottom: 0.35rem;
+		letter-spacing: 0.02em;
+	}
+
+	.grafa-item p {
+		font-size: 0.87rem;
+		color: var(--text-dim);
+	}
+
+	@media (max-width: 900px) {
+		.grafa-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

@@ -925,9 +925,15 @@ is persisted in `<storage>/tokens.json`, so it only appears once.
 
 ### Docker Compose example
 
+The repo ships a ready-made `docker-compose.yml` at its root. Clone the repo
+(it also contains the Nomad jobspec and this Ansible collection), then start
+Orbitron from the clone:
+
 ```bash
-docker compose up -d --build   # build locally
-docker compose up -d           # or pull the pre-built image
+git clone https://github.com/chrisvanmeer/orbitron.git
+cd orbitron
+docker compose up -d          # uses the docker-compose.yml from the repo root
+docker compose up -d --build   # or build the image locally instead
 docker compose logs -f
 ```
 
@@ -976,15 +982,20 @@ wipes the cache.
 
 ## HashiCorp Nomad
 
-Deploy the daemon on Nomad with the included job specification:
+Deploy the daemon on Nomad with the included job specification
+(`orbitron.nomad.hcl`, in the repo root — clone the repo first, then run it
+from the clone):
 
 ```bash
+git clone https://github.com/chrisvanmeer/orbitron.git
+cd orbitron
 nomad job validate orbitron.nomad.hcl
 nomad job plan   orbitron.nomad.hcl
 nomad job run    orbitron.nomad.hcl
 ```
 
-The jobspec (`orbitron.nomad.hcl`) registers an HTTP service with an
+Like `docker-compose.yml`, the jobspec lives at the repository root
+(`orbitron.nomad.hcl`). It registers an HTTP service with an
 `/healthz` check, uses the GHCR image with `force_pull`, and persists the
 mirror cache through a dedicated **host volume** (`orbitron-data`) so the cache
 survives redeploys and node restarts. Register that volume on the target client
@@ -1077,6 +1088,10 @@ A ready-made dashboard for the metrics above lives in
 and `_v12_legacy`) differ only in how the seven Overview stat panels are
 colored: fixed per-panel colors vs. gradient background fills. Both import
 cleanly into recent Grafana versions.
+
+<div align="center">
+  <img src="assets/grafana.png" alt="Orbitron Grafana dashboard" width="100%">
+</div>
 
 * **Import:** Dashboards → Import → upload the JSON file. During import Grafana
   asks which Prometheus **data source** to bind the dashboard to — pick the one
