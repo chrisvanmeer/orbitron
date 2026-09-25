@@ -23,8 +23,8 @@ enterprise environments to cache, store, and serve Ansible roles and collections
 
 * **Galaxy V1 & V3 API Support**: Complete compatibility with `ansible-galaxy role install` and
   `ansible-galaxy collection install`.
-* **Cyberpunk Web Dashboard (`/ui`)**: Full-screen, zero-dependency terminal UI featuring cookie-backed session auth,
-  live log streaming, and system telemetry.
+* **Web Dashboard (`/ui`)**: Full-screen, zero-dependency galaxy-themed dashboard with drifting orbital rings,
+  cookie-backed session auth, live log streaming, and system telemetry.
 * **On-the-Fly Archiving**: Packages unpacked Git-based roles into `.tar.gz` streams on-the-fly during download.
 * **Parallel Background Sync**: Concurrent fetching of roles, collections, and shallow Git clones (`--depth 1`).
 * **Flexible Authentication**: Unauthenticated pulls by default with an optional `require_auth_pull: true` toggle
@@ -48,12 +48,12 @@ enterprise environments to cache, store, and serve Ansible roles and collections
 
 ---
 
-## 🖥️ Cyberpunk Web Dashboard (`/ui`)
+## 🖥️ Web Dashboard (`/ui`)
 
-Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real-time monitoring and storage inspection.
+Orbitron includes a full-screen, galaxy-themed Web UI hosted at `/ui` for real-time monitoring and storage inspection.
 
 <div align="center">
-  <img src="assets/ui.png" alt="Orbitron Cyberpunk Web UI" width="100%">
+  <img src="assets/ui.png" alt="Orbitron Web UI" width="100%">
 </div>
 
 ### Dashboard Features
@@ -63,8 +63,9 @@ Orbitron includes a full-screen Cyberpunk-themed Web UI hosted at `/ui` for real
   filter, precise physical block-level disk usage, and an access-based **LAST ACCESS** column showing exactly when
   each version was last served to a client. Hovering a relative timestamp (`4 mins ago`) opens a cyan/yellow
   popunder with the full ISO 8601 timestamp. Roles and collections with multiple cached versions are collapsed
-  into a single row (version count, most recent access, and total disk usage) that unfolds on click to reveal every
-  version with its own **LAST ACCESS** date. The matrix auto-refreshes every 10 seconds and keeps your sort order,
+  into a single row (version count, most recent access, and total disk usage) that unfolds on click — with
+  tree-style branch guides under the expand caret — to reveal every version with its own **LAST ACCESS** date.
+  The matrix auto-refreshes every 10 seconds and keeps your sort order,
   search text, and expanded groups intact across refreshes.
 * **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only session cookie using any
   valid administrative token, gated behind an Orbitron SVG logo — or an optional **SSO (OIDC) sign-in**

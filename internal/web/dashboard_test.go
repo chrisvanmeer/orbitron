@@ -50,8 +50,11 @@ func TestHandleStorageCollapsesMultiVersionItems(t *testing.T) {
 	if got := strings.Count(body, `class="group-row"`); got != 2 {
 		t.Fatalf("expected 2 collapsed group rows (role + collection), got %d\n%s", got, body)
 	}
-	if got := strings.Count(body, `class="version-row"`); got != 4 {
+	if got := strings.Count(body, `class="version-row`); got != 4 {
 		t.Fatalf("expected 4 hidden version sub-rows, got %d\n%s", got, body)
+	}
+	if got := strings.Count(body, `class="version-row last-version"`); got != 2 {
+		t.Fatalf("expected 2 rows marked as last version (branch elbow), got %d\n%s", got, body)
 	}
 	if got := strings.Count(body, `style="display:none"`); got != 4 {
 		t.Fatalf("expected 4 version sub-rows served hidden, got %d\n%s", got, body)
