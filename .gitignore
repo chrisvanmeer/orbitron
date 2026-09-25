@@ -1,6 +1,7 @@
 # Orbitron Binaries
 bin/
 /orbitron
+/orbitron-bin
 *.exe
 *.exe?
 *.dll
