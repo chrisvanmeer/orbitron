@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -796,6 +798,51 @@ const htmlTemplate = `
             white-space: pre-wrap; word-break: break-all;
         }
         .log-line { margin: 0; }
+        .log-line .log-ts { color: var(--text-faint); }
+        .log-line .log-level { font-weight: 700; margin-right: 2px; }
+        .log-line .log-level-info { color: var(--cyan); }
+        .log-line .log-level-debug { color: var(--text-dim); }
+        .log-line .log-level-warn { color: var(--yellow); }
+        .log-line .log-level-error { color: var(--red); }
+        .log-line .log-level-trace { color: var(--indigo); }
+
+        .sync-indicator {
+            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600;
+            letter-spacing: 0.08em; color: var(--text-dim); white-space: nowrap;
+            border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+            padding: 8px 12px; background: rgba(13, 14, 22, 0.6);
+            display: inline-flex; align-items: center; gap: 8px;
+            transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .sync-indicator:not(.busy):not(.failed) { color: var(--text-dim); }
+        .sync-indicator.ok { color: var(--cyan); }
+        .sync-indicator.busy { color: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 14px rgba(0, 240, 255, 0.18); }
+        .sync-indicator.failed { color: var(--red); border-color: var(--red); box-shadow: 0 0 14px rgba(255, 45, 85, 0.18); }
+        .sync-indicator::before {
+            content: ''; width: 8px; height: 8px; border-radius: 50%;
+            border: 2px solid var(--border-strong);
+        }
+        .sync-indicator.ok::before { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 -1px 6px var(--cyan); }
+        .sync-indicator.failed::before { background: var(--red); border-color: var(--red); }
+        .sync-indicator.busy::before {
+            border-color: rgba(0, 240, 255, 0.25); border-top-color: var(--cyan);
+            animation: sync-spin 0.9s linear infinite;
+        }
+        @keyframes sync-spin { to { transform: rotate(360deg); } }
+        .sync-trigger {
+            background: rgba(13, 14, 22, 0.6); color: var(--text-dim); border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm); padding: 8px 12px; cursor: pointer; font-family: var(--font-mono);
+            font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+            transition: color 0.15s ease, border-color 0.15s ease;
+        }
+        .sync-trigger:hover { color: var(--cyan); border-color: var(--cyan); }
+        .log-download {
+            background: rgba(13, 14, 22, 0.6); color: var(--text-dim); border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm); padding: 4px 10px; cursor: pointer; font-family: var(--font-mono);
+            font-size: 0.8rem; transition: color 0.15s ease, border-color 0.15s ease;
+        }
+        .log-download:hover { color: var(--yellow); border-color: var(--yellow); }
+        #log-filter:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15); }
 
         .stat-label { color: var(--text-dim); font-size: 0.7rem; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.14em; margin-top: 18px; }
         .stat-value { color: var(--text); font-size: 0.95rem; font-family: var(--font-mono); font-weight: 500; margin-top: 4px; word-break: break-all; }
@@ -862,6 +909,8 @@ const htmlTemplate = `
                 </h1>
             </div>
             <div class="header-actions">
+                <span id="sync-indicator" class="sync-indicator" title="Background sync state">◍ MIRROR IDLE</span>
+                <button id="sync-trigger" class="sync-trigger" type="button" title="Trigger a full cache sync now">⟳ SYNC</button>
                 <button class="btn-log-toggle btn-bottom-toggle" onclick="toggleBottomDrawer()">▲ LOG STREAM</button>
                 <button class="btn-metrics" onclick="toggleRightDrawer()">◄ SYS METRICS</button>
                 <button id="btn-disconnect" class="btn-logout" onclick="armDisconnect()">[ DISCONNECT ]</button>
@@ -880,9 +929,13 @@ const htmlTemplate = `
 
         <!-- Bottom Log Stream Drawer -->
         <div id="bottom-drawer">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
                 <h3 style="margin:0;">SYSTEM LOGS // {{LOG_PATH}}</h3>
-                <span style="color:var(--text-dim); font-size:0.78em; font-family:var(--font-mono); letter-spacing:0.08em; cursor:pointer; font-weight:600;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <input id="log-filter" type="text" placeholder="FILTER LOGS... (LEVEL / TEXT)" autocomplete="off" style="background:var(--bg-deep); border:1px solid var(--border-strong); border-radius:var(--radius-sm); color:var(--text); padding:5px 10px; font-family:var(--font-mono); font-size:0.75em; outline:none; width:240px;">
+                    <button id="log-download" class="log-download" onclick="downloadLogs()" title="Download log buffer as .txt">⭳</button>
+                    <span style="color:var(--text-dim); font-size:0.78em; font-family:var(--font-mono); letter-spacing:0.08em; cursor:pointer; font-weight:600;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
+                </div>
             </div>
             <div class="log-viewer" hx-get="/ui/logs" hx-trigger="load, every 5s" hx-swap="none" hx-on::after:request="window.__appendLog(event.detail.ctx.text)" id="log-container">
                 > Awaiting telemetry stream...
@@ -1001,12 +1054,9 @@ const htmlTemplate = `
                 }
             };
 
-            const renderLines = function (texts) {
-                for (let i = 0; i < texts.length; i++) {
-                    const div = document.createElement('div');
-                    div.className = 'log-line';
-                    div.textContent = texts[i];
-                    container.appendChild(div);
+            const renderLines = function (nodes) {
+                for (let i = 0; i < nodes.length; i++) {
+                    container.appendChild(nodes[i]);
                 }
                 const divs = container.querySelectorAll('.log-line');
                 if (divs.length > MAX_BUF) {
@@ -1030,6 +1080,7 @@ const htmlTemplate = `
                 const tmp = document.createElement('div');
                 tmp.innerHTML = respText;
                 const nodes = tmp.querySelectorAll('.log-line');
+                const nodeList = Array.prototype.slice.call(nodes);
                 if (nodes.length === 0) {
                     // Non-fragment response (e.g. the "file logging disabled"
                     // info line): show it verbatim until a real batch arrives.
@@ -1046,7 +1097,7 @@ const htmlTemplate = `
                     // First batch: drop the placeholder and seed the buffer.
                     container.textContent = '';
                     buf = texts;
-                    renderLines(texts);
+                    renderLines(nodeList);
                 } else {
                     // Find our last rendered line inside the fresh tail and
                     // keep only what comes after it.
@@ -1059,12 +1110,12 @@ const htmlTemplate = `
                         // Anchor gone (log rotated / truncated): rebuild.
                         container.textContent = '';
                         buf = texts;
-                        renderLines(texts);
+                        renderLines(nodeList);
                     } else {
                         const fresh = texts.slice(idx + 1);
                         if (fresh.length) {
                             buf = buf.concat(fresh);
-                            renderLines(fresh);
+                            renderLines(nodeList.slice(idx + 1));
                         }
                     }
                 }
@@ -1076,6 +1127,82 @@ const htmlTemplate = `
             if (typeof MutationObserver !== 'undefined') {
                 new MutationObserver(rePin).observe(container, { childList: true, characterData: true, subtree: true });
             }
+        })();
+
+        // Live background-sync indicator in the header, polled from the API.
+        // The busy look is held briefly after a job so even a fast background
+        // sync stays perceivable in the header. The "SYNC" button next to it
+        // kicks off a full resync on demand.
+        (function () {
+            const el = document.getElementById('sync-indicator');
+            const btn = document.getElementById('sync-trigger');
+            if (!el) return;
+            const HOLD_MS = 9000;
+            let busyUntil = 0;
+            function render(cur, last) {
+                if (cur) {
+                    busyUntil = Date.now() + HOLD_MS;
+                }
+                if (cur || Date.now() < busyUntil) {
+                    el.classList.add('busy');
+                    el.classList.remove('ok', 'failed');
+                    const kind = cur.kind !== 'full' ? cur.kind.toUpperCase() : 'SYNCING';
+                    el.textContent = '⟳ ' + kind + ' ' + (cur ? cur.done + '/' + cur.total : '…');
+                } else {
+                    el.classList.remove('busy');
+                    const failed = last && last.status === 'FAILED';
+                    el.classList.toggle('failed', !!failed);
+                    el.classList.toggle('ok', !failed);
+                    el.textContent = failed ? '◉ LAST SYNC FAILED' : '◍ MIRROR IDLE';
+                }
+            }
+            function tick() {
+                fetch('/ui/sync-status', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+                    .then(function (res) { return res.ok ? res.json() : null; })
+                    .then(function (data) {
+                        if (!data) return;
+                        const hist = data.history || [];
+                        render(data.current, hist.length ? hist[hist.length - 1] : null);
+                    })
+                    .catch(function () {});
+            }
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    busyUntil = Date.now() + HOLD_MS;
+                    el.classList.add('busy');
+                    el.classList.remove('ok', 'failed');
+                    el.textContent = '⟳ SYNCING …';
+                    fetch('/ui/sync', { method: 'POST', credentials: 'same-origin' }).catch(function () {});
+                });
+            }
+            tick();
+            setInterval(tick, 10000);
+        })();
+
+        // Log filter + download utilities for the SYSTEM LOGS drawer.
+        (function () {
+            const filter = document.getElementById('log-filter');
+            const container = document.getElementById('log-container');
+            if (!filter || !container) return;
+            filter.addEventListener('input', function () {
+                const q = filter.value.trim().toLowerCase();
+                const divs = container.querySelectorAll('.log-line');
+                for (let i = 0; i < divs.length; i++) {
+                    const d = divs[i];
+                    d.style.display = (!q || (d.textContent || '').toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+                }
+            });
+            window.downloadLogs = function () {
+                const lines = window.__logLines || [];
+                const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'orbitron-logs.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            };
         })();
     </script>
 </body>
@@ -1132,10 +1259,17 @@ type cachedRow struct {
 // varied access column (see syntheticAccess).
 func lastAccessCell(snapshot map[access.Key]time.Time, key access.Key) (string, int64) {
 	ts := snapshot[key]
+	fresh := false
 	if ts.IsZero() {
 		ts = syntheticAccess(key)
+	} else if time.Since(ts) < time.Hour {
+		fresh = true
 	}
-	return fmt.Sprintf(`<span class="last-access" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, ts.Format(time.RFC3339), humanizeLastAccess(ts)), ts.Unix()
+	cls := "last-access"
+	if fresh {
+		cls += " fresh"
+	}
+	return fmt.Sprintf(`<span class="%s" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, cls, ts.Format(time.RFC3339), humanizeLastAccess(ts)), ts.Unix()
 }
 
 // syntheticAccess synthesizes a plausible LAST ACCESS timestamp for cached
@@ -1160,7 +1294,14 @@ func renderMatrixRow(w *strings.Builder, typeLabel, color, name string, r cached
 	fmt.Fprintf(w, `<tr data-search="%s %s %s" data-type="%s" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d"><td></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
 		strings.ToLower(typeLabel), strings.ToLower(name), strings.ToLower(r.version),
 		strings.ToLower(typeLabel), name, r.version, r.epoch, r.size,
-		color, typeLabel, name, r.version, r.accessStr, formatSize(r.size))
+		color, typeLabel, name, r.version, r.accessStr, diskMarkup(r.size))
+}
+
+// diskMarkup renders the DISK USAGE cell: a mini throughput bar that is scaled
+// client-side to the largest item currently visible, plus the human-readable
+// size. The raw byte count rides along as a tooltip.
+func diskMarkup(size int64) string {
+	return `<span class="disk-cell"><span class="disk-bar"><span class="disk-fill"></span></span><span class="disk-size" title="` + strconv.FormatInt(size, 10) + ` bytes">` + formatSize(size) + `</span></span>`
 }
 
 // renderGroupRows writes a collapsible group row (expand caret, version count,
@@ -1190,16 +1331,20 @@ func renderGroupRows(w *strings.Builder, typeLabel, color, name string, rows []c
 	groupKey := strings.ToLower(typeLabel) + ":" + name
 	fmt.Fprintf(w, `<tr class="group-row" data-search="%s" data-type="%s" data-name="%s" data-version="%s" data-lastaccess="%d" data-disk="%d" data-group="%s"><td><button class="expand-caret" aria-expanded="false" title="Toggle versions">▶</button></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%d VERSIONS</td><td>%s</td><td>%s</td></tr>`,
 		search.String(), strings.ToLower(typeLabel), name, rows[0].version, maxEpoch, totalSize, groupKey,
-		color, typeLabel, name, len(rows), best.accessStr, formatSize(totalSize))
+		color, typeLabel, name, len(rows), best.accessStr, diskMarkup(totalSize))
 
 	for i, r := range rows {
-		lastClass := ""
+		rowClass := ""
 		if i == len(rows)-1 {
-			lastClass = " last-version"
+			rowClass = " last-version"
 		}
-		fmt.Fprintf(w, `<tr class="version-row%s" data-group="%s" data-search="%s %s %s" style="display:none"><td></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-			lastClass, groupKey, strings.ToLower(typeLabel), strings.ToLower(name), strings.ToLower(r.version),
-			color, typeLabel, name, r.version, r.accessStr, formatSize(r.size))
+		versionCell := r.version
+		if i == 0 {
+			versionCell += `<span class="latest-pill">LATEST</span>`
+		}
+		fmt.Fprintf(w, `<tr class="version-row%s" data-group="%s" data-search="%s %s %s" data-disk="%d" style="display:none"><td></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+			rowClass, groupKey, strings.ToLower(typeLabel), strings.ToLower(name), strings.ToLower(r.version), r.size,
+			color, typeLabel, name, versionCell, r.accessStr, diskMarkup(r.size))
 	}
 }
 
@@ -1214,9 +1359,17 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 				<h2 style="margin:0;">LOCAL CACHE MATRIX</h2>
 				<span class="star-fall" aria-hidden="true"></span>
 			</div>
-			<span class="storage-hint">SORT BY CLICKING HEADERS ↕</span>
+			<div class="storage-actions">
+				<button id="density-toggle" type="button" class="density-toggle" title="Toggle row density">DENSITY: COMFORTABLE</button>
+				<span class="storage-hint">SORT BY CLICKING HEADERS ↕</span>
+			</div>
 		</div>
 		<div class="storage-search-row">
+			<div class="type-chips" role="group" aria-label="Filter by type">
+				<button type="button" class="type-chip active" data-type="all">ALL</button>
+				<button type="button" class="type-chip" data-type="role">ROLES</button>
+				<button type="button" class="type-chip" data-type="collection">COLLECTIONS</button>
+			</div>
 			<input id="storage-search" type="text" placeholder="SEARCH TYPE / NAME / VERSION..." autocomplete="off">
 			<span id="storage-search-count">0 entries</span>
 		</div>
@@ -1427,6 +1580,61 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 #iso-tooltip .tt-meta { display: block; color: var(--pink); font-size: 0.72em; letter-spacing: 0.06em; }
 #iso-tooltip.show { opacity: 1; transform: translateY(0); }
 .last-access { border-bottom: 1px dashed rgba(252, 238, 10, 0.5); cursor: help; }
+.storage-actions { display: flex; align-items: center; gap: 12px; }
+.density-toggle {
+    background: rgba(13,14,22,0.6); border: 1px solid var(--border-strong); color: var(--text-dim);
+    border-radius: var(--radius-sm); padding: 4px 10px; font-family: var(--font-mono);
+    font-size: 0.7em; letter-spacing: 0.08em; cursor: pointer; white-space: nowrap;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+.density-toggle:hover { color: var(--yellow); border-color: var(--yellow); }
+.density-toggle.compact { color: var(--cyan); border-color: var(--cyan); }
+.type-chips { display: flex; gap: 6px; flex-shrink: 0; }
+.type-chip {
+    background: rgba(13,14,22,0.6); border: 1px solid var(--border-strong); color: var(--text-dim);
+    border-radius: var(--radius-sm); padding: 5px 12px; font-family: var(--font-mono);
+    font-size: 0.68em; letter-spacing: 0.1em; cursor: pointer; white-space: nowrap;
+    transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.type-chip:hover { color: var(--yellow); border-color: var(--yellow); }
+.type-chip.active { color: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.12); }
+#storage-matrix.compact td, #storage-matrix.compact th { padding: 3px 10px; font-size: 0.86em; }
+.latest-pill {
+    display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 999px;
+    border: 1px solid rgba(0, 240, 255, 0.45); color: var(--cyan);
+    font-size: 0.62em; letter-spacing: 0.14em; vertical-align: middle; white-space: nowrap;
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.25);
+}
+/* Mini disk-usage bar, scaled client-side to the largest visible item. */
+#storage-matrix .disk-cell { display: inline-flex; align-items: center; gap: 8px; }
+#storage-matrix .disk-bar {
+    width: 64px; height: 6px; background: rgba(13, 14, 22, 0.6);
+    border: 1px solid var(--border-strong); border-radius: 3px; overflow: hidden; flex-shrink: 0;
+}
+#storage-matrix .disk-fill {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, rgba(0, 240, 255, 0.45), rgba(0, 240, 255, 0.95));
+    transition: width 0.25s ease;
+}
+#storage-matrix .disk-size { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.78em; white-space: nowrap; }
+#storage-matrix tr.group-row .disk-fill { background: linear-gradient(90deg, rgba(255, 0, 122, 0.45), rgba(255, 0, 122, 0.95)); }
+/* Pulsing dot on very recently accessed items. */
+.last-access.fresh::before {
+    content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--cyan); margin-right: 6px; vertical-align: middle;
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.9);
+    animation: pulse-dot 1.6s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+}
+#storage-matrix tr.sel { background: rgba(0, 240, 255, 0.08); outline: 1px dashed rgba(0, 240, 255, 0.35); outline-offset: -1px; }
+tr.storage-empty td {
+    text-align: center; color: var(--text-dim); padding: 34px 20px;
+    font-family: var(--font-mono); letter-spacing: 0.12em; font-size: 0.85em;
+}
+tr.storage-empty td .empty-stars { color: var(--yellow); letter-spacing: 0.4em; display: block; margin-bottom: 10px; font-size: 1.1em; }
 </style>
 <script>
 (function () {
@@ -1464,9 +1672,20 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 	var lastCol = state.col;
 	var lastDir = state.dir;
 
+	var typeFilter = 'all';
+	try {
+		typeFilter = sessionStorage.getItem('orbitronStorageType') || 'all';
+	} catch (e) {}
+	var compact = false;
+	try {
+		compact = sessionStorage.getItem('orbitronStorageDensity') === 'compact';
+	} catch (e) {}
+
 	function saveState() {
 		try {
 			sessionStorage.setItem('orbitronStorageSearch', inputValue);
+			sessionStorage.setItem('orbitronStorageType', typeFilter);
+			sessionStorage.setItem('orbitronStorageDensity', compact ? 'compact' : '');
 			var open = [];
 			for (var g in expanded) if (expanded[g]) open.push(g);
 			sessionStorage.setItem('orbitronStorageExpanded', JSON.stringify(open));
@@ -1489,7 +1708,8 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 			var tr = rows[i];
 			var search = tr.getAttribute('data-search');
 			if (search === null) { tr.style.display = ''; shown++; continue; }
-			var match = !q || search.toLowerCase().indexOf(q) !== -1;
+			var match = (!q || search.toLowerCase().indexOf(q) !== -1) &&
+				(typeFilter === 'all' || tr.getAttribute('data-type') === typeFilter);
 			tr.style.display = match ? '' : 'none';
 			if (match) shown++;
 		}
@@ -1510,6 +1730,31 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 			}
 		}
 		if (count) count.textContent = shown + ' entries';
+		sizeBars();
+		if (emptyRow) emptyRow.style.display = shown === 0 ? '' : 'none';
+	}
+
+	// Scale every visible DISK USAGE bar to the largest item currently shown,
+	// so bars stay meaningful as search/type filters shrink the view.
+	function sizeBars() {
+		var max = 0;
+		var i, tr;
+		for (i = 0; i < allRows.length; i++) {
+			tr = allRows[i];
+			if (tr.style.display === 'none') continue;
+			var d = parseInt(tr.getAttribute('data-disk') || '0', 10);
+			if (d > max) max = d;
+		}
+		for (i = 0; i < allRows.length; i++) {
+			tr = allRows[i];
+			if (tr.style.display === 'none') continue;
+			var fill = tr.querySelector('.disk-fill');
+			if (!fill) continue;
+			var sz = parseInt(tr.getAttribute('data-disk') || '0', 10);
+			var pct = max > 0 ? (sz * 100 / max) : 0;
+			if (pct > 100) pct = 100;
+			fill.style.width = pct + '%';
+		}
 	}
 
 	function syncCarets() {
@@ -1599,6 +1844,89 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 		saveState();
 	});
 
+	// Type filter chips (ALL / ROLES / COLLECTIONS).
+	var chipEls = document.querySelectorAll('.type-chip');
+	for (var c = 0; c < chipEls.length; c++) {
+		chipEls[c].addEventListener('click', function () {
+			typeFilter = this.getAttribute('data-type');
+			for (var k = 0; k < chipEls.length; k++) chipEls[k].classList.toggle('active', chipEls[k] === this);
+			applyFilter();
+			saveState();
+		});
+		if (chipEls[c].getAttribute('data-type') === typeFilter) chipEls[c].classList.add('active');
+	}
+
+	// Density toggle (comfortable / compact).
+	var densityBtn = document.getElementById('density-toggle');
+	if (densityBtn) {
+		function applyDensity() {
+			table.classList.toggle('compact', compact);
+			densityBtn.classList.toggle('compact', compact);
+			densityBtn.textContent = 'DENSITY: ' + (compact ? 'COMPACT' : 'COMFORTABLE');
+		}
+		applyDensity();
+		densityBtn.addEventListener('click', function () {
+			compact = !compact;
+			applyDensity();
+			saveState();
+		});
+	}
+
+	// Empty-state row shown when search or type filters match nothing.
+	var emptyRow = document.createElement('tr');
+	emptyRow.className = 'storage-empty';
+	emptyRow.style.display = 'none';
+	emptyRow.innerHTML = '<td colspan="6"><span class="empty-stars">✦ ✧ ✦</span>NO STARS IN THIS QUADRANT — BROADEN THE SEARCH</td>';
+	tbody.appendChild(emptyRow);
+
+	// Selection + keyboard shortcuts: "/" focuses search, arrows move a
+	// highlighted row, Enter/→/← expand or collapse the selected group.
+	var selIndex = -1;
+	function selRows() {
+		var out = [];
+		for (var i = 0; i < rows.length; i++) {
+			if (rows[i].style.display !== 'none') out.push(rows[i]);
+		}
+		return out;
+	}
+	function setSel(delta) {
+		var vis = selRows();
+		if (!vis.length) { selIndex = -1; return; }
+		if (selIndex < 0) {
+			selIndex = delta > 0 ? 0 : vis.length - 1;
+		} else {
+			selIndex = (selIndex + delta + vis.length) % vis.length;
+		}
+		for (var i = 0; i < vis.length; i++) vis[i].classList.toggle('sel', i === selIndex);
+		if (vis[selIndex] && vis[selIndex].scrollIntoView) vis[selIndex].scrollIntoView({ block: 'nearest' });
+	}
+	document.addEventListener('keydown', function (e) {
+		if (e.ctrlKey || e.metaKey || e.altKey) return;
+		var tag = (e.target && e.target.tagName) || '';
+		if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+			e.preventDefault();
+			if (input) input.focus();
+			return;
+		}
+		if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+		if (e.key === 'ArrowDown') { e.preventDefault(); setSel(1); }
+		else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(-1); }
+		else if (e.key === 'Enter' || e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === ' ') {
+			var vis = selRows();
+			if (!vis.length) return;
+			if (selIndex < 0) { setSel(1); return; }
+			var el = vis[selIndex];
+			if (el && el.getAttribute('data-group')) {
+				e.preventDefault();
+				if (e.key === 'ArrowRight') expanded[el.getAttribute('data-group')] = true;
+				else if (e.key === 'ArrowLeft') expanded[el.getAttribute('data-group')] = false;
+				else expanded[el.getAttribute('data-group')] = !expanded[el.getAttribute('data-group')];
+				applyFilter();
+				saveState();
+			}
+		}
+	});
+
 	reorderBySort();
 
 	// ISO popunder tooltip for .last-access cells.
@@ -1642,11 +1970,24 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 }
 
 func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
+	snapshot := access.New(d.cfg.StoragePath).Snapshot()
 	lastSync := time.Time{}
-	for _, ts := range access.New(d.cfg.StoragePath).Snapshot() {
+	for _, ts := range snapshot {
 		if ts.After(lastSync) {
 			lastSync = ts
 		}
+	}
+
+	// Resolve every cached version's access timestamp the same way the matrix
+	// does (recorded value, or the deterministic synthesized fallback) so the
+	// sparkline and the LAST ACCESS column tell the same story.
+	var accessTs []time.Time
+	for _, key := range cacheKeys(d.cfg.StoragePath) {
+		ts := snapshot[key]
+		if ts.IsZero() {
+			ts = syntheticAccess(key)
+		}
+		accessTs = append(accessTs, ts)
 	}
 
 	status := "ONLINE"
@@ -1665,6 +2006,7 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 	freeDisk, _ := getStorageSpace(d.cfg.StoragePath)
 	cacheUsedSpace := d.dirSize(d.cfg.StoragePath)
 	bootTime := getSystemBootTime()
+	activity := accessActivitySparkline(accessTs, 14)
 
 	html := fmt.Sprintf(`
 		<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
@@ -1703,10 +2045,126 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 
 		<div class="stat-label">Last System Boot</div>
 		<div class="stat-value">%s</div>
-	`, build.Version, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime)
+
+		<hr style="border-color: var(--border); margin-top:20px;">
+
+		<div class="stat-label">Cache Access Activity (14 days)</div>
+		<div class="stat-value">%s</div>
+	`, build.Version, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime, activity)
 
 	w.Header().Set("Content-Type", "text/html")
 	_, _ = w.Write([]byte(html))
+}
+
+// cacheKeys enumerates every cached collection and role version key, mirroring
+// the storage layout the cache matrix renders. It is used by the metrics
+// drawer so the access-activity sparkline reflects the same surface that the
+// matrix shows (synthesized fallbacks included).
+func cacheKeys(storagePath string) []access.Key {
+	var keys []access.Key
+	colDir := filepath.Join(storagePath, "collections")
+	if nsEntries, err := os.ReadDir(colDir); err == nil {
+		for _, nsEntry := range nsEntries {
+			if !nsEntry.IsDir() {
+				continue
+			}
+			nsPath := filepath.Join(colDir, nsEntry.Name())
+			files, _ := os.ReadDir(nsPath)
+			for _, f := range files {
+				if f.IsDir() || !strings.HasSuffix(f.Name(), ".tar.gz") {
+					continue
+				}
+				filename := strings.TrimSuffix(f.Name(), ".tar.gz")
+				remainder := strings.TrimPrefix(filename, nsEntry.Name()+"-")
+				if lastHyphen := strings.LastIndex(remainder, "-"); lastHyphen != -1 {
+					keys = append(keys, access.CollectionKey(nsEntry.Name()+"."+remainder[:lastHyphen], remainder[lastHyphen+1:]))
+				}
+			}
+		}
+	}
+	rolesDir := filepath.Join(storagePath, "roles")
+	if roleEntries, err := os.ReadDir(rolesDir); err == nil {
+		for _, roleEntry := range roleEntries {
+			if !roleEntry.IsDir() {
+				continue
+			}
+			versionsDir := filepath.Join(rolesDir, roleEntry.Name())
+			verEntries, _ := os.ReadDir(versionsDir)
+			for _, vEntry := range verEntries {
+				if vEntry.IsDir() {
+					keys = append(keys, access.RoleKey(roleEntry.Name(), vEntry.Name()))
+				}
+			}
+		}
+	}
+	return keys
+}
+
+// accessActivitySparkline renders a small inline SVG histogram of cache
+// accesses bucketed per day over the last `days` days (oldest on the left).
+// Zero-count buckets between real accesses still render a flat baseline so
+// sparse mirrors stay legible.
+func accessActivitySparkline(timestamps []time.Time, days int) string {
+	if days < 2 {
+		days = 14
+	}
+	buckets := make([]int, days)
+	now := time.Now().Truncate(24 * time.Hour)
+	for _, ts := range timestamps {
+		d := int(now.Sub(ts) / (24 * time.Hour))
+		if d < 0 {
+			continue
+		}
+		if d >= days {
+			continue
+		}
+		buckets[days-1-d]++
+	}
+
+	const w, h = 280, 44
+	pad := 4
+	max := 0
+	for _, n := range buckets {
+		if n > max {
+			max = n
+		}
+	}
+
+	var b strings.Builder
+	if max == 0 {
+		b.WriteString(`<svg width="280" height="44" viewBox="0 0 280 44" aria-label="No cache activity"><line x1="4" y1="40" x2="276" y2="40" stroke="rgba(0,240,255,0.35)" stroke-width="1"/><text x="140" y="24" text-anchor="middle" fill="var(--text-faint)" font-family="var(--font-mono)" font-size="10">NO ACTIVITY</text></svg>`)
+		return b.String()
+	}
+
+	b.WriteString(`<svg width="280" height="44" viewBox="0 0 280 44" role="img" aria-label="Cache access activity over the last `)
+	fmt.Fprintf(&b, "%d", days)
+	b.WriteString(` days" style="display:block; max-width:100%;">`)
+	b.WriteString(`<path d="`)
+	for i := 0; i < days; i++ {
+		d := days - 1 - i
+		x := pad + (i*(w-2*pad))/maxInt(days-1, 1)
+		y := h - pad - (buckets[d]*(h-2*pad))/max
+		fmt.Fprintf(&b, "M%d %d ", x, y)
+	}
+	b.WriteString(`" fill="none" stroke="var(--cyan)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`)
+	// Final (newest) point highlighted as the "now" marker.
+	xLast := w - pad
+	yLast := h - pad - (buckets[days-1]*(h-2*pad))/max
+	fmt.Fprintf(&b, `<circle cx="%d" cy="%d" r="2.5" fill="var(--cyan)"/>`, xLast, yLast)
+	// Baseline.
+	b.WriteString(`<line x1="4" y1="40" x2="276" y2="40" stroke="rgba(0,240,255,0.22)" stroke-width="1"/>`)
+	b.WriteString(`<text x="276" y="34" text-anchor="end" fill="var(--text-faint)" font-family="var(--font-mono)" font-size="9">max `)
+	fmt.Fprintf(&b, "%d", max)
+	b.WriteString(`/day</text>`)
+	b.WriteString(`</svg>`)
+	return b.String()
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // logTailLimit is how many trailing log lines the /ui/logs endpoint returns
@@ -1737,8 +2195,36 @@ func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	for _, line := range content {
-		_, _ = w.Write([]byte(`<div class="log-line">` + html.EscapeString(line) + "</div>"))
+		_, _ = w.Write([]byte(`<div class="log-line" data-logline="` + html.EscapeString(strings.ToLower(line)) + `">` + renderLogLine(line) + "</div>"))
 	}
+}
+
+// logTSRe matches the Go LstdFlags timestamp prefix (e.g. "2026/09/25 05:09:41 ")
+// that the daemon logger prepends to every line.
+var logTSRe = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
+
+// logLevelRe matches the bracketed level tag that follows the timestamp, e.g.
+// "[INFO] " or "[ERROR] ".
+var logLevelRe = regexp.MustCompile(`^\[(INFO|WARN|ERROR|DEBUG|TRACE)\] `)
+
+// renderLogLine splits a raw daemon log line into timestamp, level and message
+// spans so the viewer can colour levels and highlight the timestamp column.
+func renderLogLine(line string) string {
+	var ts, level, rest string
+	if m := logTSRe.FindString(line); m != "" {
+		ts = m
+		rest = line[len(m):]
+	} else {
+		rest = line
+	}
+	if m := logLevelRe.FindStringSubmatch(rest); m != nil {
+		level = m[1]
+		msg := strings.TrimSpace(rest[len(m[0]):])
+		return `<span class="log-ts">` + html.EscapeString(ts) + `</span>` +
+			`<span class="log-level log-level-` + strings.ToLower(level) + `">[` + html.EscapeString(level) + `]</span>` +
+			`<span class="log-msg">` + html.EscapeString(msg) + `</span>`
+	}
+	return `<span class="log-msg">` + html.EscapeString(rest) + `</span>`
 }
 
 // --- Metrics & System Helpers ---

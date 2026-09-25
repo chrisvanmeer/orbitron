@@ -772,8 +772,11 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/requirements/roles", s.AuthMiddleware(s.HandleRequirementsRoles))
 	mux.HandleFunc("/api/v1/sync", s.AuthMiddleware(s.HandleSync))
 
-	// Async sync queue / run state.
+	// Async sync queue / run state. Also exposed under /ui so the dashboard's
+	// cookie (scoped to /ui) can poll it for the live header indicator.
 	mux.HandleFunc("GET /api/v1/sync/status", s.AuthMiddleware(s.HandleSyncStatus))
+	mux.HandleFunc("GET /ui/sync-status", s.AuthMiddleware(s.HandleSyncStatus))
+	mux.HandleFunc("POST /ui/sync", s.AuthMiddleware(s.HandleSync))
 
 	// Administrative token lifecycle (create, list, revoke, rotate).
 	mux.HandleFunc("POST /api/v1/tokens", s.AuthMiddleware(s.HandleTokenCreate))
