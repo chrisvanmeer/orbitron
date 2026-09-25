@@ -1,0 +1,148 @@
+# Default values for orbitron.
+# This is a YAML-formatted file. Declare variables to be passed into your
+# templates. Most settings map one-to-one onto the ORBITRON_* environment
+# variables consumed by the container entrypoint (which renders config.yml at
+# startup); see the README "Docker & Docker Compose" env table for details.
+
+# Keep at 1 unless you have investigated mirror races on the shared volume:
+# the daemon stores roles, collections and its admin token under one storage
+# path and syncs are not coordinated across instances.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/chrisvanmeer/orbitron
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion (e.g. 2.0.0).
+  tag: ""
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# The image entrypoint writes /etc/orbitron/config.yml and finally drops to the
+# non-root "orbitron" user (UID 1000) via su-exec, so the pod must start as
+# root. fsGroup makes a freshly provisioned volume writable by UID 1000.
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 0
+  runAsGroup: 0
+
+# Optional container-level security context (dropped capabilities, etc.).
+securityContext: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# Persistent mirror cache. The StatefulSet provisions one volume per replica
+# from volumeClaimTemplates; with replicaCount: 1 that is a single PVC and the
+# cache (roles, collections, .access.json, admin token) survives restarts and
+# upgrades.
+storage:
+  size: 10Gi
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+
+# Daemon configuration, mirroring the ORBITRON_* entrypoint variables.
+env:
+  listenAddr: "0.0.0.0:8080"
+  # Log file inside the container. Default "" logs to stdout (kubectl logs).
+  # Set to /data/orbitron.log to have the SYSTEM LOGS panel in the web UI work
+  # across restarts (the container runtime only rotates stdout).
+  logPath: ""
+  requireAuthPull: "false"
+  maxConcurrency: "4"
+  tokenTTLDays: "0"
+  # Generate an admin token on first start and print it once to the pod logs
+  # (persisted in tokens.json on the volume, so it appears only once). Set to
+  # false when you provision tokens.json yourself (see existingTokensSecret).
+  autoToken: "true"
+  # Optional forward proxy for outbound Galaxy API calls, collection downloads
+  # and git clones (e.g. a Squid proxy).
+  httpProxy: ""
+  httpsProxy: ""
+  noProxy: ""
+  # Outbound TLS policy for internal services signed by a private CA (Galaxy
+  # API/downloads, git HTTPS remotes, OIDC discovery). Either inline the PEM
+  # bundle in caBundle, or reference an existing secret via existingCaSecret.
+  tls:
+    caBundle: ""
+    existingCaSecret: ""
+    existingCaSecretKey: "ca-bundle.crt"
+    insecureSkipVerify: "false"
+
+# Optional SSO (OIDC / Keycloak) login for the web dashboard. Provide the
+# client secret inline (rendered into a generated Secret) or reference an
+# existing Secret with existingSecret / existingSecretKey.
+oidc:
+  enabled: false
+  issuer: ""
+  clientId: ""
+  clientSecret: ""
+  existingSecret: ""
+  existingSecretKey: "client-secret"
+  sessionTtlHours: "8"
+  redirectUri: ""
+  # Comma-separated Keycloak group names whose members may log in (requires the
+  # "groups" claim in the ID token). Empty = unrestricted.
+  allowedGroups: ""
+
+# Reference an existing Kubernetes Secret holding a pre-made tokens.json to use
+# for authentication instead of letting the entrypoint auto-generate one. Set
+# env.autoToken to false to keep the generated file out of the volume.
+existingTokensSecret: ""
+existingTokensSecretKey: "tokens.json"
+
+# NGINX-style ingress. The daemon honors X-Forwarded-Proto / X-Forwarded-For, so
+# TLS is terminated here either by the ingress controller or via ingress.tls.
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: mirror.internal
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: mirror-internal-tls
+  #    hosts:
+  #      - mirror.internal
+
+# Prometheus Operator ServiceMonitor scraping /metrics. Note: the endpoint
+# requires Bearer or Basic auth; provide the admin token secret if your
+# Prometheus is not otherwise authorized.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  namespace: ""
+  labels: {}
+  bearerTokenSecret: ""
+  bearerTokenSecretKey: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+    cpu: 500m
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Extra raw environment entries / sources appended to the container env.
+extraEnv: []
+extraEnvFrom: []

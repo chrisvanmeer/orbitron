@@ -1,0 +1,28 @@
+apiVersion: v2
+name: orbitron
+description: >
+  Orbitron - an internal Ansible Galaxy mirror daemon that caches roles and
+  collections for offline or air-gapped fleets. Serves the same Galaxy v3 API
+  as galaxy.ansible.com and renders its web dashboard at /ui.
+type: application
+version: 0.1.0
+appVersion: "2.0.0"
+home: https://github.com/chrisvanmeer/orbitron
+sources:
+  - https://github.com/chrisvanmeer/orbitron
+keywords:
+  - ansible
+  - galaxy
+  - mirror
+  - cache
+  - roles
+  - collections
+  - air-gap
+maintainers:
+  - name: chrisvanmeer
+    url: https://github.com/chrisvanmeer
+annotations:
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial Orbitron Helm chart (StatefulSet + persistent volume).
+  artifacthub.io/containsSecurityUpdates: "false"

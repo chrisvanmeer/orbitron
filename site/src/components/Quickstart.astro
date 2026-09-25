@@ -37,6 +37,25 @@ orbitron  | [2026-09-23 08:12:04] ADMIN TOKEN: obt_xxxx...
 # also available via ghcr.io/chrisvanmeer/orbitron:latest`,
 	},
 	{
+		id: 'helm',
+		label: 'Kubernetes / Helm',
+		title: 'Deploy with the bundled Helm chart',
+		desc: 'A StatefulSet with a persistent volume for the cache and admin token, /healthz probes and an optional ingress. Clone the repo first: helm/orbitron in the repo root is a ready-made chart — configure it straight or via your own values.yaml.',
+		file: 'terminal',
+		language: 'bash',
+		code: `$ git clone https://github.com/chrisvanmeer/orbitron.git
+$ cd orbitron
+$ helm install orbitron ./helm/orbitron
+
+$ kubectl logs orbitron-0 | grep "ADMIN TOKEN"
+orbitron-0  | [2026-09-25 09:12:04] ADMIN TOKEN: obt_xxxx...
+
+# behind a reverse proxy:
+$ helm install orbitron ./helm/orbitron \\
+  --set ingress.enabled=true \\
+  --set ingress.hosts[0].host=mirror.internal`,
+	},
+	{
 		id: 'ansible',
 		label: 'Ansible collection',
 		title: 'Declarative, with the official collection',
@@ -60,7 +79,7 @@ $ ansible-playbook -i hosts orbitron_daemon.yml
 			<span class="eyebrow">Quickstart</span>
 			<h2>Up and mirroring in minutes</h2>
 			<p>
-				Three ways to run a mirror — bare metal, container, or fully managed by Ansible. Same
+				Four ways to run a mirror — bare metal, container, Kubernetes, or fully managed by Ansible. Same
 				superpower underneath: a Galaxy endpoint your playbooks already know how to talk to.
 			</p>
 		</div>

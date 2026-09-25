@@ -1,0 +1,38 @@
+# CI smoke-render valueset: exercises the optional template branches
+# (ingress, ServiceMonitor, OIDC via existing Secret, token Secret mount, TLS
+# CA mount) so `helm template` catches regressions in every path.
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: mirror.internal
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: mirror-internal-tls
+      hosts:
+        - mirror.internal
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  labels:
+    release: prometheus
+  bearerTokenSecret: admin-token
+  bearerTokenSecretKey: token
+
+oidc:
+  enabled: true
+  issuer: https://keycloak.internal/realms/orbitron
+  clientId: orbitron
+  existingSecret: keycloak-secrets
+  existingSecretKey: orbitron-client-secret
+  sessionTtlHours: "8"
+  allowedGroups: orbitron-admins,orbitron-ops
+
+existingTokensSecret: orbitron-admin-token
+existingTokensSecretKey: tokens.json
+env:
+  autoToken: "false"
+  logPath: /data/orbitron.log

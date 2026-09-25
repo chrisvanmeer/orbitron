@@ -1,0 +1,197 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "orbitron.fullname" . }}
+  labels:
+    {{- include "orbitron.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "orbitron.fullname" . }}
+  podManagementPolicy: OrderedReady
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "orbitron.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "orbitron.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "orbitron.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- if .Values.env.tls.caBundle }}
+        - name: orbitron-secrets
+          secret:
+            secretName: {{ printf "%s-secrets" (include "orbitron.fullname" .) }}
+        {{- else if .Values.env.tls.existingCaSecret }}
+        - name: orbitron-ca
+          secret:
+            secretName: {{ .Values.env.tls.existingCaSecret }}
+        {{- end }}
+        {{- if .Values.existingTokensSecret }}
+        - name: orbitron-tokens
+          secret:
+            secretName: {{ .Values.existingTokensSecret }}
+            items:
+              - key: {{ .Values.existingTokensSecretKey }}
+                path: tokens.json
+                mode: 0600
+        {{- end }}
+      containers:
+        - name: orbitron
+          image: "{{ include "orbitron.image" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          env:
+            - name: ORBITRON_LISTEN_ADDR
+              value: {{ .Values.env.listenAddr | quote }}
+            - name: ORBITRON_STORAGE_PATH
+              value: /data
+            - name: ORBITRON_LOG_PATH
+              value: {{ .Values.env.logPath | quote }}
+            - name: ORBITRON_REQUIRE_AUTH_PULL
+              value: {{ .Values.env.requireAuthPull | quote }}
+            - name: ORBITRON_MAX_CONCURRENCY
+              value: {{ .Values.env.maxConcurrency | quote }}
+            - name: ORBITRON_TOKEN_TTL_DAYS
+              value: {{ .Values.env.tokenTTLDays | quote }}
+            - name: ORBITRON_AUTO_TOKEN
+              value: {{ .Values.env.autoToken | quote }}
+            - name: ORBITRON_HTTP_PROXY
+              value: {{ .Values.env.httpProxy | quote }}
+            - name: ORBITRON_HTTPS_PROXY
+              value: {{ .Values.env.httpsProxy | quote }}
+            - name: ORBITRON_NO_PROXY
+              value: {{ .Values.env.noProxy | quote }}
+            {{- if .Values.env.tls.caBundle }}
+            - name: ORBITRON_TLS_CA_FILE
+              value: /etc/orbitron/secrets/ca-bundle.crt
+            {{- else if .Values.env.tls.existingCaSecret }}
+            - name: ORBITRON_TLS_CA_FILE
+              value: {{ printf "/etc/orbitron/ca/%s" .Values.env.tls.existingCaSecretKey | quote }}
+            {{- else }}
+            - name: ORBITRON_TLS_CA_FILE
+              value: ""
+            {{- end }}
+            - name: ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY
+              value: {{ .Values.env.tls.insecureSkipVerify | quote }}
+            {{- if .Values.existingTokensSecret }}
+            - name: ORBITRON_TOKENS_FILE
+              value: /etc/orbitron/tokens/tokens.json
+            {{- end }}
+            {{- if .Values.oidc.enabled }}
+            - name: ORBITRON_OIDC_ENABLED
+              value: "true"
+            - name: ORBITRON_OIDC_ISSUER
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: ORBITRON_OIDC_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+            - name: ORBITRON_OIDC_SESSION_TTL_HOURS
+              value: {{ .Values.oidc.sessionTtlHours | quote }}
+            - name: ORBITRON_OIDC_REDIRECT_URI
+              value: {{ .Values.oidc.redirectUri | quote }}
+            - name: ORBITRON_OIDC_ALLOWED_GROUPS
+              value: {{ .Values.oidc.allowedGroups | quote }}
+            - name: ORBITRON_OIDC_CLIENT_SECRET
+              {{- if .Values.oidc.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.existingSecret }}
+                  key: {{ .Values.oidc.existingSecretKey }}
+              {{- else if .Values.oidc.clientSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-secrets" (include "orbitron.fullname" .) }}
+                  key: oidc-client-secret
+              {{- else }}
+              value: ""
+              {{- end }}
+            {{- else }}
+            - name: ORBITRON_OIDC_ENABLED
+              value: "false"
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.extraEnvFrom }}
+            envFrom:
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            {{- if .Values.env.tls.caBundle }}
+            - name: orbitron-secrets
+              mountPath: /etc/orbitron/secrets
+              readOnly: true
+            {{- else if .Values.env.tls.existingCaSecret }}
+            - name: orbitron-ca
+              mountPath: /etc/orbitron/ca
+              readOnly: true
+            {{- end }}
+            {{- if .Values.existingTokensSecret }}
+            - name: orbitron-tokens
+              mountPath: /etc/orbitron/tokens
+              readOnly: true
+            {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.storage.accessModes | nindent 10 }}
+        {{- with .Values.storage.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size | quote }}
