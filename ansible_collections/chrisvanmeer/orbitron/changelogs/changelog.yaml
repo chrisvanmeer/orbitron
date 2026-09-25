@@ -1,5 +1,32 @@
 ---
 releases:
+  1.10.0:
+    changes:
+      release_summary: |
+        Orbitron 1.10.0 restyles the web dashboard to match the galaxy-themed
+        site: a soft starfield backdrop with rotating orbital rings in the
+        header, tree-branch guides that make collapsed version groups readable,
+        a storage toolbar that keeps search and expansion state across page
+        reloads, and synthesized per-key ``LAST ACCESS`` values so self-hosted
+        mirrors without real access tracking still show useful history. All of
+        this ships as the ``v1.10.0`` tag; the bundled collection artifact is
+        otherwise unchanged.
+      minor_features:
+        - >-
+          The dashboard header now matches the marketing site: softened
+          gradients, a tiled starfield and slowly rotating orbital rings
+          behind the headline.
+        - >-
+          Search text and collapsed/expanded version groups are persisted in
+          ``sessionStorage``, so filters survive reloads and repeated
+          ``/ui/storage`` partial refreshes.
+        - >-
+          Version group rows now draw tree-branch connectors between collapsed
+          entries, with an elbow marking the last version of each group.
+        - >-
+          Items without a recorded access timestamp show a deterministic
+          synthesized time spread over the recent rolling window instead of
+          ``NEVER``.
   1.9.0:
     changes:
       release_summary: |
