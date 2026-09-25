@@ -1150,7 +1150,7 @@ const htmlTemplate = `
                     el.textContent = '⟳ ' + kind + ' ' + (cur ? cur.done + '/' + cur.total : '…');
                 } else {
                     el.classList.remove('busy');
-                    const failed = last && last.status === 'FAILED';
+                    const failed = last && last.status === 'failed';
                     el.classList.toggle('failed', !!failed);
                     el.classList.toggle('ok', !failed);
                     el.textContent = failed ? '◉ LAST SYNC FAILED' : '◍ MIRROR IDLE';

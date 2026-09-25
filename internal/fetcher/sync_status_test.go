@@ -40,8 +40,8 @@ func TestSyncTrackerBeginEndProducesHistory(t *testing.T) {
 		t.Fatalf("history length = %d, want 1", len(snap.History))
 	}
 	job := snap.History[0]
-	if job.Status != "completed" {
-		t.Errorf("status = %q, want completed", job.Status)
+	if job.Status != "failed" {
+		t.Errorf("status = %q, want failed (one of three items failed)", job.Status)
 	}
 	if job.Done != 2 || job.Failed != 1 {
 		t.Errorf("done=%d failed=%d, want done=2 failed=1", job.Done, job.Failed)
@@ -62,6 +62,34 @@ func TestSyncTrackerBoundedHistory(t *testing.T) {
 	}
 	if got := len(tr.snapshot().History); got > syncHistoryLimit {
 		t.Errorf("history length %d exceeds limit %d", got, syncHistoryLimit)
+	}
+}
+
+func TestSyncTrackerCleanJobStaysCompleted(t *testing.T) {
+	tr := NewSyncTracker()
+	tr.begin(SyncKindCollections, 2)
+	tr.itemDone()
+	tr.itemDone()
+	tr.end()
+	if len(tr.snapshot().History) != 1 {
+		t.Fatalf("expected one history entry, got %d", len(tr.snapshot().History))
+	}
+	if st := tr.snapshot().History[0].Status; st != "completed" {
+		t.Errorf("status = %q, want completed for a clean run", st)
+	}
+}
+
+func TestSyncTrackerBeginPromotesFailedJob(t *testing.T) {
+	tr := NewSyncTracker()
+	tr.begin(SyncKindRoles, 1)
+	tr.itemFailed("acme.neverexists", errSentinel{})
+	tr.begin(SyncKindRoles, 1)
+
+	if len(tr.snapshot().History) != 1 {
+		t.Fatalf("expected promoted history entry, got %d", len(tr.snapshot().History))
+	}
+	if st := tr.snapshot().History[0].Status; st != "failed" {
+		t.Errorf("promoted job status = %q, want failed", st)
 	}
 }
 

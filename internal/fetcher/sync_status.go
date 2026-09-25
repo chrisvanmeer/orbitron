@@ -63,7 +63,7 @@ func (t *SyncTracker) begin(kind SyncKind, total int) {
 
 	if t.current != nil && t.current.Status == "running" {
 		t.current.FinishedAt = time.Now()
-		t.current.Status = "completed"
+		t.current.Status = t.finalStatus()
 		t.pushHistory(*t.current)
 	}
 
@@ -75,6 +75,16 @@ func (t *SyncTracker) begin(kind SyncKind, total int) {
 		StartedAt: time.Now(),
 		Total:     total,
 	}
+}
+
+// finalStatus derives the terminal state of the current job from its failure
+// count so a partially or fully failed sync is reported as "failed" instead of
+// masquerading as a clean "completed" run.
+func (t *SyncTracker) finalStatus() string {
+	if t.current != nil && t.current.Failed > 0 {
+		return "failed"
+	}
+	return "completed"
 }
 
 // itemDone marks one item of the current job as processed.
@@ -107,7 +117,7 @@ func (t *SyncTracker) end() {
 		return
 	}
 	t.current.FinishedAt = time.Now()
-	t.current.Status = "completed"
+	t.current.Status = t.finalStatus()
 	t.pushHistory(*t.current)
 	t.current = nil
 }
