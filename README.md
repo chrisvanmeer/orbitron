@@ -63,20 +63,31 @@ Orbitron includes a full-screen, galaxy-themed Web UI hosted at `/ui` for real-t
   filter, precise physical block-level disk usage, and an access-based **LAST ACCESS** column showing exactly when
   each version was last served to a client. Hovering a relative timestamp (`4 mins ago`) opens a cyan/yellow
   popunder with the full ISO 8601 timestamp. Roles and collections with multiple cached versions are collapsed
-  into a single row (version count, most recent access, and total disk usage) that unfolds on click — with
-  tree-style branch guides under the expand caret — to reveal every version with its own **LAST ACCESS** date.
-  The matrix auto-refreshes every 10 seconds and keeps your sort order,
+  into a single row (version count, most recent access, and total disk usage) that unfolds on click — with a
+  **LATEST** pill on the newest version and tree-style branch guides under the expand caret — to reveal every
+  version with its own **LAST ACCESS** date. The matrix auto-refreshes every 10 seconds and keeps your sort order,
   search text, and expanded groups intact across refreshes.
+  A **DENSITY** toggle switches between comfortable and compact row spacing, **ALL / ROLES / COLLECTIONS** chips
+  filter by kind, versions accessed within the last hour pulse as `< 1h ago`, and shortcut keys
+  (`/` = focus search, `↑`/`↓` = select row, `Enter`/`→`/`←` = expand/collapse group) keep it keyboard-navigable.
+  A `NO STARS IN THIS QUADRANT` empty state appears when the filters match nothing.
 * **Cookie-Based Authentication**: Secure login modal backed by an HTTP-only session cookie using any
   valid administrative token, gated behind an Orbitron SVG logo — or an optional **SSO (OIDC) sign-in**
 through an external identity provider such as Keycloak (see
    [SSO / OIDC (Keycloak)](#sso--oidc-keycloak) below).
 * **Tail-F Live Log Drawer**: Bottom sliding drawer (`▲ LOG STREAM`) that streams the tail of
   `/var/log/orbitron/orbitron.log` like `tail -f` — it stays pinned to the newest lines on every refresh, only
-  releasing the pin when you scroll up to read history. Polls every 5 seconds.
+  releasing the pin when you scroll up to read history. Polls every 5 seconds, colorizes levels
+  (INFO / WARN / ERROR / DEBUG / TRACE), supports a client-side text filter, and ships a `⭳` button to download
+  the buffered log as `orbitron-logs.txt`.
 * **Collapsible System Metrics Drawer**: Right sliding sidebar (`◄ SYS METRICS`, auto-refreshing every 10 seconds)
   displaying uplink status, last cache activity (access-index based), cache disk usage, mount free space, normalized
-  OS distribution/version, system architecture (e.g., `AMD64`, `ARM64`), and last boot time.
+  OS distribution/version, system architecture (e.g., `AMD64`, `ARM64`), last boot time — plus a 14-day access
+  activity sparkline.
+* **Live Sync Status**: Header indicator that reflects the background mirror jobs — cyan dot when idle,
+  spinning `⟳ SYNCING done/total` while a job runs (kept visible briefly after a fast job), and red
+  `◉ LAST SYNC FAILED` when the most recent sync had failures. A `⟳ SYNC` button next to it triggers a full
+  re-sync on demand.
 * **Air-Gapped / Island-Mode Ready**: Embedded HTMX served directly from memory, eliminating external CDN calls
   or outbound network dependencies.
 * **Hidden Feature**: Something happens when you type the mirror's name into the dashboard. Try it.

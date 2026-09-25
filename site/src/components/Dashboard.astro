@@ -5,15 +5,19 @@ import uiPng from '../assets/ui.png';
 const highlights = [
 	{
 		t: 'Cache Matrix',
-		d: 'Every cached role and collection with sortable TYPE / NAME / VERSION / LAST ACCESS / DISK USAGE columns, a live search filter, and collapsed multi-version rows that unfold on click with tree-style branch guides.',
+		d: 'Every cached role and collection with sortable TYPE / NAME / VERSION / LAST ACCESS / DISK USAGE columns, live search, DENSITY and ALL / ROLES / COLLECTIONS filters, LATEST pills on newest versions, fresh-access pulses, keyboard shortcuts, and collapsed multi-version rows that unfold on click.',
 	},
 	{
 		t: 'Tail-f log stream',
-		d: 'A sliding ▲ LOG STREAM drawer behaves like tail -f — pinned to new lines, releasing when you scroll up. 500-line tail, 2000-line scrollback.',
+		d: 'A sliding ▲ LOG STREAM drawer behaves like tail -f — pinned to new lines, releasing when you scroll up, with colorized levels, a text filter, and one-click download to orbitron-logs.txt.',
 	},
 	{
 		t: 'System telemetry',
-		d: 'The ◄ SYS METRICS sidebar reports uplink status, cache activity, cache disk usage, mount free space, OS, architecture and last boot. Auto-refreshing.',
+		d: 'The ◄ SYS METRICS sidebar reports uplink status, cache activity, cache disk usage, mount free space, OS, architecture and last boot, plus a 14-day access sparkline. Auto-refreshing.',
+	},
+	{
+		t: 'Live sync status',
+		d: 'A header indicator tracks background mirror jobs — cyan when idle, spinning while syncing, red on failure — with a ⟳ SYNC button to force a full re-sync on demand.',
 	},
 	{
 		t: 'Air-gap friendly',
