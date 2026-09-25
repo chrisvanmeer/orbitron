@@ -1,5 +1,58 @@
 ---
 releases:
+  2.0.0:
+    changes:
+      release_summary: |
+        Orbitron 2.0.0 hardens the dashboard into an information-rich
+        operations console. The cache matrix gains a density toggle,
+        ALL/ROLES/COLLECTIONS kind filters, a LATEST pill on the newest
+        version of every collapsed group, a live access pulse for items
+        served within the last hour, precise disk-usage bars scaled to the
+        largest visible item, a self-filling empty state, and full keyboard
+        navigation. A live header indicator reflects background mirror jobs -
+        cyan when idle, spinning ``⟳ SYNCING done/total`` while running
+        (held briefly after a fast job), and red ``◉ LAST SYNC FAILED`` when
+        the most recent sync failed - with a ``⟳ SYNC`` button to force a
+        full re-sync on demand. The SYSTEM LOGS drawer colorizes levels,
+        filters text client-side and downloads the buffer as
+        ``orbitron-logs.txt``; the System Metrics drawer gains a 14-day
+        access-activity sparkline. Sync jobs that fail any item are now
+        reported as ``failed`` instead of ``completed`` so the red state
+        actually surfaces.
+      minor_features:
+        - >-
+          The cache matrix toolbar gains a DENSITY toggle
+          (COMFORTABLE/COMPACT) and ALL/ROLES/COLLECTIONS kind chips, both
+          remembered in ``sessionStorage``. Shortcut keys navigate the grid:
+          ``/`` focuses search, ``↑``/``↓`` select the highlighted row, and
+          ``Enter``/``→``/``←`` expand or collapse the selected group.
+        - >-
+          The newest version inside a collapsed multi-version group is
+          tagged with a LATEST pill, every version row shows a disk-usage
+          bar scaled to the largest currently visible item, and items
+          accessed within the last hour add a pulsing ``fresh`` dot to their
+          LAST ACCESS cell. An empty filter state renders a
+          ``NO STARS IN THIS QUADRANT`` row.
+        - >-
+          The header gains a live sync indicator polled every 10 seconds:
+          a spinning ``⟳ SYNCING done/total`` while a job runs (the busy
+          look is held ~9 s so fast background syncs stay visible), a
+          cyan dot when idle, and a red ``◉ LAST SYNC FAILED`` when the most
+          recent job failed. A ``⟳ SYNC`` button next to it triggers a full
+          re-sync, exposed under the UI cookie scope as ``POST /ui/sync``.
+        - >-
+          The SYSTEM LOGS drawer renders timestamp/level/message columns
+          with level colors, filters lines client-side, and downloads the
+          buffered tail as ``orbitron-logs.txt``; the System Metrics drawer
+          adds a 14-day access-activity sparkline built from the cached-keys
+          snapshot (with synthesized history for fresh mirrors).
+      bugfixes:
+        - >-
+          A sync job that failed any item is now reported with status
+          ``failed`` in ``/api/v1/sync/status`` history (previously every
+          finished job was recorded as ``completed``, so the dashboard's
+          red LAST SYNC FAILED state could never trigger). Clean runs are
+          still ``completed``.
   1.10.0:
     changes:
       release_summary: |
