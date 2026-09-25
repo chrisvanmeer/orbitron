@@ -25,7 +25,7 @@ src/
   layouts/Layout.astro
   components/       Navbar, Hero, Features, Architecture, Dashboard,
                     Quickstart, Ecosystem, CtaSection, Footer, CodeBlock
-  styles/global.css cyberpunk neon theme
+  styles/global.css galaxy theme defaults
   pages/index.astro
 ```
 

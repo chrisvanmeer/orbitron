@@ -761,7 +761,7 @@ func (s *Server) Start() error {
 	metrics := telemetry.NewMetrics()
 	mux.HandleFunc("/metrics", s.AuthMiddleware(metrics.Handler(s.cfg)))
 
-	// Web UI Cyberpunk Dashboard & HTMX Assets (Uses its own cookie auth)
+	// Web UI Dashboard & HTMX Assets (Uses its own cookie auth)
 	dashboard := web.NewDashboard(s.cfg, s.oidc, s.sessions)
 	dashboard.Register(mux)
 

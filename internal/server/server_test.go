@@ -210,9 +210,9 @@ func TestCollectionInfoReportsTimestamps(t *testing.T) {
 	}
 
 	var body struct {
-		CreatedAt    string `json:"created_at"`
-		UpdatedAt    string `json:"updated_at"`
-		HighestVer   struct {
+		CreatedAt  string `json:"created_at"`
+		UpdatedAt  string `json:"updated_at"`
+		HighestVer struct {
 			Version string `json:"version"`
 		} `json:"highest_version"`
 	}

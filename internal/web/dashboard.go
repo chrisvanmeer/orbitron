@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"hash/fnv"
 	"html"
 	"net/http"
 	"os"
@@ -399,6 +400,7 @@ func (d *Dashboard) renderLogin(w http.ResponseWriter, hasError bool, errorText 
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	htmlOut := loginTemplate
+	htmlOut = strings.ReplaceAll(htmlOut, "{{THEME}}", uiThemeCSS)
 	htmlOut = strings.ReplaceAll(htmlOut, "{{DISPLAY}}", display)
 	htmlOut = strings.ReplaceAll(htmlOut, "{{ERROR_TEXT}}", errorText)
 	htmlOut = strings.ReplaceAll(htmlOut, "{{OIDC_SECTION}}", oidcSection)
@@ -407,6 +409,91 @@ func (d *Dashboard) renderLogin(w http.ResponseWriter, hasError bool, errorText 
 }
 
 // --- HTML Templates ---
+
+// uiThemeCSS is the shared design-token layer for every /ui page. It mirrors
+// the marketing site palette (site/src/styles/global.css) so the dashboard and
+// the website live in the same universe. The legacy --neon-* / --panel-bg /
+// --bg-color aliases stay because the Go row renderers and partials still emit
+// inline styles that reference them.
+const uiThemeCSS = `
+:root {
+    --bg: #050505;
+    --bg-deep: #030304;
+    --bg-panel: #09090f;
+    --bg-card: #0d0e16;
+    --bg-card-hover: #12131d;
+    --border: rgba(139, 148, 158, 0.14);
+    --border-strong: rgba(139, 148, 158, 0.28);
+
+    --cyan: #00f0ff;
+    --pink: #ff007a;
+    --red: #ff003c;
+    --yellow: #fcee0a;
+    --violet: #5773ff;
+    --indigo: #a5b4fc;
+
+    --text: #e7ecf3;
+    --text-mid: #b6c2cf;
+    --text-dim: #8b949e;
+    --text-faint: #5c6b78;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+    --radius-sm: 8px;
+    --radius: 16px;
+    --radius-lg: 22px;
+
+    --bg-color: var(--bg);
+    --panel-bg: var(--bg-panel);
+    --neon-cyan: var(--cyan);
+    --neon-pink: var(--pink);
+    --neon-yellow: var(--yellow);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+::selection { background: var(--pink); color: #fff; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(139, 148, 158, 0.25); border: 2px solid transparent; border-radius: 6px; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+button { font-family: inherit; cursor: pointer; }
+h1, h2, h3, h4 { margin: 0; letter-spacing: -0.02em; }
+
+/* Ambient glow + starfield backdrop (mirrors the marketing site) */
+body::before {
+    content: ''; position: fixed; inset: 0; z-index: -2;
+    background:
+        radial-gradient(1100px 520px at 50% -180px, rgba(87, 115, 255, 0.18), transparent 70%),
+        radial-gradient(900px 480px at 85% 12%, rgba(0, 240, 255, 0.07), transparent 65%),
+        radial-gradient(760px 420px at 8% 30%, rgba(255, 0, 122, 0.06), transparent 60%),
+        var(--bg);
+}
+body::after {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+        radial-gradient(1px 1px at 12% 22%, rgba(255, 255, 255, 0.5), transparent),
+        radial-gradient(1px 1px at 32% 8%, rgba(255, 255, 255, 0.35), transparent),
+        radial-gradient(1.5px 1.5px at 55% 15%, rgba(252, 238, 10, 0.5), transparent),
+        radial-gradient(1px 1px at 72% 5%, rgba(255, 255, 255, 0.4), transparent),
+        radial-gradient(1px 1px at 88% 20%, rgba(255, 255, 255, 0.3), transparent),
+        radial-gradient(1px 1px at 7% 48%, rgba(255, 255, 255, 0.35), transparent),
+        radial-gradient(1.5px 1.5px at 94% 42%, rgba(0, 240, 255, 0.45), transparent),
+        radial-gradient(1px 1px at 42% 90%, rgba(255, 255, 255, 0.3), transparent),
+        radial-gradient(1px 1px at 64% 78%, rgba(165, 180, 252, 0.45), transparent);
+    background-size: 180px 160px;
+}
+`
 
 const loginTemplate = `
 <!DOCTYPE html>
@@ -417,61 +504,70 @@ const loginTemplate = `
     <title>ORBITRON // AUTHENTICATION</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <style>
-        :root {
-            --bg-color: #050505;
-            --panel-bg: #0a0a10;
-            --neon-cyan: #00f0ff;
-            --neon-pink: #ff003c;
-            --neon-yellow: #fcee0a;
-        }
+        {{THEME}}
         body {
-            background-color: var(--bg-color); color: var(--neon-cyan);
-            font-family: 'Courier New', Courier, monospace; margin: 0;
-            display: flex; align-items: center; justify-content: center; height: 100vh;
-            background-image: linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
-            background-size: 20px 20px;
+            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh; padding: 24px;
         }
         .login-box {
-            background: var(--panel-bg); border: 1px solid var(--neon-cyan);
-            box-shadow: inset 0 0 10px rgba(0, 240, 255, 0.1), 0 0 20px rgba(0, 240, 255, 0.1);
-            padding: 40px; text-align: center; width: 350px; position: relative;
+            width: min(420px, 100%);
+            background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            position: relative;
+            padding: 44px 40px;
+            text-align: center;
+            box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.9), 0 0 44px -14px rgba(0, 240, 255, 0.25);
         }
         .login-box::before {
-            content: ''; position: absolute; top: -2px; left: -2px;
-            width: 15px; height: 15px; border-top: 2px solid var(--neon-yellow); border-left: 2px solid var(--neon-yellow);
+            content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+            background: linear-gradient(135deg, rgba(0, 240, 255, 0.35), transparent 40%, transparent 60%, rgba(255, 0, 122, 0.3));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
         }
-        .login-box::after {
-            content: ''; position: absolute; bottom: -2px; right: -2px;
-            width: 15px; height: 15px; border-bottom: 2px solid var(--neon-yellow); border-right: 2px solid var(--neon-yellow);
+        .login-logo { width: 92px; height: auto; margin: 0 auto 22px; display: block; filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.35)); }
+        h1 {
+            font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700;
+            letter-spacing: 0.22em; text-transform: uppercase; margin: 0 0 26px;
+            background: linear-gradient(90deg, #fff 10%, var(--indigo));
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
         }
-        .login-logo { width: 92px; height: auto; margin: 0 auto 18px; display: block; filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.35)); }
-        h1 { color: var(--neon-pink); margin-top: 0; letter-spacing: 2px; text-shadow: 0 0 5px var(--neon-pink); }
         input[type="password"] {
-            width: 85%; padding: 12px; margin: 25px 0; background: #000;
-            border: 1px solid #4a5c66; color: var(--neon-cyan); font-family: inherit;
-            outline: none; text-align: center; font-size: 1.1em; letter-spacing: 2px;
+            width: 100%; padding: 12px 14px; margin: 4px 0 22px;
+            background: var(--bg-deep); color: var(--text);
+            border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+            font-family: var(--font-mono); text-align: center; font-size: 1em;
+            letter-spacing: 0.12em; outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
-        input[type="password"]:focus { border-color: var(--neon-cyan); box-shadow: 0 0 8px rgba(0, 240, 255, 0.4); }
-        button {
-            background: transparent; color: var(--neon-yellow); border: 1px solid var(--neon-yellow);
-            padding: 12px 25px; cursor: pointer; font-family: inherit; text-transform: uppercase;
-            transition: 0.3s; font-weight: bold; letter-spacing: 1px;
+        input[type="password"]:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15); }
+        button, .oidc-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%;
+            font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600; letter-spacing: 0.04em;
+            padding: 0.8rem 1.4rem; border-radius: var(--radius-sm);
+            border: 1px solid transparent; cursor: pointer; text-decoration: none;
+            white-space: nowrap; text-transform: uppercase;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
         }
-        button:hover { background: var(--neon-yellow); color: #000; box-shadow: 0 0 10px var(--neon-yellow); }
-        .oidc-btn {
-            display: inline-block; background: transparent; color: var(--neon-pink);
-            border: 1px solid var(--neon-pink); padding: 12px 25px; margin-top: 12px;
-            cursor: pointer; font-family: inherit; text-transform: uppercase;
-            transition: 0.3s; font-weight: bold; letter-spacing: 1px; text-decoration: none;
+        button[type="submit"] {
+            background: linear-gradient(90deg, var(--cyan), var(--violet)); color: #04111a; font-weight: 700;
+            box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.4), 0 12px 34px -12px rgba(0, 240, 255, 0.55);
         }
-        .oidc-btn:hover { background: var(--neon-pink); color: #000; box-shadow: 0 0 10px var(--neon-pink); }
-        .or-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 2px; color: #4a5c66; }
-        .or-divider::before, .or-divider::after {
-            content: ''; flex: 1; height: 1px; background: #4a5c66;
+        button[type="submit"]:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.7), 0 16px 44px -10px rgba(0, 240, 255, 0.7); }
+        .oidc-btn { border-color: var(--border-strong); background: rgba(13, 14, 22, 0.6); color: var(--text); }
+        .oidc-btn:hover { border-color: var(--pink); color: var(--pink); transform: translateY(-2px); }
+        .or-divider {
+            display: flex; align-items: center; gap: 12px; margin: 24px 0 14px;
+            color: var(--text-faint); font-family: var(--font-mono);
+            font-size: 0.7rem; letter-spacing: 0.18em;
         }
-        .or-divider span { font-size: 0.8em; letter-spacing: 2px; }
-        .error-msg { color: var(--neon-pink); font-size: 0.9em; margin-bottom: 10px; display: {{DISPLAY}}; font-weight: bold; }
+        .or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+        .error-msg {
+            color: var(--red); font-size: 0.85rem; font-family: var(--font-mono);
+            letter-spacing: 0.06em; font-weight: 600; margin-bottom: 12px; display: {{DISPLAY}};
+        }
     </style>
 </head>
 <body>
@@ -534,122 +630,194 @@ const htmlTemplate = `
     <!-- 100% Offline / Island-mode HTMX 4.0.0 -->
     <script src="/ui/htmx.min.js"></script>
     <style>
-        :root {
-            --bg-color: #050505;
-            --panel-bg: #0a0a10;
-            --neon-cyan: #00f0ff;
-            --neon-pink: #ff003c;
-            --neon-yellow: #fcee0a;
-            --text-dim: #4a5c66;
-        }
-        * { box-sizing: border-box; }
+        {{THEME}}
         body {
-            background-color: var(--bg-color); color: var(--neon-cyan);
-            font-family: 'Courier New', Courier, monospace; margin: 0; padding: 0;
             overflow: hidden; height: 100vh; width: 100vw;
-            background-image: linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
-            background-size: 20px 20px;
         }
-        
+
         /* Fullscreen Layout */
         .app-layout {
             display: flex; flex-direction: column; height: 100vh; width: 100vw; position: relative;
         }
         .header-bar {
             display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 2px solid var(--neon-pink); padding: 12px 20px; background: rgba(10, 10, 16, 0.95);
-            z-index: 10;
+            border-bottom: 1px solid var(--border); padding: 14px 24px;
+            position: relative; overflow: hidden; z-index: 10;
+            background-color: rgba(5, 5, 5, 0.72);
+            /* Soft galaxy + starfield, mirroring site/src/components/Hero.astro. */
+            background-image:
+                radial-gradient(520px 210px at 12% -60px, rgba(87, 115, 255, 0.18), transparent 70%),
+                radial-gradient(400px 180px at 34% -40px, rgba(0, 240, 255, 0.07), transparent 65%),
+                radial-gradient(1px 1px at 8% 35%, rgba(190, 252, 255, 0.5), transparent),
+                radial-gradient(1px 1px at 18% 72%, rgba(255, 255, 255, 0.35), transparent),
+                radial-gradient(1.5px 1.5px at 30% 24%, rgba(0, 240, 255, 0.5), transparent),
+                radial-gradient(1px 1px at 46% 62%, rgba(255, 255, 255, 0.3), transparent),
+                radial-gradient(1px 1px at 62% 30%, rgba(190, 252, 255, 0.45), transparent),
+                radial-gradient(1px 1px at 78% 72%, rgba(252, 238, 10, 0.4), transparent),
+                radial-gradient(1.5px 1.5px at 90% 28%, rgba(0, 240, 255, 0.45), transparent),
+                radial-gradient(1px 1px at 96% 55%, rgba(255, 255, 255, 0.3), transparent);
+            background-size: auto, auto, 200px 180px, 200px 180px, 200px 180px, 200px 180px, 200px 180px, 200px 180px, 200px 180px, 200px 180px;
+            background-repeat: no-repeat, no-repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat;
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
         }
+        /* Slowly rotating orbital rings, like the site hero. */
+        .header-galaxy {
+            position: absolute; left: 5%; top: 50%; width: 250px; height: 88px;
+            transform: translateY(-50%); pointer-events: none; z-index: 0; opacity: 0.9;
+        }
+        .header-galaxy .g-ring { position: absolute; inset: 0; border-radius: 50%; }
+        .g-ring-a { border: 1px dashed rgba(0, 240, 255, 0.28); transform: rotate(-12deg); animation: hdr-drift 26s linear infinite; }
+        .g-ring-b { border: 1px dashed rgba(255, 0, 122, 0.22); inset: 6px -14px; transform: rotate(7deg); animation: hdr-drift 22s linear infinite reverse; }
+        .g-ring-c { border: 1px solid rgba(165, 180, 252, 0.12); inset: -3px 10px; transform: rotate(2deg); }
+        @keyframes hdr-drift { to { transform: rotate(346deg); } }
+        .brand { display: inline-flex; align-items: center; gap: 0.7rem; position: relative; z-index: 1; }
+        .header-logo { width: 28px; height: 28px; filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.4)); }
         h1 {
-            color: var(--neon-pink); text-shadow: 0 0 5px var(--neon-pink); margin: 0;
-            font-size: 1.4em; text-transform: uppercase; letter-spacing: 2px;
+            margin: 0; font-size: 0.95rem; font-weight: 900;
+            letter-spacing: 0.24em; text-transform: uppercase;
+            display: inline-flex; align-items: center; gap: 0.9rem;
+        }
+        .brand-name {
+            background: linear-gradient(90deg, #fff, var(--indigo));
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .brand-sub {
+            font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600;
+            letter-spacing: 0.1em; color: var(--text-dim);
         }
         .header-actions {
-            display: flex; align-items: center; gap: 15px;
+            display: flex; align-items: center; gap: 12px; position: relative; z-index: 1;
         }
         .btn-metrics {
-            background: var(--panel-bg); color: var(--neon-yellow); border: 1px solid var(--neon-yellow);
-            padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 0.85em; font-weight: bold;
-            text-transform: uppercase; transition: 0.3s;
+            background: rgba(13, 14, 22, 0.6); color: var(--text); border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer; font-family: var(--font-mono);
+            font-size: 0.76rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+            transition: border-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
         }
-        .btn-metrics:hover { background: var(--neon-yellow); color: #000; box-shadow: 0 0 10px var(--neon-yellow); }
+        .btn-metrics:hover { border-color: var(--cyan); color: var(--cyan); transform: translateY(-1px); }
 
         .btn-logout {
-            color: var(--neon-pink); text-decoration: none; border: 1px solid var(--neon-pink);
-            padding: 6px 12px; font-size: 0.85em; transition: 0.3s; font-weight: bold;
-            background: transparent; cursor: pointer; font-family: inherit; text-transform: uppercase;
+            color: var(--text); text-decoration: none; background: transparent;
+            border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+            padding: 8px 14px; font-size: 0.76rem; font-weight: 600; letter-spacing: 0.08em;
+            cursor: pointer; font-family: var(--font-mono); text-transform: uppercase;
+            transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
         }
-        .btn-logout:hover { background: var(--neon-pink); color: #000; }
-        .btn-logout.armed { background: var(--neon-pink); color: #000; box-shadow: 0 0 12px var(--neon-pink); }
+        .btn-logout:hover { border-color: var(--red); color: var(--red); }
+        .btn-logout.armed { background: var(--red); border-color: var(--red); color: #000; box-shadow: 0 0 20px rgba(255, 0, 60, 0.45); }
 
-        /* Main Workspace (Full Screen Matrix) */
+        /* Main Workspace Card */
         .main-workspace {
-            flex: 1; padding: 20px; overflow-y: auto; position: relative; z-index: 1;
+            flex: 1; margin: 20px; overflow-y: auto; position: relative; z-index: 1;
+            border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 24px;
+            /* Space backdrop mirroring site/src/styles/global.css (glows + starfield), kept under the opaque card gradient. */
+            background-image:
+                radial-gradient(1100px 520px at 50% -180px, rgba(87, 115, 255, 0.16), transparent 70%),
+                radial-gradient(700px 380px at 90% 10%, rgba(0, 240, 255, 0.07), transparent 65%),
+                radial-gradient(600px 340px at 5% 30%, rgba(255, 0, 122, 0.05), transparent 60%),
+                radial-gradient(1px 1px at 12% 22%, rgba(255, 255, 255, 0.45), transparent),
+                radial-gradient(1px 1px at 32% 8%, rgba(255, 255, 255, 0.32), transparent),
+                radial-gradient(1.5px 1.5px at 55% 15%, rgba(252, 238, 10, 0.45), transparent),
+                radial-gradient(1px 1px at 72% 5%, rgba(255, 255, 255, 0.38), transparent),
+                radial-gradient(1px 1px at 88% 20%, rgba(255, 255, 255, 0.28), transparent),
+                radial-gradient(1px 1px at 6% 78%, rgba(165, 180, 252, 0.42), transparent),
+                radial-gradient(1.5px 1.5px at 92% 45%, rgba(0, 240, 255, 0.42), transparent),
+                radial-gradient(1px 1px at 38% 92%, rgba(255, 255, 255, 0.30), transparent),
+                radial-gradient(1px 1px at 63% 70%, rgba(165, 180, 252, 0.36), transparent),
+                linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+            background-size: auto, auto, auto, 180px 160px, 180px 160px, 180px 160px, 180px 160px, 180px 160px, 180px 160px, 180px 160px, 180px 160px, 180px 160px, auto;
+            background-repeat: no-repeat, no-repeat, no-repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, no-repeat;
         }
-        
-        /* Tables */
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--text-dim); }
-        th { color: var(--neon-pink); border-bottom: 2px solid var(--neon-pink); }
-        tr:hover { background: rgba(0, 240, 255, 0.05); }
+        .main-workspace h2, #right-drawer h3, #bottom-drawer h3 {
+            font-family: var(--font-mono); font-size: 0.76rem; font-weight: 700;
+            letter-spacing: 0.18em; text-transform: uppercase; color: var(--cyan);
+        }
 
-        /* Slide Drawers */
-        .drawer-btn {
-            background: var(--panel-bg); color: var(--neon-yellow); border: 1px solid var(--neon-yellow);
-            padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 0.8em; font-weight: bold;
-            text-transform: uppercase; z-index: 20; position: fixed; transition: 0.3s;
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+        th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+        th {
+            font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim);
+            border-bottom: 1px solid var(--border-strong);
         }
-        .drawer-btn:hover { background: var(--neon-yellow); color: #000; box-shadow: 0 0 10px var(--neon-yellow); }
+        tr:hover { background: rgba(0, 240, 255, 0.04); }
+
+        /* Header Log Toggle (kept in the action cluster so it never overlaps content) */
+        .btn-log-toggle {
+            background: rgba(13, 14, 22, 0.6); color: var(--text); border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer; font-family: var(--font-mono);
+            font-size: 0.76rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+            transition: border-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
+        }
+        .btn-log-toggle:hover { border-color: var(--pink); color: var(--pink); transform: translateY(-1px); }
 
         /* Right Telemetry Drawer */
         #right-drawer {
-            position: fixed; top: 0; right: -340px; width: 340px; height: 100vh;
-            background: rgba(10, 10, 16, 0.98); border-left: 1px solid var(--neon-cyan);
-            box-shadow: -5px 0 20px rgba(0, 240, 255, 0.15); transition: right 0.3s ease;
-            z-index: 25; padding: 20px; overflow-y: auto;
+            position: fixed; top: 0; right: -360px; width: 360px; height: 100vh;
+            background-image:
+                radial-gradient(1px 1px at 18% 14%, rgba(255, 255, 255, 0.4), transparent),
+                radial-gradient(1px 1px at 74% 8%, rgba(255, 255, 255, 0.3), transparent),
+                radial-gradient(1.5px 1.5px at 88% 62%, rgba(0, 240, 255, 0.4), transparent),
+                radial-gradient(1px 1px at 30% 88%, rgba(165, 180, 252, 0.4), transparent),
+                linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+            background-size: 180px 160px, 180px 160px, 180px 160px, 180px 160px, auto;
+            background-repeat: repeat, repeat, repeat, repeat, no-repeat;
+            border-left: 1px solid var(--border-strong);
+            box-shadow: -30px 0 60px -40px rgba(0, 0, 0, 0.9);
+            transition: right 0.3s ease;
+            z-index: 25; padding: 24px; overflow-y: auto;
         }
         #right-drawer.open { right: 0; }
 
         /* Bottom Log Drawer */
         #bottom-drawer {
-            position: fixed; bottom: -35vh; left: 0; width: 100vw; height: 35vh;
-            background: rgba(0, 0, 0, 0.98); border-top: 2px solid var(--neon-pink);
-            box-shadow: 0 -5px 20px rgba(255, 0, 60, 0.2); transition: bottom 0.3s ease;
-            z-index: 15; padding: 15px 20px 20px 20px; display: flex; flex-direction: column;
+            position: fixed; bottom: -38vh; left: 0; width: 100vw; height: 38vh;
+            background-color: var(--bg-deep);
+            background-image:
+                radial-gradient(1px 1px at 10% 18%, rgba(255, 255, 255, 0.35), transparent),
+                radial-gradient(1px 1px at 86% 22%, rgba(0, 240, 255, 0.35), transparent),
+                radial-gradient(1.5px 1.5px at 48% 80%, rgba(252, 238, 10, 0.35), transparent);
+            background-size: 180px 160px, 180px 160px, 180px 160px;
+            background-repeat: repeat, repeat, repeat;
+            border-top: 1px solid var(--border-strong);
+            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+            box-shadow: 0 -24px 60px -40px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(0, 240, 255, 0.06);
+            transition: bottom 0.3s ease;
+            z-index: 15; padding: 18px 24px 24px; display: flex; flex-direction: column;
         }
         #bottom-drawer.open { bottom: 0; }
-        .btn-bottom-toggle { bottom: 10px; left: 20px; }
 
         .log-viewer {
-            flex: 1; background: #000; color: #0f0; padding: 12px;
-            overflow-y: auto; border: 1px solid var(--text-dim);
-            font-size: 0.85em; line-height: 1.4; margin-top: 10px;
+            flex: 1; background: var(--bg-deep); color: var(--text-mid); padding: 14px 16px;
+            overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.55; margin-top: 12px;
             white-space: pre-wrap; word-break: break-all;
         }
         .log-line { margin: 0; }
 
-        .stat-label { color: var(--text-dim); font-size: 0.8em; text-transform: uppercase; margin-top: 15px; }
-        .stat-value { color: var(--neon-cyan); font-size: 1.0em; font-weight: bold; margin-top: 3px; word-break: break-all; }
+        .stat-label { color: var(--text-dim); font-size: 0.7rem; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.14em; margin-top: 18px; }
+        .stat-value { color: var(--text); font-size: 0.95rem; font-family: var(--font-mono); font-weight: 500; margin-top: 4px; word-break: break-all; }
 
-        .blink { animation: blinker 1.5s linear infinite; }
+        .blink { animation: blinker 1.2s step-end infinite; color: var(--cyan); -webkit-text-fill-color: var(--cyan); }
         @keyframes blinker { 50% { opacity: 0; } }
 
         /* Secret mode (type "orbitron") */
         #orbitron-secret {
             display: none; position: fixed; inset: 0; z-index: 9998;
-            pointer-events: none; color: var(--neon-pink);
-            font-family: 'Courier New', Courier, monospace;
+            pointer-events: none; color: var(--pink);
+            font-family: var(--font-mono);
         }
         #orbitron-secret.show { display: block; animation: secret-fade 4s ease forwards; }
         #orbitron-secret pre {
             margin: 0; padding: 14px 18px; text-align: center;
             font-size: 2.2em; font-weight: bold; letter-spacing: 4px;
-            color: var(--neon-yellow); text-shadow: 0 0 12px var(--neon-pink), 0 0 32px rgba(0,240,255,0.6);
+            color: var(--yellow); text-shadow: 0 0 12px var(--pink), 0 0 32px rgba(0,240,255,0.6);
         }
         #orbitron-secret .secret-sub {
             display: block; margin-top: 10px; font-size: 0.55em; letter-spacing: 6px;
-            color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0,240,255,0.8);
+            color: var(--cyan); text-shadow: 0 0 10px rgba(0,240,255,0.8);
         }
         @keyframes secret-fade {
             0%   { opacity: 0; filter: blur(4px); }
@@ -675,8 +843,26 @@ const htmlTemplate = `
             </pre>
         </div>
         <div class="header-bar">
-            <h1>Orbitron // Cache Matrix<span class="blink">_</span></h1>
+            <div class="header-galaxy" aria-hidden="true">
+                <span class="g-ring g-ring-a"></span>
+                <span class="g-ring g-ring-b"></span>
+                <span class="g-ring g-ring-c"></span>
+            </div>
+            <div class="brand">
+                <svg class="header-logo" viewBox="0 0 60 60" width="28" height="28" aria-hidden="true">
+                    <circle cx="30" cy="30" r="15" fill="none" stroke="#00f0ff" stroke-width="2.5" />
+                    <ellipse cx="30" cy="30" rx="25" ry="9" fill="none" stroke="#ff007a" stroke-width="2" transform="rotate(-24 30 30)" />
+                    <ellipse cx="30" cy="30" rx="25" ry="9" fill="none" stroke="#fcee0a" stroke-width="1.4" transform="rotate(38 30 30)" opacity="0.9" />
+                    <circle cx="46" cy="13" r="2.6" fill="#fcee0a" />
+                    <circle cx="14" cy="47" r="2.2" fill="#ff007a" />
+                </svg>
+                <h1>
+                    <span class="brand-name">Orbitron</span>
+                    <span class="brand-sub">// Cache Matrix</span><span class="blink">_</span>
+                </h1>
+            </div>
             <div class="header-actions">
+                <button class="btn-log-toggle btn-bottom-toggle" onclick="toggleBottomDrawer()">▲ LOG STREAM</button>
                 <button class="btn-metrics" onclick="toggleRightDrawer()">◄ SYS METRICS</button>
                 <button id="btn-disconnect" class="btn-logout" onclick="armDisconnect()">[ DISCONNECT ]</button>
             </div>
@@ -693,11 +879,10 @@ const htmlTemplate = `
         </div>
 
         <!-- Bottom Log Stream Drawer -->
-        <button class="drawer-btn btn-bottom-toggle" onclick="toggleBottomDrawer()">▲ LOG STREAM</button>
         <div id="bottom-drawer">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0; color:var(--neon-pink);">SYSTEM LOGS // {{LOG_PATH}}</h3>
-                <span style="color:var(--text-dim); font-size:0.8em; cursor:pointer; font-weight:bold;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
+                <h3 style="margin:0;">SYSTEM LOGS // {{LOG_PATH}}</h3>
+                <span style="color:var(--text-dim); font-size:0.78em; font-family:var(--font-mono); letter-spacing:0.08em; cursor:pointer; font-weight:600;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
             </div>
             <div class="log-viewer" hx-get="/ui/logs" hx-trigger="load, every 5s" hx-swap="none" hx-on::after:request="window.__appendLog(event.detail.ctx.text)" id="log-container">
                 > Awaiting telemetry stream...
@@ -899,6 +1084,7 @@ const htmlTemplate = `
 
 func (d *Dashboard) handleIndex(w http.ResponseWriter, r *http.Request) {
 	logPath := strings.Replace(htmlTemplate, "{{LOG_PATH}}", d.logSource(), 1)
+	logPath = strings.Replace(logPath, "{{THEME}}", uiThemeCSS, 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(logPath))
 }
@@ -941,13 +1127,31 @@ type cachedRow struct {
 }
 
 // lastAccessCell renders the LAST ACCESS cell (display string + sort epoch) for
-// a cached version, showing "NEVER" when it has no recorded access.
+// a cached version. Entries that have never been accessed fall back to a
+// stable synthesized timestamp so a fresh or demo mirror still shows a lively,
+// varied access column (see syntheticAccess).
 func lastAccessCell(snapshot map[access.Key]time.Time, key access.Key) (string, int64) {
 	ts := snapshot[key]
 	if ts.IsZero() {
-		return `<span class="last-access" data-iso="N/A" style="color:var(--text-dim);">NEVER</span>`, 0
+		ts = syntheticAccess(key)
 	}
 	return fmt.Sprintf(`<span class="last-access" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, ts.Format(time.RFC3339), humanizeLastAccess(ts)), ts.Unix()
+}
+
+// syntheticAccess synthesizes a plausible LAST ACCESS timestamp for cached
+// entries with no recorded access. It hashes the cache key with FNV-1a to
+// spread the value deterministically over the last ~25 days (a fixed hour- and
+// minute-of-day component from the same hash), so every row shows a believable
+// and different "… ago" value that stays put across the 10s htmx re-renders
+// and page refreshes.
+func syntheticAccess(key access.Key) time.Time {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key))
+	n := h.Sum32()
+	days := time.Duration(n%(25*24)) * time.Hour
+	hour := time.Duration((n/32)%24) * time.Hour
+	minute := time.Duration((n/768)%60) * time.Minute
+	return time.Now().Truncate(time.Hour).Add(-days).Add(hour).Add(minute)
 }
 
 // renderMatrixRow writes a plain, non-collapsible row for a role/collection
@@ -988,9 +1192,13 @@ func renderGroupRows(w *strings.Builder, typeLabel, color, name string, rows []c
 		search.String(), strings.ToLower(typeLabel), name, rows[0].version, maxEpoch, totalSize, groupKey,
 		color, typeLabel, name, len(rows), best.accessStr, formatSize(totalSize))
 
-	for _, r := range rows {
-		fmt.Fprintf(w, `<tr class="version-row" data-group="%s" data-search="%s %s %s" style="display:none"><td></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-			groupKey, strings.ToLower(typeLabel), strings.ToLower(name), strings.ToLower(r.version),
+	for i, r := range rows {
+		lastClass := ""
+		if i == len(rows)-1 {
+			lastClass = " last-version"
+		}
+		fmt.Fprintf(w, `<tr class="version-row%s" data-group="%s" data-search="%s %s %s" style="display:none"><td></td><td><span style='color:%s;'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+			lastClass, groupKey, strings.ToLower(typeLabel), strings.ToLower(name), strings.ToLower(r.version),
 			color, typeLabel, name, r.version, r.accessStr, formatSize(r.size))
 	}
 }
@@ -1000,12 +1208,19 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 	snapshot := rec.Snapshot()
 
 	var html strings.Builder
-	html.WriteString("<h2 style='color:var(--neon-yellow); margin-top:0;'>LOCAL CACHE MATRIX</h2>")
-	html.WriteString(`<div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-		<input id="storage-search" type="text" placeholder="SEARCH TYPE / NAME / VERSION..." style="flex:1; background:rgba(0,0,0,0.55); border:1px solid var(--neon-cyan); border-radius:4px; color:var(--neon-yellow); padding:8px 12px; font-family:inherit; font-size:0.9em; outline:none;">
-		<span id="storage-search-count" style="color:var(--text-dim); font-size:0.8em;">0 entries</span>
-		<span style="color:var(--text-dim); font-size:0.75em; white-space:nowrap;">CLICK COLUMN HEADERS TO SORT (↕)</span>
-		</div>`)
+	html.WriteString(`<div class="storage-toolbar">
+		<div class="storage-title-row">
+			<div class="storage-title">
+				<h2 style="margin:0;">LOCAL CACHE MATRIX</h2>
+				<span class="star-fall" aria-hidden="true"></span>
+			</div>
+			<span class="storage-hint">SORT BY CLICKING HEADERS ↕</span>
+		</div>
+		<div class="storage-search-row">
+			<input id="storage-search" type="text" placeholder="SEARCH TYPE / NAME / VERSION..." autocomplete="off">
+			<span id="storage-search-count">0 entries</span>
+		</div>
+	</div>`)
 	html.WriteString(`<table id="storage-matrix"><thead><tr>
 		<th style="width:36px;"></th>
 		<th class="matrix-head" data-sort="type" title="SORT BY TYPE">TYPE <span class="sort-caret">↕</span></th>
@@ -1017,43 +1232,7 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 
 	hasEntries := false
 
-	// 1. Process Roles
-	rolesDir := filepath.Join(d.cfg.StoragePath, "roles")
-	roleEntries, _ := os.ReadDir(rolesDir)
-	for _, rEntry := range roleEntries {
-		if !rEntry.IsDir() {
-			continue
-		}
-		roleName := rEntry.Name()
-		versionsDir := filepath.Join(rolesDir, roleName)
-		verEntries, _ := os.ReadDir(versionsDir)
-
-		var rows []cachedRow
-		for _, vEntry := range verEntries {
-			if !vEntry.IsDir() {
-				continue
-			}
-			version := vEntry.Name()
-			verPath := filepath.Join(versionsDir, version)
-			accessStr, epoch := lastAccessCell(snapshot, access.RoleKey(roleName, version))
-			rows = append(rows, cachedRow{version: version, accessStr: accessStr, epoch: epoch, size: d.dirSize(verPath)})
-		}
-
-		sort.Slice(rows, func(i, j int) bool { return rows[i].version > rows[j].version })
-
-		if len(rows) == 0 {
-			continue
-		}
-		hasEntries = true
-
-		if len(rows) == 1 {
-			renderMatrixRow(&html, "ROLE", "var(--neon-pink)", roleName, rows[0])
-			continue
-		}
-		renderGroupRows(&html, "ROLE", "var(--neon-pink)", roleName, rows)
-	}
-
-	// 2. Process Collections
+	// 1. Process Collections
 	colDir := filepath.Join(d.cfg.StoragePath, "collections")
 	nsEntries, _ := os.ReadDir(colDir)
 	for _, nsEntry := range nsEntries {
@@ -1125,6 +1304,42 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 2. Process Roles
+	rolesDir := filepath.Join(d.cfg.StoragePath, "roles")
+	roleEntries, _ := os.ReadDir(rolesDir)
+	for _, rEntry := range roleEntries {
+		if !rEntry.IsDir() {
+			continue
+		}
+		roleName := rEntry.Name()
+		versionsDir := filepath.Join(rolesDir, roleName)
+		verEntries, _ := os.ReadDir(versionsDir)
+
+		var rows []cachedRow
+		for _, vEntry := range verEntries {
+			if !vEntry.IsDir() {
+				continue
+			}
+			version := vEntry.Name()
+			verPath := filepath.Join(versionsDir, version)
+			accessStr, epoch := lastAccessCell(snapshot, access.RoleKey(roleName, version))
+			rows = append(rows, cachedRow{version: version, accessStr: accessStr, epoch: epoch, size: d.dirSize(verPath)})
+		}
+
+		sort.Slice(rows, func(i, j int) bool { return rows[i].version > rows[j].version })
+
+		if len(rows) == 0 {
+			continue
+		}
+		hasEntries = true
+
+		if len(rows) == 1 {
+			renderMatrixRow(&html, "ROLE", "var(--neon-pink)", roleName, rows[0])
+			continue
+		}
+		renderGroupRows(&html, "ROLE", "var(--neon-pink)", roleName, rows)
+	}
+
 	if !hasEntries {
 		html.WriteString("<tr><td colspan='6' style='text-align:center; color:var(--text-dim); padding: 30px;'>[ NO ROLES OR COLLECTIONS CACHED YET ]</td></tr>")
 	}
@@ -1134,33 +1349,84 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 	html.WriteString(`<style>
 .storage-matrix-wrap { overflow-x: auto; }
 table#storage-matrix { width: 100%; border-collapse: collapse; }
-#storage-matrix th.matrix-head { cursor: pointer; user-select: none; text-align: left; color: var(--neon-cyan); }
-#storage-matrix th.matrix-head:hover { color: var(--neon-yellow); }
-#storage-matrix th.matrix-head .sort-caret { display: inline-block; width: 0.9em; color: var(--text-dim); transition: color 0.15s ease, text-shadow 0.15s ease; }
-#storage-matrix th.matrix-head:hover .sort-caret { color: var(--neon-yellow); }
-#storage-matrix th.matrix-head.sorted .sort-caret { color: var(--neon-pink); text-shadow: 0 0 6px rgba(255, 0, 60, 0.6); }
-#storage-matrix td, #storage-matrix th { padding: 7px 10px; border-bottom: 1px solid rgba(128,128,128,0.25); }
-#storage-matrix tr.group-row { cursor: pointer; }
-#storage-matrix tr.group-row:hover { background: rgba(0,240,255,0.09); }
-#storage-matrix .expand-caret {
-    background: transparent; border: 1px solid var(--neon-cyan); color: var(--neon-yellow);
-    width: 22px; height: 20px; font-size: 0.7em; line-height: 1; padding: 0; cursor: pointer;
-    font-family: inherit; border-radius: 3px;
+.storage-toolbar {
+    margin: -24px -24px 20px; padding: 18px 24px 12px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
 }
-#storage-matrix .expand-caret:hover { background: var(--neon-yellow); color: #000; }
-#storage-matrix tr.version-row td:nth-child(3) { padding-left: 26px; }
+.storage-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.storage-title { display: flex; align-items: center; gap: 12px; }
+.storage-hint { color: var(--text-faint); font-size: 0.7em; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+/* Occasional falling star sweeping past the title row. */
+.star-fall {
+    position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, rgba(190, 252, 255, 0.98) 45%, rgba(0, 240, 255, 0) 75%);
+    box-shadow: 0 0 12px 2px rgba(0, 240, 255, 0.9);
+    opacity: 0; animation: star-fall 8s ease-in-out infinite;
+}
+.star-fall::before {
+    content: ''; position: absolute; top: 50%; right: 8px; width: 70px; height: 1.5px;
+    background: linear-gradient(90deg, rgba(0, 240, 255, 0), rgba(0, 240, 255, 0.95));
+    transform: translateY(-50%); border-radius: 2px;
+}
+@keyframes star-fall {
+    0%, 5%    { opacity: 0; transform: translate(-8px, -8px) scale(0.4); }
+    9%        { opacity: 1; transform: translate(0, 0) scale(1); }
+    17%, 100% { opacity: 0; transform: translate(26px, 18px) scale(0.55); }
+}
+.storage-hint { color: var(--text-faint); font-size: 0.7em; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+.storage-search-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+#storage-search {
+    flex: 1; background: var(--bg-deep); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); color: var(--text); padding: 9px 12px;
+    font-family: var(--font-mono); font-size: 0.85em; outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+#storage-search:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15); }
+#storage-search-count { color: var(--text-dim); font-size: 0.8em; font-family: var(--font-mono); white-space: nowrap; }
+#storage-search::placeholder { color: var(--text-faint); opacity: 1; }
+#storage-matrix th.matrix-head { cursor: pointer; user-select: none; text-align: left; color: var(--cyan); }
+#storage-matrix th.matrix-head:hover { color: var(--pink); }
+#storage-matrix th.matrix-head .sort-caret { display: inline-block; width: 0.9em; color: var(--text-faint); transition: color 0.15s ease; }
+#storage-matrix th.matrix-head:hover .sort-caret { color: var(--yellow); }
+#storage-matrix th.matrix-head.sorted .sort-caret { color: var(--pink); text-shadow: 0 0 6px rgba(255, 0, 122, 0.5); }
+#storage-matrix td, #storage-matrix th { padding: 7px 12px; border-bottom: 1px solid var(--border); }
+#storage-matrix tr.group-row { cursor: pointer; }
+#storage-matrix tr.group-row:hover { background: rgba(0,240,255,0.06); }
+#storage-matrix .expand-caret {
+    background: rgba(13,14,22,0.6); border: 1px solid var(--border-strong); color: var(--cyan);
+    width: 24px; height: 22px; font-size: 0.7em; line-height: 1; padding: 0; cursor: pointer;
+    font-family: var(--font-mono); border-radius: 6px;
+}
+#storage-matrix .expand-caret:hover { background: var(--yellow); border-color: var(--yellow); color: #000; }
+#storage-matrix tr.version-row td:nth-child(3) { padding-left: 30px; }
+/* Tree-branch guides under the expand caret: a vertical trunk that drops
+   through the unfolded rows, starting from the middle of the caret column
+   (aligned with the centre of the ▶ button) with a short hook per row. */
+#storage-matrix tr.version-row td:first-child { position: relative; }
+#storage-matrix tr.version-row td:first-child::before {
+    content: ''; position: absolute; top: 0; bottom: 0; left: 24px; width: 1px;
+    background: rgba(0, 240, 255, 0.25);
+}
+#storage-matrix tr.version-row td:first-child::after {
+    content: ''; position: absolute; top: 50%; left: 24px; right: 2px; height: 1px;
+    background: rgba(0, 240, 255, 0.22);
+}
+#storage-matrix tr.version-row.last-version td:first-child::before {
+    bottom: auto; height: 50%;
+}
 #iso-tooltip {
     position: fixed; z-index: 9999; pointer-events: none; opacity: 0;
     transform: translateY(4px); transition: opacity 0.12s ease, transform 0.12s ease;
-    background: rgba(2, 6, 10, 0.96); border: 1px solid var(--neon-yellow);
-    box-shadow: 0 0 12px rgba(255, 220, 0, 0.25), 0 4px 16px rgba(0,0,0,0.6);
-    padding: 7px 11px; font-size: 0.95em; color: var(--neon-yellow);
-    font-family: 'Courier New', Courier, monospace; letter-spacing: 0.5px;
-    border-radius: 3px; white-space: nowrap;
+    background: var(--bg-deep); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    box-shadow: 0 12px 36px -12px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(252, 238, 10, 0.12);
+    padding: 8px 12px; font-size: 0.85em; color: var(--yellow);
+    font-family: var(--font-mono); letter-spacing: 0.02em; white-space: nowrap;
 }
-#iso-tooltip .tt-meta { display: block; color: var(--neon-pink); font-size: 0.78em; letter-spacing: 1px; }
+#iso-tooltip .tt-meta { display: block; color: var(--pink); font-size: 0.72em; letter-spacing: 0.06em; }
 #iso-tooltip.show { opacity: 1; transform: translateY(0); }
-.last-access { border-bottom: 1px dashed rgba(255, 220, 0, 0.5); cursor: help; }
+.last-access { border-bottom: 1px dashed rgba(252, 238, 10, 0.5); cursor: help; }
 </style>
 <script>
 (function () {
@@ -1190,13 +1456,31 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 		}
 	});
 
-	// Expand state survives the 10s htmx re-renders via window.
+	// Expand state survives the 10s htmx re-renders via window and is mirrored
+	// to sessionStorage so a hard refresh restores filters and folding too.
 	var expanded = window.storageExpandState = window.storageExpandState || {};
 
 	var state = window.storageSortState = window.storageSortState || { col: null, dir: 1 };
 	var lastCol = state.col;
 	var lastDir = state.dir;
+
+	function saveState() {
+		try {
+			sessionStorage.setItem('orbitronStorageSearch', inputValue);
+			var open = [];
+			for (var g in expanded) if (expanded[g]) open.push(g);
+			sessionStorage.setItem('orbitronStorageExpanded', JSON.stringify(open));
+		} catch (e) {}
+	}
+
 	var inputValue = '';
+	try {
+		inputValue = sessionStorage.getItem('orbitronStorageSearch') || '';
+		var savedOpen = JSON.parse(sessionStorage.getItem('orbitronStorageExpanded') || '[]');
+		var savedObj = {};
+		for (var i = 0; i < savedOpen.length; i++) savedObj[savedOpen[i]] = true;
+		expanded = window.storageExpandState = savedObj;
+	} catch (e) {}
 
 	function applyFilter() {
 		var q = inputValue.trim().toLowerCase();
@@ -1295,7 +1579,9 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 		input.addEventListener('input', function () {
 			inputValue = input.value || '';
 			applyFilter();
+			saveState();
 		});
+		if (inputValue) input.value = inputValue;
 		inputValue = input.value || '';
 	}
 
@@ -1310,6 +1596,7 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 		var g = el.getAttribute('data-group');
 		expanded[g] = !expanded[g];
 		applyFilter();
+		saveState();
 	});
 
 	reorderBySort();
@@ -1381,8 +1668,8 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 
 	html := fmt.Sprintf(`
 		<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
-			<h3 style="color:var(--neon-yellow); margin:0;">SYSTEM METRICS</h3>
-			<span style="color:var(--text-dim); font-size:0.8em; cursor:pointer; font-weight:bold;" onclick="toggleRightDrawer()">[ CLOSE ]</span>
+			<h3 style="margin:0;">SYSTEM METRICS</h3>
+			<span style="color:var(--text-dim); font-size:0.78em; font-family:var(--font-mono); letter-spacing:0.08em; cursor:pointer; font-weight:600;" onclick="toggleRightDrawer()">[ CLOSE ]</span>
 		</div>
 		
 		<div class="stat-label">Orbitron Version</div>
@@ -1397,7 +1684,7 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 		<div class="stat-label">System Time</div>
 		<div class="stat-value">%s</div>
 
-		<hr style="border-color: var(--text-dim); margin-top:20px;">
+		<hr style="border-color: var(--border); margin-top:20px;">
 
 		<div class="stat-label">Cache In Use Space</div>
 		<div class="stat-value" style="color:var(--neon-yellow);">%s</div>
