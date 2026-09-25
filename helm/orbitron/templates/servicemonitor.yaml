@@ -1,0 +1,27 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "orbitron.fullname" . }}
+  {{- with .Values.serviceMonitor.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "orbitron.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "orbitron.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      {{- if .Values.serviceMonitor.bearerTokenSecret }}
+      bearerTokenSecret:
+        name: {{ .Values.serviceMonitor.bearerTokenSecret }}
+        key: {{ .Values.serviceMonitor.bearerTokenSecretKey | default "token" }}
+      {{- end }}
+{{- end }}

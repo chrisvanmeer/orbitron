@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+  Visit the dashboard through your ingress host:
+    http://{{ (index .Values.ingress.hosts 0).host }}
+{{- else }}
+  The service is only reachable inside the cluster. Forward it to look around:
+
+    kubectl port-forward svc/{{ include "orbitron.fullname" . }} 8080:{{ .Values.service.port }}
+    open http://localhost:8080/ui
+{{- end }}
+
+1. Fetch the admin token (only printed on first start, then persisted in the
+   volume):
+
+    kubectl logs {{ include "orbitron.fullname" . }}-0 | grep "ADMIN TOKEN"
+
+{{- if .Values.env.autoToken | eq "false" }}
+   Note: auto-token generation is disabled; provide tokens.json yourself (see
+   values.existingTokensSecret) and mount it into the pod.
+{{- end }}
+
+2. Point Ansible at the mirror:
+
+    # ansible.cfg
+    [galaxy_client]
+    galaxy_server = http://{{ .Values.ingress.enabled | ternary (index .Values.ingress.hosts 0).host (printf "%s.%s.svc.cluster.local:%d" (include "orbitron.fullname" .) .Release.Namespace .Values.service.port) }}
+    # token = YOUR_ORBITRON_TOKEN   # uncomment if require_auth_pull is true
+
+3. Storage persists in the StatefulSet volume claim; the cache, the access
+   index and tokens.json survive pod restarts and upgrades.
+
+You can install with inline values:
+    helm install orbitron ./helm/orbitron \
+      --set ingress.enabled=true \
+      --set ingress.hosts[0].host=mirror.internal

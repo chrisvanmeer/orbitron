@@ -117,6 +117,22 @@ $ cd orbitron
 $ nomad run orbitron.nomad.hcl
 $ nomad status orbitron`}</CodeBlock>
 
+	<h3>Kubernetes (Helm)</h3>
+	<p>
+		The repo ships a ready-made Helm chart at <code>helm/orbitron</code> — a
+		<code>StatefulSet</code> (one replica by default) with a persistent volume for the cache
+		and admin token, a ClusterIP <code>Service</code> on <code>:8080</code>,
+		<code>/healthz</code> readiness/liveness probes, and an optional NGINX
+		<code>Ingress</code>. Clone the repo and install from the clone:
+	</p>
+	<CodeBlock label="DEPLOY" filename="terminal" lang="bash">{`$ git clone https://github.com/chrisvanmeer/orbitron.git
+$ cd orbitron
+$ helm install orbitron ./helm/orbitron
+$ kubectl logs orbitron-0 | grep "ADMIN TOKEN"   # first start only
+# custom values: see helm/orbitron/values.yaml
+$ helm install orbitron ./helm/orbitron --set ingress.enabled=true \
+  --set ingress.hosts[0].host=mirror.internal`}</CodeBlock>
+
 	<h3>CLI &amp; tokens</h3>
 	<CodeBlock label="CLI" filename="terminal" lang="bash">{`# Generate an administrative Bearer token
 sudo orbitron --generate-token

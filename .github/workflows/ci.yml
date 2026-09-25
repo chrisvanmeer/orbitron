@@ -31,6 +31,28 @@ jobs:
           config: '.markdownlint.json'
           globs: '**/*.md'
 
+  lint-helm:
+    name: Lint Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Helm
+        run: |
+          curl -fsSL https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz \
+            | tar -xz -C /tmp
+          sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+      - name: Lint chart
+        run: helm lint helm/orbitron
+      - name: Render default chart
+        run: helm template orbitron-default helm/orbitron > /dev/null
+      - name: Smoke-render optional branches
+        run: |
+          helm template orbitron-test helm/orbitron -f tools/render-values.yaml > /tmp/render.yaml
+          grep -q '^kind: StatefulSet' /tmp/render.yaml
+          grep -q '^kind: Ingress' /tmp/render.yaml
+          grep -q '^kind: ServiceMonitor' /tmp/render.yaml
+          grep -q '^kind: Secret' /tmp/render.yaml
+
   build-site:
     name: Build & Smoke-test Site
     runs-on: ubuntu-latest

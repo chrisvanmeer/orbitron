@@ -938,7 +938,7 @@ is persisted in `<storage>/tokens.json`, so it only appears once.
 ### Docker Compose example
 
 The repo ships a ready-made `docker-compose.yml` at its root. Clone the repo
-(it also contains the Nomad jobspec and this Ansible collection), then start
+(it also contains the Nomad jobspec, the Helm chart and this Ansible collection), then start
 Orbitron from the clone:
 
 ```bash
@@ -1035,6 +1035,58 @@ the `-bind-allocation` Docker networking modes; port `http` maps onto the
 container's `:8080`. The jobspec includes commented `ORBITRON_TLS_CA_FILE` /
 `ORBITRON_TLS_INSECURE_SKIP_TLS_VERIFY` examples for trusting a private CA (see
 "TLS & private CAs").
+
+---
+
+## Kubernetes (Helm)
+
+Deploy Orbitron on Kubernetes with the bundled Helm chart (`helm/orbitron`, in
+the repo root — clone the repo first, then install from the clone):
+
+```bash
+git clone https://github.com/chrisvanmeer/orbitron.git
+cd orbitron
+helm install orbitron ./helm/orbitron
+```
+
+The chart deploys a **StatefulSet** (default `replicaCount: 1` — keep it at
+one unless you have investigated mirror races on the shared volume) with a
+`volumeClaimTemplates`-provisioned **PersistentVolumeClaim** at `/data`, so the
+mirror cache, `.access.json` and the admin token survive pod restarts and
+upgrades. A ClusterIP `Service` (`:8080`), `/healthz` readiness/liveness
+probes, and an optional NGINX `Ingress` are wired up out of the box. It runs
+the same GHCR image as Docker/Nomad, so `config.yml` is rendered from
+`ORBITRON_*` environment variables — no config file to mount.
+
+On first start the admin token is generated and printed to the pod logs (then
+persisted in `tokens.json` on the volume):
+
+```bash
+kubectl logs orbitron-0 | grep "ADMIN TOKEN"
+```
+
+Or install with inline values, e.g. behind a reverse proxy:
+
+```bash
+helm install orbitron ./helm/orbitron \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=mirror.internal \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=Prefix
+```
+
+Every `ORBITRON_*` knob maps to a `values.yaml` key (`env.*`), covering the
+proxy settings, the outbound TLS policy (inline `env.tls.caBundle` or an
+existing Secret), and SSO/OIDC (`oidc.*`, with the client secret referenced
+from an existing Secret or rendered into a generated one). SSO login also
+expects the redirect URI (`https://mirror.internal/ui/oidc/callback`) to be
+registered in Keycloak and reachable from the browser. A pre-created
+`tokens.json` can be mounted via `existingTokensSecret` instead of the
+auto-generated one, and a `ServiceMonitor` for Prometheus Operator is generated
+when `serviceMonitor.enabled` is set.
+
+See `helm/orbitron/values.yaml` for the full setting reference — it documents
+every key with the same defaults the container entrypoint uses.
 
 ---
 
