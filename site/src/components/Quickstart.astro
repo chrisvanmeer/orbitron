@@ -159,8 +159,10 @@ server_list = orbitron
 [galaxy_server.orbitron]
 url = https://orbitron.internal/api/
 # token = YOUR_ORBITRON_TOKEN  # if require_auth_pull`}</CodeBlock>
-				<CodeBlock label="FETCH" filename="terminal" lang="bash">{`$ ansible-galaxy role install -r roles_requirements.yml
-$ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock>
+				<CodeBlock label="FETCH" filename="terminal" lang="bash">{`# install the roles
+ansible-galaxy role install -r roles_requirements.yml
+# install the collections
+ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock>
 			</div>
 		</div>
 
@@ -196,6 +198,30 @@ $ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock
 			panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === tab.dataset.path));
 		});
 	});
+
+	const flowGrid = document.querySelector('.flow-grid');
+	const equalizeByRow = () => {
+		if (!flowGrid) return;
+		const cols = [...flowGrid.querySelectorAll<HTMLElement>(':scope > div')];
+		const cardCols = cols.map((c) => [...c.querySelectorAll<HTMLElement>('.codeblock')]);
+		const maxCols = Math.max(0, ...cardCols.map((c) => c.length));
+		for (let i = 0; i < maxCols; i++) {
+			const row = cardCols.map((c) => c[i]).filter(Boolean);
+			if (row.length < 2) continue;
+			let max = 0;
+			row.forEach((c) => {
+				c.style.height = 'auto';
+				max = Math.max(max, c.offsetHeight);
+			});
+			row.forEach((c) => {
+				c.style.height = `${max}px`;
+			});
+		}
+	};
+	if (flowGrid) {
+		equalizeByRow();
+		window.addEventListener('resize', equalizeByRow);
+	}
 </script>
 
 <style>
@@ -290,8 +316,6 @@ $ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock
 
 	.flow-grid > div {
 		min-width: 0;
-		display: flex;
-		flex-direction: column;
 	}
 
 	.note {
@@ -353,10 +377,6 @@ $ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock
 
 	.flow-grid :global(.codeblock + .codeblock) {
 		margin-top: 1rem;
-	}
-
-	.flow-grid :global(.codeblock) {
-		flex: 1 1 auto;
 	}
 
 	@media (max-width: 900px) {
