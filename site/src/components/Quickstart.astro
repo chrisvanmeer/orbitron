@@ -86,6 +86,108 @@ $ ansible-playbook -i hosts orbitron_daemon.yml
 #   chrisvanmeer.orbitron.orbitron_mirror # declare roles/collections`,
 	},
 ];
+
+const proxies = [
+	{
+		id: 'apache',
+		label: 'Apache',
+		file: '/etc/httpd/conf.d/orbitron.conf',
+		language: 'conf',
+		code: `<VirtualHost *:443>
+    ServerName orbitron.example.com
+
+    SSLEngine on
+    SSLCertificateFile    /etc/letsencrypt/live/orbitron.example.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/orbitron.example.com/privkey.pem
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+    ProxyTimeout 300
+
+    ProxyPass        / http://127.0.0.1:8080/ retry=0
+    ProxyPassReverse / http://127.0.0.1:8080/
+
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-For  "%{REMOTE_ADDR}s"
+</VirtualHost>`,
+	},
+	{
+		id: 'caddy',
+		label: 'Caddy',
+		file: 'Caddyfile',
+		language: 'conf',
+		code: `orbitron.example.com {
+    # Caddy sets X-Forwarded-Proto / X-Forwarded-For automatically
+    reverse_proxy 127.0.0.1:8080
+}`,
+	},
+	{
+		id: 'haproxy',
+		label: 'HAProxy',
+		file: '/etc/haproxy/haproxy.cfg',
+		language: 'conf',
+		code: `frontend orbitron
+    bind :443 ssl crt /etc/haproxy/certs/orbitron.pem
+    default_backend orbitron_backend
+
+backend orbitron_backend
+    option forwardfor
+    option httpchk GET /healthz
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    timeout server 5m
+    server orbitron 127.0.0.1:8080 check inter 10s`,
+	},
+	{
+		id: 'nginx',
+		label: 'Nginx',
+		file: '/etc/nginx/sites-available/orbitron',
+		language: 'conf',
+		code: `server {
+    listen 443 ssl;
+    http2 on;
+    server_name orbitron.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/orbitron.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/orbitron.example.com/privkey.pem;
+
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8080;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    }
+
+    location = /healthz {
+        proxy_pass http://127.0.0.1:8080/healthz;
+    }
+}`,
+	},
+	{
+		id: 'traefik',
+		label: 'Traefik',
+		file: 'traefik.yml',
+		language: 'conf',
+		code: `http:
+  routers:
+    orbitron:
+      rule: "Host(\`orbitron.example.com\`)"
+      service: orbitron
+      tls:
+        certResolver: letsencrypt
+  services:
+    orbitron:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:8080
+        # Traefik sets X-Forwarded-* automatically
+        healthCheck:
+          path: /healthz
+          interval: 10s`,
+	},
+];
 ---
 
 <section class="section" id="quickstart">
@@ -100,7 +202,7 @@ $ ansible-playbook -i hosts orbitron_daemon.yml
 			</p>
 		</div>
 
-		<div class="qs-card card" data-quickstart>
+		<div class="qs-card card" data-tabs data-quickstart>
 			<div class="tabs" role="tablist" aria-label="Installation paths">
 				{
 					paths.map((p, i) => (
@@ -181,21 +283,51 @@ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock>
 				tokens and any git credentials in mirrored <code>src</code> URLs encrypted in transit.
 			</p>
 		</div>
+
+		<h3 class="flow-title proxy-head">Reverse proxy one-pagers</h3>
+		<p class="flow-sub">
+			Terminate TLS in front of the daemon — same config as the docs, copy-paste ready.
+		</p>
+		<div class="qs-card card" data-tabs>
+			<div class="tabs" role="tablist" aria-label="Reverse proxy configs">
+				{
+					proxies.map((p, i) => (
+						<button
+							class:list={['tab', { active: i === 0 }]}
+							role="tab"
+							aria-selected={i === 0 ? 'true' : 'false'}
+							data-path={p.id}
+						>
+							{p.label}
+						</button>
+					))
+				}
+			</div>
+
+			{
+				proxies.map((p, i) => (
+					<div class:list={['path', { active: i === 0 }]} data-panel={p.id}>
+						<CodeBlock label={p.label.toUpperCase()} filename={p.file} lang={p.language}>{p.code}</CodeBlock>
+					</div>
+				))
+			}
+		</div>
 	</div>
 </section>
 
 <script>
-	const root = document.querySelector('[data-quickstart]');
-	const tabs = root.querySelectorAll('[role="tab"]');
-	const panels = root.querySelectorAll('[data-panel]');
+	document.querySelectorAll('[data-tabs]').forEach((root) => {
+		const tabs = root.querySelectorAll('[role="tab"]');
+		const panels = root.querySelectorAll('[data-panel]');
 
-	tabs.forEach((tab) => {
-		tab.addEventListener('click', () => {
-			tabs.forEach((t) => {
-				t.classList.toggle('active', t === tab);
-				t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+		tabs.forEach((tab) => {
+			tab.addEventListener('click', () => {
+				tabs.forEach((t) => {
+					t.classList.toggle('active', t === tab);
+					t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+				});
+				panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === tab.dataset.path));
 			});
-			panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === tab.dataset.path));
 		});
 	});
 
@@ -367,6 +499,10 @@ ansible-galaxy collection install -r collections_requirements.yml`}</CodeBlock>
 		font-weight: 600;
 		letter-spacing: 0.02em;
 		color: var(--cyan);
+	}
+
+	.proxy-head {
+		margin-top: 2.4rem;
 	}
 
 	.flow-sub {

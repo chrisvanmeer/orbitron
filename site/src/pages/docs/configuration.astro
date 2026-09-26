@@ -73,13 +73,97 @@ no_proxy: "localhost,127.0.0.1,.example.com"`}</CodeBlock>
 	</p>
 	<Note>
 		<p>
-			<strong>Reverse proxy skin:</strong> run the daemon bound to <code>127.0.0.1</code> behind
-			Nginx, Traefik or HAProxy, and terminate TLS there. Orbitron honors
-			<code>X-Forwarded-Proto</code> / <code>X-Forwarded-For</code>; point your load balancer
-			health check at the unauthenticated <code>GET /healthz</code>. A full Nginx example lives
-			in the <a href="https://github.com/chrisvanmeer/orbitron/blob/main/README.md" target="_blank" rel="noopener">README</a>.
+			<strong>Reverse proxy skin:</strong> run the daemon bound to <code>127.0.0.1</code> and
+			terminate TLS in front of it. Orbitron honors <code>X-Forwarded-Proto</code> /
+			<code>X-Forwarded-For</code>; point your load balancer health check at the unauthenticated
+			<code>GET /healthz</code>. Complete examples for Apache, Caddy, HAProxy, Nginx and Traefik
+			are in the <a href="#reverse-proxy">reverse proxy section</a> below, and a full Nginx
+			example lives in the <a href="https://github.com/chrisvanmeer/orbitron/blob/main/README.md" target="_blank" rel="noopener">README</a>.
 		</p>
 	</Note>
+
+	<h3 id="reverse-proxy">Reverse proxy</h3>
+	<p>
+		Run the daemon bound to <code>127.0.0.1</code> and terminate TLS in front of it. Orbitron
+		honors <code>X-Forwarded-Proto</code> / <code>X-Forwarded-For</code>, so download URLs and
+		client IPs stay correct behind a proxy. Point your load balancer health check at the
+		unauthenticated <code>GET /healthz</code>.
+	</p>
+
+	<CodeBlock label="APACHE" filename="/etc/httpd/conf.d/orbitron.conf" lang="conf">{`# Requires: mod_proxy, mod_proxy_http, mod_ssl, mod_headers
+<VirtualHost *:443>
+    ServerName orbitron.example.com
+
+    SSLEngine on
+    SSLCertificateFile    /etc/letsencrypt/live/orbitron.example.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/orbitron.example.com/privkey.pem
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+    ProxyTimeout 300
+
+    ProxyPass        / http://127.0.0.1:8080/ retry=0
+    ProxyPassReverse / http://127.0.0.1:8080/
+
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-For  "%{REMOTE_ADDR}s"
+</VirtualHost>`}</CodeBlock>
+
+	<CodeBlock label="CADDY" filename="Caddyfile" lang="conf">{`orbitron.example.com {
+    # Caddy sets X-Forwarded-Proto / X-Forwarded-For automatically
+    reverse_proxy 127.0.0.1:8080
+}`}</CodeBlock>
+
+	<CodeBlock label="HAPROXY" filename="/etc/haproxy/haproxy.cfg" lang="conf">{`frontend orbitron
+    bind :443 ssl crt /etc/haproxy/certs/orbitron.pem
+    default_backend orbitron_backend
+
+backend orbitron_backend
+    option forwardfor
+    option httpchk GET /healthz
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    timeout server 5m
+    server orbitron 127.0.0.1:8080 check inter 10s`}</CodeBlock>
+
+	<CodeBlock label="NGINX" filename="/etc/nginx/sites-available/orbitron" lang="conf">{`server {
+    listen 443 ssl;
+    http2 on;
+    server_name orbitron.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/orbitron.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/orbitron.example.com/privkey.pem;
+
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8080;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    }
+
+    location = /healthz {
+        proxy_pass http://127.0.0.1:8080/healthz;
+    }
+}`}</CodeBlock>
+
+	<CodeBlock label="TRAEFIK" filename="traefik.yml" lang="conf">{`http:
+  routers:
+    orbitron:
+      rule: "Host(\`orbitron.example.com\`)"
+      service: orbitron
+      tls:
+        certResolver: letsencrypt
+  services:
+    orbitron:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:8080
+        # Traefik sets X-Forwarded-* automatically
+        healthCheck:
+          path: /healthz
+          interval: 10s`}</CodeBlock>
 
 	<h3>SSO / OIDC (Keycloak)</h3>
 	<p>
