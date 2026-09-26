@@ -35,16 +35,23 @@ const highlights = [
 				<div class="browser-bar">
 					<span class="dots"><span></span><span></span><span></span></span>
 					<span class="addr">grafana // orbitron overview</span>
+					<span class="zoom-hint">↗ click for full size</span>
 				</div>
-				<Image
-					src={grafanaPng}
-					alt="Orbitron Grafana dashboard screenshot"
-					width={3024}
-					height={1898}
-					widths={[640, 1024, 1600, 3024]}
-					sizes="(min-width: 900px) min(65vw, 62rem), 100vw"
-					loading="lazy"
-				/>
+				<a class="grafa-img-open" href={grafanaPng.src} title="Open the Grafana dashboard screenshot at full size">
+					<Image
+						src={grafanaPng}
+						alt="Orbitron Grafana dashboard screenshot"
+						width={3024}
+						height={1898}
+						widths={[640, 1024, 1600, 3024]}
+						sizes="(min-width: 900px) min(100%, 94rem), 100vw"
+						loading="lazy"
+					/>
+				</a>
+			</div>
+
+			<div class="grafa-lightbox" role="dialog" aria-modal="true" aria-label="Grafana dashboard screenshot, zoomed in">
+				<img data-full src={grafanaPng.src} alt="Orbitron Grafana dashboard screenshot, full size" />
 			</div>
 
 			<ul class="grafa-list">
@@ -61,6 +68,26 @@ const highlights = [
 	</div>
 </section>
 
+<script>
+	document.querySelectorAll('.grafa-img-open').forEach((a) => {
+		a.addEventListener('click', (e) => {
+			e.preventDefault();
+			const lb = document.querySelector('.grafa-lightbox');
+			if (!lb) {
+				window.open(a.href, '_blank', 'noopener');
+				return;
+			}
+			lb.classList.add('open');
+		});
+	});
+	document.querySelectorAll('.grafa-lightbox').forEach((lb) => {
+		lb.addEventListener('click', () => lb.classList.remove('open'));
+		lb.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape') lb.classList.remove('open');
+		});
+	});
+</script>
+
 <style>
 	.grafa {
 		background: linear-gradient(180deg, transparent, rgba(13, 14, 22, 0.5) 20%, rgba(13, 14, 22, 0.5) 80%, transparent);
@@ -68,8 +95,8 @@ const highlights = [
 
 	.grafa-grid {
 		display: grid;
-		grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-		gap: 2.2rem;
+		grid-template-columns: 1fr;
+		gap: 1.7rem;
 		align-items: start;
 	}
 
@@ -115,17 +142,54 @@ const highlights = [
 		margin-inline: auto;
 	}
 
+	.zoom-hint {
+		font-family: var(--font-mono);
+		font-size: 0.62rem;
+		color: rgba(255, 0, 122, 0.75);
+		letter-spacing: 0.06em;
+	}
+
+	.grafa-img-open {
+		display: block;
+		cursor: zoom-in;
+		outline: none;
+	}
+	.grafa-img-open:focus-visible img {
+		box-shadow: 0 0 0 2px var(--pink);
+	}
+
 	.browser img {
 		width: 100%;
 		height: auto;
+	}
+
+	.grafa-lightbox {
+		position: fixed;
+		inset: 0;
+		z-index: 200;
+		display: none;
+		align-items: center;
+		justify-content: center;
+		padding: 2.2rem;
+		background: rgba(2, 4, 10, 0.92);
+		cursor: zoom-out;
+	}
+	.grafa-lightbox.open { display: flex; }
+	.grafa-lightbox img {
+		max-width: 100%;
+		max-height: 100%;
+		width: auto;
+		height: auto;
+		border-radius: var(--radius);
+		box-shadow: 0 30px 90px -20px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 0, 122, 0.2);
 	}
 
 	.grafa-list {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 		gap: 0.9rem;
 	}
 
@@ -154,11 +218,5 @@ const highlights = [
 	.grafa-item p {
 		font-size: 0.87rem;
 		color: var(--text-dim);
-	}
-
-	@media (max-width: 900px) {
-		.grafa-grid {
-			grid-template-columns: 1fr;
-		}
 	}
 </style>
