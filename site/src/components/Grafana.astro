@@ -15,6 +15,10 @@ const highlights = [
 		t: 'Overview stats',
 		d: 'Uptime, namespaces, tokens and more in stat panels — two visual variants ship in the repo.',
 	},
+	{
+		t: 'Heavy hitters',
+		d: 'A ranked table of the largest cached versions by on-disk footprint — the items that actually drive your capacity plan, at a glance.',
+	},
 ];
 ---
 
@@ -56,10 +60,13 @@ const highlights = [
 
 			<ul class="grafa-list">
 				{
-					highlights.map((h) => (
+					highlights.map((h, i) => (
 						<li class="grafa-item">
-							<h3>{h.t}</h3>
-							<p>{h.d}</p>
+							<span class="grafa-num">0{i + 1}</span>
+							<div class="grafa-body">
+								<h3>{h.t}</h3>
+								<p>{h.d}</p>
+							</div>
 						</li>
 					))
 				}
@@ -145,7 +152,7 @@ const highlights = [
 	.zoom-hint {
 		font-family: var(--font-mono);
 		font-size: 0.62rem;
-		color: rgba(255, 0, 122, 0.75);
+		color: rgba(0, 240, 255, 0.75);
 		letter-spacing: 0.06em;
 	}
 
@@ -186,37 +193,82 @@ const highlights = [
 
 	.grafa-list {
 		list-style: none;
-		margin: 0;
+		margin: 1.75rem 0 0;
 		padding: 0;
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: 0.9rem;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 1rem;
 	}
 
 	.grafa-item {
-		padding: 1.1rem 1.2rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		align-items: flex-start;
+		padding: 1.2rem 1.2rem;
 		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
-		transition: border-color 0.2s ease, transform 0.2s ease;
+		position: relative;
+		overflow: hidden;
+		transition: transform 0.2s ease, border-color 0.2s ease;
 	}
 
 	.grafa-item:hover {
-		border-color: rgba(255, 0, 122, 0.35);
-		transform: translateY(-2px);
+		transform: translateY(-3px);
+		border-color: var(--border-strong);
 	}
 
-	.grafa-item h3 {
-		font-size: 0.95rem;
-		color: var(--pink);
+	.grafa-item::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		background: linear-gradient(180deg, var(--cyan), var(--pink));
+		opacity: 0.7;
+	}
+
+	.grafa-num {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.08);
+		border: 1px solid rgba(0, 240, 255, 0.25);
+		border-radius: 8px;
+		padding: 0.2rem 0.45rem;
+		white-space: nowrap;
+	}
+
+	.grafa-body {
+		min-width: 0;
+	}
+
+	.grafa-body h3 {
+		font-size: 0.98rem;
+		margin-bottom: 0.35rem;
+		color: var(--cyan);
 		font-family: var(--font-mono);
 		font-weight: 600;
-		margin-bottom: 0.35rem;
 		letter-spacing: 0.02em;
 	}
 
-	.grafa-item p {
+	.grafa-body p {
 		font-size: 0.87rem;
 		color: var(--text-dim);
+	}
+
+	@media (max-width: 960px) {
+		.grafa-list {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	@media (max-width: 560px) {
+		.grafa-list {
+			grid-template-columns: 1fr;
+		}
 	}
 </style>

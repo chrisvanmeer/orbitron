@@ -5,7 +5,7 @@ import uiPng from '../assets/ui.png';
 const highlights = [
 	{
 		t: 'Cache Matrix',
-		d: 'Every cached role and collection with sortable TYPE / NAME / VERSION / LAST ACCESS / DISK USAGE columns, live search, DENSITY and ALL / ROLES / COLLECTIONS filters, LATEST pills on newest versions, fresh-access pulses, keyboard shortcuts, and collapsed multi-version rows that unfold on click.',
+		d: 'Every cached role and collection with sortable TYPE / NAME / VERSION / LAST ACCESS / DISK USAGE columns, live search, filters, LATEST pills, fresh-access pulses and collapsed multi-version rows that unfold on click.',
 	},
 	{
 		t: 'Tail-f log stream',
@@ -14,10 +14,6 @@ const highlights = [
 	{
 		t: 'System telemetry',
 		d: 'The ◄ SYS METRICS sidebar reports uplink status, cache activity, cache disk usage, mount free space, OS, architecture and last boot, plus a 14-day access sparkline. Auto-refreshing.',
-	},
-	{
-		t: 'Live sync status',
-		d: 'A header indicator tracks background mirror jobs — cyan when idle, spinning while syncing, red on failure — with a ⟳ SYNC button to force a full re-sync on demand.',
 	},
 	{
 		t: 'Air-gap friendly',
@@ -64,10 +60,13 @@ const highlights = [
 
 		<ul class="dash-list">
 			{
-				highlights.map((h) => (
+				highlights.map((h, i) => (
 					<li class="dash-item">
-						<h3>{h.t}</h3>
-						<p>{h.d}</p>
+						<span class="dash-num">0{i + 1}</span>
+						<div class="dash-body">
+							<h3>{h.t}</h3>
+							<p>{h.d}</p>
+						</div>
 					</li>
 				))
 			}
@@ -194,37 +193,82 @@ const highlights = [
 
 	.dash-list {
 		list-style: none;
-		margin: 0;
+		margin: 1.75rem 0 0;
 		padding: 0;
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: 0.9rem;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 1rem;
 	}
 
 	.dash-item {
-		padding: 1.1rem 1.2rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		align-items: flex-start;
+		padding: 1.2rem 1.2rem;
 		background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
-		transition: border-color 0.2s ease, transform 0.2s ease;
+		position: relative;
+		overflow: hidden;
+		transition: transform 0.2s ease, border-color 0.2s ease;
 	}
 
 	.dash-item:hover {
-		border-color: rgba(0, 240, 255, 0.35);
-		transform: translateY(-2px);
+		transform: translateY(-3px);
+		border-color: var(--border-strong);
 	}
 
-	.dash-item h3 {
-		font-size: 0.95rem;
+	.dash-item::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		background: linear-gradient(180deg, var(--cyan), var(--pink));
+		opacity: 0.7;
+	}
+
+	.dash-num {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: var(--cyan);
+		background: rgba(0, 240, 255, 0.08);
+		border: 1px solid rgba(0, 240, 255, 0.25);
+		border-radius: 8px;
+		padding: 0.2rem 0.45rem;
+		white-space: nowrap;
+	}
+
+	.dash-body {
+		min-width: 0;
+	}
+
+	.dash-body h3 {
+		font-size: 0.98rem;
+		margin-bottom: 0.35rem;
 		color: var(--cyan);
 		font-family: var(--font-mono);
 		font-weight: 600;
-		margin-bottom: 0.35rem;
 		letter-spacing: 0.02em;
 	}
 
-	.dash-item p {
+	.dash-body p {
 		font-size: 0.87rem;
 		color: var(--text-dim);
+	}
+
+	@media (max-width: 960px) {
+		.dash-list {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	@media (max-width: 560px) {
+		.dash-list {
+			grid-template-columns: 1fr;
+		}
 	}
 </style>
