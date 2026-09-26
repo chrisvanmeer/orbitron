@@ -177,7 +177,7 @@ func main() {
 			if err := srv.Shutdown(ctx); err != nil {
 				logger.Error("Error shutting down server: %v", err)
 			}
-			logger.Info("Orbitron stopped gracefully")
+			logger.Info("Orbitron stopped gracefully (version %s)", build.Version)
 			return
 		}
 	}

@@ -9,7 +9,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"orbitron/internal/access"
 	"orbitron/internal/auth"
 	"orbitron/internal/config"
 	"orbitron/internal/oidc"
@@ -388,8 +390,83 @@ func TestHandleLogsWithoutFile(t *testing.T) {
 	}
 }
 
-// TestTailFileHandlesLargeLineCounts verifies tailFile keeps working when the
-// requested line count spans many times the initial 64KiB read window.
+// TestRenderLogLineISOPrefix verifies the viewer parses the daemon's ISO-8601
+// "[LEVEL] <ts> message" shape into distinct spans (level first, then the short
+// ISO timestamp, then the message), with a plain space after the level tag.
+func TestRenderLogLineISOPrefix(t *testing.T) {
+	line := "[INFO] 2026-09-25T05:09:41 Orbitron server listening on 0.0.0.0:8080"
+	got := renderLogLine(line)
+
+	if !strings.Contains(got, `class="log-level log-level-info">[INFO]</span> <span class="log-ts">2026-09-25T05:09:41</span>`) {
+		t.Fatalf("expected level then space then ISO ts spans\n%s", got)
+	}
+	if !strings.Contains(got, `class="log-msg">Orbitron server listening on 0.0.0.0:8080</span>`) {
+		t.Fatalf("expected plain message span\n%s", got)
+	}
+}
+
+// TestRenderLogLineFallsBackForbareLines keeps non-logger lines (e.g. status
+// hints) rendering as plain message spans without decoration.
+func TestRenderLogLineFallsBackForbareLines(t *testing.T) {
+	if got := renderLogLine("> File logging is disabled"); got != `<span class="log-msg">&gt; File logging is disabled</span>` {
+		t.Fatalf("bare line should render as a single message span\n%s", got)
+	}
+}
+
+// TestLastAccessCellNeverAccessed is the "honest mirror" contract: cached
+// versions that have never been served show a dash, an N/A ISO marker and sort
+// at epoch 0, never a made-up timestamp.
+func TestLastAccessCellNeverAccessed(t *testing.T) {
+	cell, epoch := lastAccessCell(nil, access.CollectionKey("community.aws", "1.0.0"))
+	if epoch != 0 {
+		t.Fatalf("never-accessed row must sort at epoch 0, got %d", epoch)
+	}
+	if !strings.Contains(cell, `data-iso="N/A"`) {
+		t.Fatalf("expected N/A ISO marker\n%s", cell)
+	}
+	if strings.Contains(cell, "ago") {
+		t.Fatalf("never-accessed cell must not claim an 'ago' value\n%s", cell)
+	}
+}
+
+// TestLastAccessCellRecordedKeepsFreshMarker verifies a genuine recorded access
+// still renders the humanized value with the fresh pulse when recent.
+func TestLastAccessCellRecordedKeepsFreshMarker(t *testing.T) {
+	now := time.Now()
+	cell, epoch := lastAccessCell(map[access.Key]time.Time{
+		access.RoleKey("geerlingguy.nginx", "3.3.1"): now.Add(-2 * time.Minute),
+	}, access.RoleKey("geerlingguy.nginx", "3.3.1"))
+	if !strings.Contains(cell, "last-access fresh") {
+		t.Fatalf("expected fresh pulse class within the first hour\n%s", cell)
+	}
+	if epoch == 0 {
+		t.Fatalf("recorded access must produce a non-zero sort epoch")
+	}
+	_ = cell
+}
+
+// TestAccessActivitySparkline verifies empty mirrors render the NO ACTIVITY
+// plate while real accesses produce a shaped SVG (fill + line + dots) with a
+// max/day caption.
+func TestAccessActivitySparkline(t *testing.T) {
+	if got := accessActivitySparkline(nil, 14); !strings.Contains(got, "NO ACTIVITY YET") {
+		t.Fatalf("empty history should render the no-activity plate\n%s", got)
+	}
+
+	now := time.Now()
+	var ts []time.Time
+	for i := 0; i < 3; i++ {
+		ts = append(ts, now.Add(time.Duration(-i)*time.Hour))
+	}
+	out := accessActivitySparkline(ts, 14)
+	if !strings.Contains(out, `fill="url(#spark-fill)"`) {
+		t.Fatalf("expected gradient fill under the activity line\n%s", out)
+	}
+	if !strings.Contains(out, "max 3/day") {
+		t.Fatalf("expected max/day caption\n%s", out)
+	}
+}
+
 func TestTailFileHandlesLargeLineCounts(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "orbitron.log")

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"hash/fnv"
 	"html"
 	"net/http"
 	"os"
@@ -837,11 +836,14 @@ const htmlTemplate = `
         }
         .sync-trigger:hover { color: var(--cyan); border-color: var(--cyan); }
         .log-download {
-            background: rgba(13, 14, 22, 0.6); color: var(--text-dim); border: 1px solid var(--border-strong);
-            border-radius: var(--radius-sm); padding: 4px 10px; cursor: pointer; font-family: var(--font-mono);
-            font-size: 0.8rem; transition: color 0.15s ease, border-color 0.15s ease;
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(13, 14, 22, 0.6); color: var(--cyan); border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm); padding: 6px 10px; cursor: pointer; font-family: var(--font-mono);
+            font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+            transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
         }
-        .log-download:hover { color: var(--yellow); border-color: var(--yellow); }
+        .log-download:hover { color: var(--yellow); border-color: var(--yellow); box-shadow: 0 0 12px -4px rgba(252, 238, 10, 0.6); }
+        .log-download svg { flex: none; }
         #log-filter:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15); }
 
         .stat-label { color: var(--text-dim); font-size: 0.7rem; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.14em; margin-top: 18px; }
@@ -880,10 +882,48 @@ const htmlTemplate = `
             80% { transform: translate(3px, 2px); }
         }
         .app-layout.shaking { animation: secret-shake 0.35s ease; }
+        /* Rare whole-viewport shooting star (interval driven from JS). */
+        #star-shower {
+            position: fixed; inset: 0; overflow: hidden; pointer-events: none;
+            z-index: 9997;
+        }
+        .falling-star {
+            position: absolute; top: -16px; width: 8px; height: 8px; border-radius: 50%;
+            background: radial-gradient(circle, #fff 0%, rgba(190, 252, 255, 0.98) 42%, rgba(0, 240, 255, 0) 74%);
+            box-shadow: 0 0 12px 3px rgba(0, 240, 255, 0.85), 0 0 26px 6px rgba(120, 220, 255, 0.35);
+            animation: falling 1.9s cubic-bezier(0.25, 0.05, 0.55, 1) forwards;
+            will-change: transform, opacity;
+        }
+        .falling-star::before {
+            content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+            bottom: 100%; width: 3px; height: 190px;
+            background: linear-gradient(180deg, rgba(120, 235, 255, 0) 0%, rgba(120, 235, 255, 0.55) 55%, rgba(230, 255, 255, 1) 100%);
+            border-radius: 3px;
+            clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+        }
+        .falling-star::after {
+            content: ''; position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px;
+            border-radius: 50%; pointer-events: none;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(160, 240, 255, 0.4) 28%, rgba(0, 240, 255, 0) 62%);
+            opacity: 0; transform: scale(0.1);
+            animation: atmos-flash 0.55s ease-out var(--flash-delay, 0s) forwards;
+        }
+        @keyframes atmos-flash {
+            0%   { opacity: 0; transform: scale(0.1); }
+            15%  { opacity: 1; }
+            100% { opacity: 0; transform: scale(1.7); }
+        }
+        @keyframes falling {
+            0%   { transform: translate3d(0, 0, 0) rotate(var(--angle)) scale(0.3); opacity: 0; }
+            6%   { opacity: 1; }
+            45%  { transform: translate3d(calc(var(--drift) * 0.45), 42vh, 0) rotate(var(--angle)) scale(1); opacity: 1; }
+            100% { transform: translate3d(var(--drift), 106vh, 0) rotate(var(--angle)) scale(1); opacity: 0; }
+        }
     </style>
 </head>
 <body>
     <div class="app-layout">
+        <div id="star-shower" aria-hidden="true"></div>
         <div id="orbitron-secret">
             <pre>&lt; O R B I T R O N /&gt;
                 <span class="secret-sub">// IT'S ORBITRONING TIME - CHRIS VAN MEER</span>
@@ -917,8 +957,8 @@ const htmlTemplate = `
             </div>
         </div>
 
-        <!-- Fullscreen Local Cache Matrix -->
-        <div class="main-workspace" hx-get="/ui/storage" hx-trigger="load, every 10s">
+        <!-- Fullscreen Local Cache Matrix (auto-refresh via its own checkbox) -->
+        <div id="main-workspace" class="main-workspace" hx-get="/ui/storage" hx-trigger="load">
             <h2>[ Scanning Cache Matrix... ]</h2>
         </div>
 
@@ -933,7 +973,7 @@ const htmlTemplate = `
                 <h3 style="margin:0;">SYSTEM LOGS // {{LOG_PATH}}</h3>
                 <div style="display:flex; align-items:center; gap:10px;">
                     <input id="log-filter" type="text" placeholder="FILTER LOGS... (LEVEL / TEXT)" autocomplete="off" style="background:var(--bg-deep); border:1px solid var(--border-strong); border-radius:var(--radius-sm); color:var(--text); padding:5px 10px; font-family:var(--font-mono); font-size:0.75em; outline:none; width:240px;">
-                    <button id="log-download" class="log-download" onclick="downloadLogs()" title="Download log buffer as .txt">⭳</button>
+                    <button id="log-download" class="log-download" onclick="downloadLogs()" title="Download log buffer as .txt" aria-label="Download log buffer as .txt"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></svg> TXT</button>
                     <span style="color:var(--text-dim); font-size:0.78em; font-family:var(--font-mono); letter-spacing:0.08em; cursor:pointer; font-weight:600;" onclick="toggleBottomDrawer()">[ CLOSE ]</span>
                 </div>
             </div>
@@ -991,12 +1031,15 @@ const htmlTemplate = `
             }
         }
 
-        // Secret mode: typing "orbitron" (in quick succession) fires the easter egg.
+        // Secret mode: typing "orbitron" (in quick succession, outside form
+        // fields) fires the easter egg. Inputs never trigger it, so typing in
+        // the log filter stays a normal filter.
         (function () {
             var seq = 'orbitron';
             var pos = 0;
             var lastTs = 0;
             document.addEventListener('keydown', function (e) {
+                if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
                 var now = Date.now();
                 if (now - lastTs > 1200) pos = 0;
                 lastTs = now;
@@ -1028,6 +1071,30 @@ const htmlTemplate = `
                     setTimeout(function () {
                         title.innerHTML = 'Orbitron // Cache Matrix<span class="blink">_</span>';
                     }, 600);
+                }
+            });
+        })();
+
+        // Typing "starz" fires a shooting star on demand (same rule as the
+        // orbitron egg: never while typing inside an INPUT or TEXTAREA).
+        (function () {
+            var seq = 'starz';
+            var pos = 0;
+            var lastTs = 0;
+            document.addEventListener('keydown', function (e) {
+                if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+                var now = Date.now();
+                if (now - lastTs > 1200) pos = 0;
+                lastTs = now;
+                var ch = (e.key || String.fromCharCode(e.keyCode)).toLowerCase();
+                if (ch !== seq[pos]) {
+                    pos = (ch === seq[0]) ? 1 : 0;
+                } else {
+                    pos++;
+                }
+                if (pos >= seq.length) {
+                    pos = 0;
+                    if (window.__orbitronShootStar) window.__orbitronShootStar();
                 }
             });
         })();
@@ -1122,6 +1189,9 @@ const htmlTemplate = `
                 if (buf.length > MAX_BUF) buf = buf.slice(buf.length - MAX_BUF);
                 window.__logLines = buf;
                 rePin();
+                // Freshly appended lines must honour the active filter too,
+                // otherwise polling would leak unhidden lines back in.
+                if (window.__applyLogFilter) window.__applyLogFilter();
             };
 
             if (typeof MutationObserver !== 'undefined') {
@@ -1179,19 +1249,22 @@ const htmlTemplate = `
             setInterval(tick, 10000);
         })();
 
-        // Log filter + download utilities for the SYSTEM LOGS drawer.
+        // Log filter + download utilities for the SYSTEM LOGS drawer. The filter is
+        // exposed on window so freshly appended log batches re-apply it.
         (function () {
             const filter = document.getElementById('log-filter');
             const container = document.getElementById('log-container');
             if (!filter || !container) return;
-            filter.addEventListener('input', function () {
+            const applyLogFilter = function () {
                 const q = filter.value.trim().toLowerCase();
                 const divs = container.querySelectorAll('.log-line');
                 for (let i = 0; i < divs.length; i++) {
                     const d = divs[i];
                     d.style.display = (!q || (d.textContent || '').toLowerCase().indexOf(q) !== -1) ? '' : 'none';
                 }
-            });
+            };
+            filter.addEventListener('input', applyLogFilter);
+            window.__applyLogFilter = applyLogFilter;
             window.downloadLogs = function () {
                 const lines = window.__logLines || [];
                 const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
@@ -1203,6 +1276,36 @@ const htmlTemplate = `
                 document.body.removeChild(a);
                 URL.revokeObjectURL(a.href);
             };
+        })();
+
+        // Rare whole-viewport shooting star. It spawns high above the page and
+        // falls diagonally across the entire window (over the table too) once
+        // every 10 minutes by default. window.__orbitronShootStar() fires one
+        // on demand while testing.
+        (function () {
+            const shower = document.getElementById('star-shower');
+            if (!shower) return;
+            const STAR_INTERVAL_MS = 10 * 60 * 1000;
+            function shoot() {
+                const s = document.createElement('div');
+                s.className = 'falling-star';
+                const dir = (Math.random() < 0.5) ? -1 : 1;
+                const driftVw = dir * (16 + Math.random() * 26);
+                const lean = (-dir * 22) + (Math.random() * 10 - 5);
+                s.style.left = (20 + Math.random() * 56) + 'vw';
+                s.style.setProperty('--drift', driftVw + 'vw');
+                s.style.setProperty('--angle', lean + 'deg');
+                const dur = 1.5 + Math.random() * 0.8;
+                s.style.animationDuration = dur + 's';
+                s.style.animationDelay = (Math.random() * 0.25) + 's';
+                s.style.setProperty('--flash-delay', (dur * 0.45).toFixed(2) + 's');
+                shower.appendChild(s);
+                setTimeout(function () {
+                    if (s.parentNode) s.parentNode.removeChild(s);
+                }, (dur + 0.6) * 1000);
+            }
+            window.__orbitronShootStar = shoot;
+            setInterval(shoot, STAR_INTERVAL_MS);
         })();
     </script>
 </body>
@@ -1254,38 +1357,19 @@ type cachedRow struct {
 }
 
 // lastAccessCell renders the LAST ACCESS cell (display string + sort epoch) for
-// a cached version. Entries that have never been accessed fall back to a
-// stable synthesized timestamp so a fresh or demo mirror still shows a lively,
-// varied access column (see syntheticAccess).
+// a cached version. Versions with no recorded access (freshly cached but never
+// served to a client yet) show an em-dash instead of a made-up timestamp: the
+// mirror only knows when content was actually pulled, so it never invents one.
 func lastAccessCell(snapshot map[access.Key]time.Time, key access.Key) (string, int64) {
-	ts := snapshot[key]
-	fresh := false
-	if ts.IsZero() {
-		ts = syntheticAccess(key)
-	} else if time.Since(ts) < time.Hour {
-		fresh = true
+	ts, ok := snapshot[key]
+	if !ok || ts.IsZero() {
+		return `<span class="last-access" data-iso="N/A" style="color:var(--text-faint);">—</span>`, 0
 	}
 	cls := "last-access"
-	if fresh {
+	if time.Since(ts) < time.Hour {
 		cls += " fresh"
 	}
 	return fmt.Sprintf(`<span class="%s" data-iso="%s" style="color:var(--neon-yellow);">%s</span>`, cls, ts.Format(time.RFC3339), humanizeLastAccess(ts)), ts.Unix()
-}
-
-// syntheticAccess synthesizes a plausible LAST ACCESS timestamp for cached
-// entries with no recorded access. It hashes the cache key with FNV-1a to
-// spread the value deterministically over the last ~25 days (a fixed hour- and
-// minute-of-day component from the same hash), so every row shows a believable
-// and different "… ago" value that stays put across the 10s htmx re-renders
-// and page refreshes.
-func syntheticAccess(key access.Key) time.Time {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	n := h.Sum32()
-	days := time.Duration(n%(25*24)) * time.Hour
-	hour := time.Duration((n/32)%24) * time.Hour
-	minute := time.Duration((n/768)%60) * time.Minute
-	return time.Now().Truncate(time.Hour).Add(-days).Add(hour).Add(minute)
 }
 
 // renderMatrixRow writes a plain, non-collapsible row for a role/collection
@@ -1357,16 +1441,16 @@ func (d *Dashboard) handleStorage(w http.ResponseWriter, r *http.Request) {
 		<div class="storage-title-row">
 			<div class="storage-title">
 				<h2 style="margin:0;">LOCAL CACHE MATRIX</h2>
-				<span class="star-fall" aria-hidden="true"></span>
 			</div>
 			<div class="storage-actions">
+				<label class="auto-refresh-toggle" title="Auto-reload the table data every 10s"><input type="checkbox" id="auto-refresh"> AUTO REFRESH</label>
 				<button id="density-toggle" type="button" class="density-toggle" title="Toggle row density">DENSITY: COMFORTABLE</button>
 				<span class="storage-hint">SORT BY CLICKING HEADERS ↕</span>
 			</div>
 		</div>
 		<div class="storage-search-row">
 			<div class="type-chips" role="group" aria-label="Filter by type">
-				<button type="button" class="type-chip active" data-type="all">ALL</button>
+				<button type="button" class="type-chip" data-type="all">ALL</button>
 				<button type="button" class="type-chip" data-type="role">ROLES</button>
 				<button type="button" class="type-chip" data-type="collection">COLLECTIONS</button>
 			</div>
@@ -1511,24 +1595,6 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 .storage-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .storage-title { display: flex; align-items: center; gap: 12px; }
 .storage-hint { color: var(--text-faint); font-size: 0.7em; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
-/* Occasional falling star sweeping past the title row. */
-.star-fall {
-    position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-    background: radial-gradient(circle, #fff 0%, rgba(190, 252, 255, 0.98) 45%, rgba(0, 240, 255, 0) 75%);
-    box-shadow: 0 0 12px 2px rgba(0, 240, 255, 0.9);
-    opacity: 0; animation: star-fall 8s ease-in-out infinite;
-}
-.star-fall::before {
-    content: ''; position: absolute; top: 50%; right: 8px; width: 70px; height: 1.5px;
-    background: linear-gradient(90deg, rgba(0, 240, 255, 0), rgba(0, 240, 255, 0.95));
-    transform: translateY(-50%); border-radius: 2px;
-}
-@keyframes star-fall {
-    0%, 5%    { opacity: 0; transform: translate(-8px, -8px) scale(0.4); }
-    9%        { opacity: 1; transform: translate(0, 0) scale(1); }
-    17%, 100% { opacity: 0; transform: translate(26px, 18px) scale(0.55); }
-}
-.storage-hint { color: var(--text-faint); font-size: 0.7em; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
 .storage-search-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 #storage-search {
     flex: 1; background: var(--bg-deep); border: 1px solid var(--border-strong);
@@ -1545,12 +1611,13 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 #storage-matrix th.matrix-head:hover .sort-caret { color: var(--yellow); }
 #storage-matrix th.matrix-head.sorted .sort-caret { color: var(--pink); text-shadow: 0 0 6px rgba(255, 0, 122, 0.5); }
 #storage-matrix td, #storage-matrix th { padding: 7px 12px; border-bottom: 1px solid var(--border); }
-#storage-matrix tr.group-row { cursor: pointer; }
+#storage-matrix tr.group-row { cursor: default; }
 #storage-matrix tr.group-row:hover { background: rgba(0,240,255,0.06); }
 #storage-matrix .expand-caret {
     background: rgba(13,14,22,0.6); border: 1px solid var(--border-strong); color: var(--cyan);
-    width: 24px; height: 22px; font-size: 0.7em; line-height: 1; padding: 0; cursor: pointer;
+    width: 24px; height: 22px; font-size: 0.7em; line-height: 1; padding: 3px 0 5px 0; cursor: pointer;
     font-family: var(--font-mono); border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
 }
 #storage-matrix .expand-caret:hover { background: var(--yellow); border-color: var(--yellow); color: #000; }
 #storage-matrix tr.version-row td:nth-child(3) { padding-left: 30px; }
@@ -1589,6 +1656,25 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 }
 .density-toggle:hover { color: var(--yellow); border-color: var(--yellow); }
 .density-toggle.compact { color: var(--cyan); border-color: var(--cyan); }
+.auto-refresh-toggle {
+    display: inline-flex; align-items: center; gap: 7px; color: var(--text-dim);
+    font-family: var(--font-mono); font-size: 0.68em; letter-spacing: 0.1em; cursor: pointer;
+    white-space: nowrap; user-select: none;
+}
+.auto-refresh-toggle input {
+    appearance: none; width: 13px; height: 13px; border: 1px solid var(--border-strong);
+    border-radius: 4px; background: rgba(13,14,22,0.6); margin: 0; cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    position: relative;
+}
+.auto-refresh-toggle input:checked {
+    border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.14); background: rgba(0,240,255,0.15);
+}
+.auto-refresh-toggle input:checked::after {
+    content: ''; position: absolute; left: 3px; top: 1px; width: 4px; height: 7px;
+    border: solid var(--cyan); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.auto-refresh-toggle:hover { color: var(--cyan); }
 .type-chips { display: flex; gap: 6px; flex-shrink: 0; }
 .type-chip {
     background: rgba(13,14,22,0.6); border: 1px solid var(--border-strong); color: var(--text-dim);
@@ -1830,22 +1916,24 @@ tr.storage-empty td .empty-stars { color: var(--yellow); letter-spacing: 0.4em; 
 		inputValue = input.value || '';
 	}
 
-	// Clicking a group row (or its caret) folds all of its versions in or out.
+	// Clicking the expand caret folds a group row in or out. Clicking anywhere
+	// else on the row does nothing, so dense rows stay predictable.
 	tbody.addEventListener('click', function (evt) {
-		var el = evt.target;
-		while (el && el !== tbody && !(el.tagName === 'TR' && el.getAttribute('data-group'))) {
-			el = el.parentElement;
-		}
-		if (!el || el === tbody) return;
-		if (el.classList && el.classList.contains('version-row')) return;
+		var caret = evt.target.closest ? evt.target.closest('.expand-caret') : null;
+		if (!caret) return;
+		var el = caret.closest ? caret.closest('tr[data-group]') : null;
+		if (!el || el.classList.contains('version-row')) return;
 		var g = el.getAttribute('data-group');
 		expanded[g] = !expanded[g];
 		applyFilter();
 		saveState();
 	});
 
-	// Type filter chips (ALL / ROLES / COLLECTIONS).
+	// Type filter chips (ALL / ROLES / COLLECTIONS). The active chip is rebuilt
+	// from session state on every re-render so auto-refresh never falls back to
+	// the server-rendered ALL chip.
 	var chipEls = document.querySelectorAll('.type-chip');
+	for (var c = 0; c < chipEls.length; c++) chipEls[c].classList.remove('active');
 	for (var c = 0; c < chipEls.length; c++) {
 		chipEls[c].addEventListener('click', function () {
 			typeFilter = this.getAttribute('data-type');
@@ -1871,6 +1959,40 @@ tr.storage-empty td .empty-stars { color: var(--yellow); letter-spacing: 0.4em; 
 			saveState();
 		});
 	}
+
+	// Auto-refresh: a checkbox (default off, persisted in localStorage) that
+	// polls only the table data. The interval is re-armed on every htmx
+	// re-render; density, chips, search and folding survive intact, and the
+	// metrics drawer + log stream keep their own independent cadence.
+	var autoRefreshEl = document.getElementById('auto-refresh');
+	var autoOn = false;
+	try {
+		autoOn = localStorage.getItem('orbitronAutoRefresh') === '1';
+	} catch (e) {}
+	function scheduleAutoRefresh() {
+		if (window.__autoRefreshTimer) {
+			clearInterval(window.__autoRefreshTimer);
+			window.__autoRefreshTimer = null;
+		}
+		if (!autoOn) {
+			try { localStorage.setItem('orbitronAutoRefresh', '0'); } catch (e) {}
+			return;
+		}
+		window.__autoRefreshTimer = setInterval(function () {
+			if (window.htmx && window.htmx.ajax) {
+				window.htmx.ajax('GET', '/ui/storage', { target: '#main-workspace', swap: 'innerHTML' });
+			}
+		}, 10000);
+	}
+	if (autoRefreshEl) {
+		autoRefreshEl.checked = autoOn;
+		autoRefreshEl.addEventListener('change', function () {
+			autoOn = autoRefreshEl.checked;
+			try { localStorage.setItem('orbitronAutoRefresh', autoOn ? '1' : '0'); } catch (e) {}
+			scheduleAutoRefresh();
+		});
+	}
+	scheduleAutoRefresh();
 
 	// Empty-state row shown when search or type filters match nothing.
 	var emptyRow = document.createElement('tr');
@@ -1978,15 +2100,11 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve every cached version's access timestamp the same way the matrix
-	// does (recorded value, or the deterministic synthesized fallback) so the
-	// sparkline and the LAST ACCESS column tell the same story.
+	// Access history = recorded touches only. Versions that were cached but
+	// never served are not activity, so the sparkline and the LAST ACCESS
+	// column report real pulls and nothing else.
 	var accessTs []time.Time
-	for _, key := range cacheKeys(d.cfg.StoragePath) {
-		ts := snapshot[key]
-		if ts.IsZero() {
-			ts = syntheticAccess(key)
-		}
+	for _, ts := range snapshot {
 		accessTs = append(accessTs, ts)
 	}
 
@@ -2056,54 +2174,12 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
-// cacheKeys enumerates every cached collection and role version key, mirroring
-// the storage layout the cache matrix renders. It is used by the metrics
-// drawer so the access-activity sparkline reflects the same surface that the
-// matrix shows (synthesized fallbacks included).
-func cacheKeys(storagePath string) []access.Key {
-	var keys []access.Key
-	colDir := filepath.Join(storagePath, "collections")
-	if nsEntries, err := os.ReadDir(colDir); err == nil {
-		for _, nsEntry := range nsEntries {
-			if !nsEntry.IsDir() {
-				continue
-			}
-			nsPath := filepath.Join(colDir, nsEntry.Name())
-			files, _ := os.ReadDir(nsPath)
-			for _, f := range files {
-				if f.IsDir() || !strings.HasSuffix(f.Name(), ".tar.gz") {
-					continue
-				}
-				filename := strings.TrimSuffix(f.Name(), ".tar.gz")
-				remainder := strings.TrimPrefix(filename, nsEntry.Name()+"-")
-				if lastHyphen := strings.LastIndex(remainder, "-"); lastHyphen != -1 {
-					keys = append(keys, access.CollectionKey(nsEntry.Name()+"."+remainder[:lastHyphen], remainder[lastHyphen+1:]))
-				}
-			}
-		}
-	}
-	rolesDir := filepath.Join(storagePath, "roles")
-	if roleEntries, err := os.ReadDir(rolesDir); err == nil {
-		for _, roleEntry := range roleEntries {
-			if !roleEntry.IsDir() {
-				continue
-			}
-			versionsDir := filepath.Join(rolesDir, roleEntry.Name())
-			verEntries, _ := os.ReadDir(versionsDir)
-			for _, vEntry := range verEntries {
-				if vEntry.IsDir() {
-					keys = append(keys, access.RoleKey(roleEntry.Name(), vEntry.Name()))
-				}
-			}
-		}
-	}
-	return keys
-}
-
 // accessActivitySparkline renders a small inline SVG histogram of cache
-// accesses bucketed per day over the last `days` days (oldest on the left).
-// Zero-count buckets between real accesses still render a flat baseline so
-// sparse mirrors stay legible.
+// accesses bucketed per day over the last `days` days (oldest on the left):
+// a gradient-filled area under a polyline, a "now" marker on the newest day
+// and a baseline so sparse mirrors stay legible. Days with zero pulls stay at
+// the baseline; a mirror that never served anything renders a NO ACTIVITY plate
+// instead of pretending there was traffic.
 func accessActivitySparkline(timestamps []time.Time, days int) string {
 	if days < 2 {
 		days = 14
@@ -2132,26 +2208,42 @@ func accessActivitySparkline(timestamps []time.Time, days int) string {
 
 	var b strings.Builder
 	if max == 0 {
-		b.WriteString(`<svg width="280" height="44" viewBox="0 0 280 44" aria-label="No cache activity"><line x1="4" y1="40" x2="276" y2="40" stroke="rgba(0,240,255,0.35)" stroke-width="1"/><text x="140" y="24" text-anchor="middle" fill="var(--text-faint)" font-family="var(--font-mono)" font-size="10">NO ACTIVITY</text></svg>`)
+		b.WriteString(`<svg width="280" height="44" viewBox="0 0 280 44" aria-label="No cache activity"><line x1="4" y1="40" x2="276" y2="40" stroke="rgba(0,240,255,0.35)" stroke-width="1"/><text x="140" y="24" text-anchor="middle" fill="var(--text-faint)" font-family="var(--font-mono)" font-size="10">NO ACTIVITY YET</text></svg>`)
 		return b.String()
 	}
 
-	b.WriteString(`<svg width="280" height="44" viewBox="0 0 280 44" role="img" aria-label="Cache access activity over the last `)
-	fmt.Fprintf(&b, "%d", days)
-	b.WriteString(` days" style="display:block; max-width:100%;">`)
-	b.WriteString(`<path d="`)
+	step := (w - 2*pad) / maxInt(days-1, 1)
+	var xs, ys []int
 	for i := 0; i < days; i++ {
 		d := days - 1 - i
-		x := pad + (i*(w-2*pad))/maxInt(days-1, 1)
-		y := h - pad - (buckets[d]*(h-2*pad))/max
-		fmt.Fprintf(&b, "M%d %d ", x, y)
+		xs = append(xs, pad+i*step)
+		ys = append(ys, h-pad-(buckets[d]*(h-2*pad))/max)
+	}
+
+	fmt.Fprintf(&b, `<svg width="280" height="44" viewBox="0 0 280 44" role="img" aria-label="Cache access activity over the last %d days" style="display:block; max-width:100%%;">`, days)
+	// Gradient fill under the line (solid cyan fading to transparent).
+	b.WriteString(`<defs><linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(0,240,255,0.4)"/><stop offset="100%" stop-color="rgba(0,240,255,0)"/></linearGradient></defs>`)
+	b.WriteString(`<path d="M`)
+	fmt.Fprintf(&b, "%d %d", xs[0], ys[0])
+	for i := 1; i < days; i++ {
+		fmt.Fprintf(&b, " L%d %d", xs[i], ys[i])
+	}
+	fmt.Fprintf(&b, " L%d %d L%d %d Z", xs[len(xs)-1], h-pad, xs[0], h-pad)
+	b.WriteString(`" fill="url(#spark-fill)"/>`)
+	// The activity line itself.
+	b.WriteString(`<path d="`)
+	fmt.Fprintf(&b, "M%d %d", xs[0], ys[0])
+	for i := 1; i < days; i++ {
+		fmt.Fprintf(&b, " L%d %d", xs[i], ys[i])
 	}
 	b.WriteString(`" fill="none" stroke="var(--cyan)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`)
-	// Final (newest) point highlighted as the "now" marker.
-	xLast := w - pad
-	yLast := h - pad - (buckets[days-1]*(h-2*pad))/max
-	fmt.Fprintf(&b, `<circle cx="%d" cy="%d" r="2.5" fill="var(--cyan)"/>`, xLast, yLast)
-	// Baseline.
+	// Per-day dots on days that actually saw a pull.
+	for i := 0; i < days; i++ {
+		if buckets[days-1-i] > 0 {
+			fmt.Fprintf(&b, `<circle cx="%d" cy="%d" r="2" fill="var(--cyan)"/>`, xs[i], ys[i])
+		}
+	}
+	// Baseline + axis caption.
 	b.WriteString(`<line x1="4" y1="40" x2="276" y2="40" stroke="rgba(0,240,255,0.22)" stroke-width="1"/>`)
 	b.WriteString(`<text x="276" y="34" text-anchor="end" fill="var(--text-faint)" font-family="var(--font-mono)" font-size="9">max `)
 	fmt.Fprintf(&b, "%d", max)
@@ -2199,32 +2291,20 @@ func (d *Dashboard) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// logTSRe matches the Go LstdFlags timestamp prefix (e.g. "2026/09/25 05:09:41 ")
-// that the daemon logger prepends to every line.
-var logTSRe = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
+// logLineRe matches the daemon logger prefix "[LEVEL] <ISO short ts> "
+// followed by the message, e.g. "[INFO] 2026-09-25T05:09:41 message".
+var logLineRe = regexp.MustCompile(`^\[(INFO|WARN|ERROR|DEBUG|TRACE)\] (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}) (.*)$`)
 
-// logLevelRe matches the bracketed level tag that follows the timestamp, e.g.
-// "[INFO] " or "[ERROR] ".
-var logLevelRe = regexp.MustCompile(`^\[(INFO|WARN|ERROR|DEBUG|TRACE)\] `)
-
-// renderLogLine splits a raw daemon log line into timestamp, level and message
+// renderLogLine splits a raw daemon log line into level, timestamp and message
 // spans so the viewer can colour levels and highlight the timestamp column.
 func renderLogLine(line string) string {
-	var ts, level, rest string
-	if m := logTSRe.FindString(line); m != "" {
-		ts = m
-		rest = line[len(m):]
-	} else {
-		rest = line
-	}
-	if m := logLevelRe.FindStringSubmatch(rest); m != nil {
-		level = m[1]
-		msg := strings.TrimSpace(rest[len(m[0]):])
-		return `<span class="log-ts">` + html.EscapeString(ts) + `</span>` +
-			`<span class="log-level log-level-` + strings.ToLower(level) + `">[` + html.EscapeString(level) + `]</span>` +
+	if m := logLineRe.FindStringSubmatch(line); m != nil {
+		level, ts, msg := m[1], m[2], m[3]
+		return `<span class="log-level log-level-` + strings.ToLower(level) + `">[` + html.EscapeString(level) + `]</span>` +
+			` <span class="log-ts">` + html.EscapeString(ts) + `</span> ` +
 			`<span class="log-msg">` + html.EscapeString(msg) + `</span>`
 	}
-	return `<span class="log-msg">` + html.EscapeString(rest) + `</span>`
+	return `<span class="log-msg">` + html.EscapeString(line) + `</span>`
 }
 
 // --- Metrics & System Helpers ---

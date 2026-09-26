@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 var (
@@ -40,10 +41,31 @@ func Init(logPath string) error {
 	return nil
 }
 
+// isoNow returns a short ISO-8601 timestamp without zone info, e.g.
+// "2026-09-25T05:09:41". The web log viewer parses exactly this shape.
+func isoNow() string {
+	return time.Now().Format("2006-01-02T15:04:05")
+}
+
+// levelWriter prefixes every log line with a bracketed level tag followed by a
+// single space and the short ISO-8601 timestamp, e.g.
+// "[INFO] 2026-09-25T05:09:41 message".
+type levelWriter struct {
+	level string
+	out   io.Writer
+}
+
+func (lw levelWriter) Write(b []byte) (int, error) {
+	if _, err := fmt.Fprintf(lw.out, "[%s] %s ", lw.level, isoNow()); err != nil {
+		return 0, err
+	}
+	return lw.out.Write(b)
+}
+
 func SetOutput(w io.Writer) {
-	infoLog = log.New(w, "[INFO] ", log.LstdFlags)
-	warnLog = log.New(w, "[WARN] ", log.LstdFlags)
-	errLog = log.New(w, "[ERROR] ", log.LstdFlags)
+	infoLog = log.New(levelWriter{level: "INFO", out: w}, "", 0)
+	warnLog = log.New(levelWriter{level: "WARN", out: w}, "", 0)
+	errLog = log.New(levelWriter{level: "ERROR", out: w}, "", 0)
 }
 
 func Info(format string, v ...interface{}) {

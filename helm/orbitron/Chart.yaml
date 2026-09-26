@@ -6,7 +6,7 @@ description: >
   as galaxy.ansible.com and renders its web dashboard at /ui.
 type: application
 version: 0.1.0
-appVersion: "2.0.0"
+appVersion: "2.0.1"
 home: https://github.com/chrisvanmeer/orbitron
 sources:
   - https://github.com/chrisvanmeer/orbitron

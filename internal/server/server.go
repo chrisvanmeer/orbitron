@@ -19,6 +19,7 @@ import (
 
 	"orbitron/internal/access"
 	"orbitron/internal/auth"
+	"orbitron/internal/build"
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
 	"orbitron/internal/httputil"
@@ -814,7 +815,7 @@ func (s *Server) Start() error {
 		IdleTimeout:       2 * time.Minute,
 	}
 
-	logger.Info("Orbitron server listening on %s (require_auth_pull=%v)", s.cfg.ListenAddr, s.cfg.RequireAuthPull)
+	logger.Info("Orbitron server listening on %s (require_auth_pull=%v) [%s]", s.cfg.ListenAddr, s.cfg.RequireAuthPull, build.Version)
 	if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
