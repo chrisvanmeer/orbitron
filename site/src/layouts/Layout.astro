@@ -88,10 +88,134 @@ const absoluteImage = image.startsWith('http') ? image : new URL(image, site).hr
 		)}
 	</head>
 	<body class:list={bare && 'bare'}>
+		<div id="star-shower" aria-hidden="true"></div>
 		{!bare && <Navbar />}
 		<main>
 			<slot />
 		</main>
 		{!bare && <Footer />}
+
+		<script>
+			(function () {
+				const shower = document.getElementById('star-shower');
+				if (!shower) return;
+
+				function shoot() {
+					const s = document.createElement('div');
+					s.className = 'falling-star';
+					const dir = Math.random() < 0.5 ? -1 : 1;
+					const driftVw = dir * (16 + Math.random() * 26);
+					const lean = -dir * 22 + (Math.random() * 10 - 5);
+					s.style.left = 20 + Math.random() * 56 + 'vw';
+					s.style.setProperty('--drift', driftVw + 'vw');
+					s.style.setProperty('--angle', lean + 'deg');
+					const dur = 1.5 + Math.random() * 0.8;
+					s.style.animationDuration = dur + 's';
+					s.style.animationDelay = Math.random() * 0.25 + 's';
+					s.style.setProperty('--flash-delay', (dur * 0.45).toFixed(2) + 's');
+					s.style.setProperty('--bend', ((Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 14)).toFixed(1) + 'vw');
+					shower.appendChild(s);
+					setTimeout(() => {
+						if (s.parentNode) s.parentNode.removeChild(s);
+					}, (dur + 0.6) * 1000);
+				}
+				window.__orbitronShootStar = shoot;
+
+				// Every few minutes (random between 2-5min) a star shoots on its own.
+				function scheduleNext() {
+					const delay = 120000 + Math.random() * 180000;
+					setTimeout(() => {
+						shoot();
+						scheduleNext();
+					}, delay);
+				}
+				scheduleNext();
+
+				// Typing "starz" fires a shooting star (never while typing in a field).
+				const seq = 'starz';
+				let pos = 0;
+				let lastTs = 0;
+				document.addEventListener('keydown', (e) => {
+					if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+					const now = Date.now();
+					if (now - lastTs > 1200) pos = 0;
+					lastTs = now;
+					const ch = (e.key || String.fromCharCode(e.keyCode)).toLowerCase();
+					if (ch !== seq[pos]) {
+						pos = ch === seq[0] ? 1 : 0;
+					} else {
+						pos++;
+					}
+					if (pos >= seq.length) {
+						pos = 0;
+						shoot();
+					}
+				});
+			})();
+		</script>
+
+		<style is:global>
+			#star-shower {
+				position: fixed;
+				inset: 0;
+				overflow: hidden;
+				pointer-events: none;
+				z-index: 9997;
+			}
+
+			.falling-star {
+				position: absolute;
+				top: -16px;
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				background: radial-gradient(circle, #fff 0%, rgba(190, 252, 255, 0.98) 42%, rgba(0, 240, 255, 0) 74%);
+				box-shadow: 0 0 12px 3px rgba(0, 240, 255, 0.85), 0 0 26px 6px rgba(120, 220, 255, 0.35);
+				animation: falling 1.9s cubic-bezier(0.25, 0.05, 0.55, 1) forwards;
+				will-change: transform, opacity;
+			}
+
+			.falling-star::before {
+				content: '';
+				position: absolute;
+				left: 50%;
+				transform: translateX(-50%);
+				bottom: 100%;
+				width: 3px;
+				height: 190px;
+				background: linear-gradient(180deg, rgba(120, 235, 255, 0) 0%, rgba(120, 235, 255, 0.55) 55%, rgba(230, 255, 255, 1) 100%);
+				border-radius: 3px;
+				clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+			}
+
+			.falling-star::after {
+				content: '';
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				width: 300px;
+				height: 300px;
+				margin: -150px;
+				border-radius: 50%;
+				pointer-events: none;
+				background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(160, 240, 255, 0.4) 28%, rgba(0, 240, 255, 0) 62%);
+				opacity: 0;
+				transform: scale(0.1);
+				animation: atmos-flash 0.55s ease-out var(--flash-delay, 0s) forwards;
+			}
+
+			@keyframes atmos-flash {
+				0% { opacity: 0; transform: scale(0.1); }
+				15% { opacity: 1; }
+				100% { opacity: 0; transform: scale(1.7); }
+			}
+
+			@keyframes falling {
+				0% { transform: translate3d(0, 0, 0) rotate(var(--angle)) scale(0.3); opacity: 0; }
+				6% { opacity: 1; }
+				45% { transform: translate3d(calc(var(--drift) * 0.45 + var(--bend, 0vw)), 42vh, 0) rotate(var(--angle)) scale(1); opacity: 1; }
+				100% { transform: translate3d(var(--drift), 106vh, 0) rotate(var(--angle)) scale(1); opacity: 0; }
+			}
+		</style>
 	</body>
 </html>

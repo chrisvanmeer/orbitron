@@ -916,7 +916,7 @@ const htmlTemplate = `
         @keyframes falling {
             0%   { transform: translate3d(0, 0, 0) rotate(var(--angle)) scale(0.3); opacity: 0; }
             6%   { opacity: 1; }
-            45%  { transform: translate3d(calc(var(--drift) * 0.45), 42vh, 0) rotate(var(--angle)) scale(1); opacity: 1; }
+            45%  { transform: translate3d(calc(var(--drift) * 0.45 + var(--bend, 0vw)), 42vh, 0) rotate(var(--angle)) scale(1); opacity: 1; }
             100% { transform: translate3d(var(--drift), 106vh, 0) rotate(var(--angle)) scale(1); opacity: 0; }
         }
     </style>
@@ -1299,6 +1299,7 @@ const htmlTemplate = `
                 s.style.animationDuration = dur + 's';
                 s.style.animationDelay = (Math.random() * 0.25) + 's';
                 s.style.setProperty('--flash-delay', (dur * 0.45).toFixed(2) + 's');
+                s.style.setProperty('--bend', ((Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 14)).toFixed(1) + 'vw');
                 shower.appendChild(s);
                 setTimeout(function () {
                     if (s.parentNode) s.parentNode.removeChild(s);
