@@ -882,24 +882,27 @@ const htmlTemplate = `
             80% { transform: translate(3px, 2px); }
         }
         .app-layout.shaking { animation: secret-shake 0.35s ease; }
-        /* Rare whole-viewport shooting star (interval driven from JS). */
+        /* Whole-viewport shooting stars: curved (parabolic) path, tail rotated
+           to trail the direction of travel, driven per-frame from JS. */
         #star-shower {
             position: fixed; inset: 0; overflow: hidden; pointer-events: none;
             z-index: 9997;
         }
         .falling-star {
-            position: absolute; top: -16px; width: 8px; height: 8px; border-radius: 50%;
+            position: absolute; top: 0; left: 0;
+            width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
             background: radial-gradient(circle, #fff 0%, rgba(190, 252, 255, 0.98) 42%, rgba(0, 240, 255, 0) 74%);
             box-shadow: 0 0 12px 3px rgba(0, 240, 255, 0.85), 0 0 26px 6px rgba(120, 220, 255, 0.35);
-            animation: falling 1.9s cubic-bezier(0.25, 0.05, 0.55, 1) forwards;
             will-change: transform, opacity;
         }
         .falling-star::before {
-            content: ''; position: absolute; left: 50%; transform: translateX(-50%);
-            bottom: 100%; width: 3px; height: 190px;
-            background: linear-gradient(180deg, rgba(120, 235, 255, 0) 0%, rgba(120, 235, 255, 0.55) 55%, rgba(230, 255, 255, 1) 100%);
+            content: ''; position: absolute; right: 4px; top: 50%;
+            height: 3px; width: var(--tl, 170px); margin-top: -1.5px;
+            transform-origin: right center;
+            background: linear-gradient(90deg, rgba(120, 235, 255, 0) 0%, rgba(120, 235, 255, 0.55) 55%, rgba(230, 255, 255, 1) 100%);
             border-radius: 3px;
-            clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+            clip-path: polygon(0% 35%, 100% 0%, 100% 100%, 0% 65%);
+            filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.5));
         }
         .falling-star::after {
             content: ''; position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px;
@@ -912,12 +915,6 @@ const htmlTemplate = `
             0%   { opacity: 0; transform: scale(0.1); }
             15%  { opacity: 1; }
             100% { opacity: 0; transform: scale(1.7); }
-        }
-        @keyframes falling {
-            0%   { transform: translate3d(0, 0, 0) rotate(var(--angle)) scale(0.3); opacity: 0; }
-            6%   { opacity: 1; }
-            45%  { transform: translate3d(calc(var(--drift) * 0.45 + var(--bend, 0vw)), 42vh, 0) rotate(var(--angle)) scale(1); opacity: 1; }
-            100% { transform: translate3d(var(--drift), 106vh, 0) rotate(var(--angle)) scale(1); opacity: 0; }
         }
     </style>
 </head>
@@ -1075,26 +1072,41 @@ const htmlTemplate = `
             });
         })();
 
-        // Typing "starz" fires a shooting star on demand (same rule as the
-        // orbitron egg: never while typing inside an INPUT or TEXTAREA).
+        // Typing "star" fires a single shooting star; "stars" once fires a meteor
+        // shower (same rule as the orbitron egg: never while typing inside an
+        // INPUT or TEXTAREA). The single star is deferred one beat so "stars"
+        // doesn't double up.
         (function () {
-            var seq = 'starz';
+            var SZ = 'star';
+            var SZZ = 'stars';
             var pos = 0;
             var lastTs = 0;
+            var singleTimer = 0;
             document.addEventListener('keydown', function (e) {
                 if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
                 var now = Date.now();
                 if (now - lastTs > 1200) pos = 0;
                 lastTs = now;
                 var ch = (e.key || String.fromCharCode(e.keyCode)).toLowerCase();
-                if (ch !== seq[pos]) {
-                    pos = (ch === seq[0]) ? 1 : 0;
+                if (ch !== SZZ[pos]) {
+                    pos = (ch === SZZ[0]) ? 1 : 0;
                 } else {
                     pos++;
                 }
-                if (pos >= seq.length) {
+                if (pos >= SZZ.length) {
                     pos = 0;
-                    if (window.__orbitronShootStar) window.__orbitronShootStar();
+                    if (singleTimer) { clearTimeout(singleTimer); singleTimer = 0; }
+                    if (window.__orbitronBurst) window.__orbitronBurst();
+                    return;
+                }
+                if (pos === SZ.length) {
+                    clearTimeout(singleTimer);
+                    singleTimer = setTimeout(function () {
+                        singleTimer = 0;
+                        if (window.__orbitronShootStar) window.__orbitronShootStar();
+                    }, 1200);
+                } else {
+                    clearTimeout(singleTimer);
                 }
             });
         })();
@@ -1278,34 +1290,77 @@ const htmlTemplate = `
             };
         })();
 
-        // Rare whole-viewport shooting star. It spawns high above the page and
-        // falls diagonally across the entire window (over the table too) once
-        // every 10 minutes by default. window.__orbitronShootStar() fires one
+        // Whole-viewport shooting stars with a curved (parabolic) flight path; the
+        // tail is rotated every frame to trail the direction of travel. Falls
+        // across the entire window once every 10 minutes by default.
+        // window.__orbitronShootStar() fires one, __orbitronBurst() a shower,
         // on demand while testing.
         (function () {
             const shower = document.getElementById('star-shower');
             if (!shower) return;
             const STAR_INTERVAL_MS = 10 * 60 * 1000;
-            function shoot() {
+            const liveStars = new Set();
+            let starRaf = 0;
+            function launchStar(delay) {
                 const s = document.createElement('div');
                 s.className = 'falling-star';
-                const dir = (Math.random() < 0.5) ? -1 : 1;
-                const driftVw = dir * (16 + Math.random() * 26);
-                const lean = (-dir * 22) + (Math.random() * 10 - 5);
-                s.style.left = (20 + Math.random() * 56) + 'vw';
-                s.style.setProperty('--drift', driftVw + 'vw');
-                s.style.setProperty('--angle', lean + 'deg');
-                const dur = 1.5 + Math.random() * 0.8;
-                s.style.animationDuration = dur + 's';
-                s.style.animationDelay = (Math.random() * 0.25) + 's';
-                s.style.setProperty('--flash-delay', (dur * 0.45).toFixed(2) + 's');
-                s.style.setProperty('--bend', ((Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 14)).toFixed(1) + 'vw');
+                const dir = Math.random() < 0.5 ? -1 : 1;
+                const dur = 1.55 + Math.random() * 0.75;
+                s.__tr = {
+                    t0: performance.now() / 1000,
+                    x0: window.innerWidth * (0.12 + Math.random() * 0.56),
+                    y0: -18,
+                    vx: dir * (10 + Math.random() * 45),
+                    vy: 380 + Math.random() * 90,
+                    ax: dir * (70 + Math.random() * 90),
+                    ay: 240 + Math.random() * 60,
+                    dur: dur,
+                    delay: delay + Math.random() * (delay ? 0.3 : 0.25)
+                };
+                s.style.setProperty('--flash-delay', (dur * 0.42).toFixed(2) + 's');
+                s.style.opacity = '0';
                 shower.appendChild(s);
-                setTimeout(function () {
-                    if (s.parentNode) s.parentNode.removeChild(s);
-                }, (dur + 0.6) * 1000);
+                liveStars.add(s);
+                if (!starRaf) starRaf = requestAnimationFrame(stepStars);
             }
+            function stepStars(now) {
+                starRaf = 0;
+                const sec = now / 1000;
+                for (const st of liveStars) {
+                    const T = st.__tr;
+                    const t = sec - T.t0 - T.delay;
+                    if (t < 0) continue;
+                    if (t >= T.dur) {
+                        if (st.parentNode) st.parentNode.removeChild(st);
+                        liveStars.delete(st);
+                        continue;
+                    }
+                    const x = T.x0 + T.vx * t + 0.5 * T.ax * t * t;
+                    const y = T.y0 + T.vy * t + 0.5 * T.ay * t * t;
+                    const dvx = T.vx + T.ax * t;
+                    const dvy = T.vy + T.ay * t;
+                    const ang = (Math.atan2(dvy, dvx) * 180) / Math.PI;
+                    const speed = Math.hypot(dvx, dvy);
+                    st.style.setProperty('--tl', Math.max(70, Math.min(230, speed * 0.4)).toFixed(0) + 'px');
+                    st.style.opacity = String(Math.min(1, t / 0.09, (T.dur - t) / 0.18));
+                    st.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) rotate(' + ang.toFixed(1) + 'deg)';
+                }
+                if (liveStars.size > 0) starRaf = requestAnimationFrame(stepStars);
+            }
+            function shoot() { launchStar(0); }
             window.__orbitronShootStar = shoot;
+            // Meteor shower: spawn a staggered burst of stars.
+            let lastBurst = 0;
+            function burst() {
+                const now = Date.now();
+                if (now - lastBurst < 8000) return;
+                lastBurst = now;
+                const n = 8 + Math.floor(Math.random() * 5);
+                for (let i = 0; i < n; i++) {
+                    setTimeout(() => launchStar(Math.random() * 0.3), 120 + Math.random() * 600);
+                }
+            }
+            window.__orbitronBurst = burst;
             setInterval(shoot, STAR_INTERVAL_MS);
         })();
     </script>
