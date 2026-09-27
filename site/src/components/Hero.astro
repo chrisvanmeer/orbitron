@@ -44,7 +44,7 @@ const stats = [
 		<div class="hero-code card">
 			<CodeBlock
 				filename="ansible.cfg"
-				label="CLIENT — no changes needed"
+				label="CLIENT"
 				lang="ini"
 			>{`[galaxy]
 server_list = orbitron
@@ -239,5 +239,75 @@ url = https://orbitron.internal/api/`}</CodeBlock>
 
 	@keyframes drift {
 		to { transform: rotate(346deg); }
+	}
+
+	/* Typing "orbitron": the rings light up and make a full orbit sweep. */
+	.orbits.orbitron-warp .ring-a {
+		border-color: rgba(0, 240, 255, 0.95);
+		opacity: 1;
+		animation: warp-sweep-a 2.4s ease-in-out forwards;
+	}
+
+	.orbits.orbitron-warp .ring-b {
+		border-color: rgba(255, 0, 122, 0.95);
+		opacity: 1;
+		animation: warp-sweep-b 2.4s ease-in-out forwards;
+	}
+
+	.orbits.orbitron-warp .ring-c {
+		border-color: rgba(252, 238, 10, 0.9);
+		opacity: 0.9;
+		animation: warp-sweep-c 2.4s ease-in-out forwards;
+	}
+
+	.orbits::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 100px;
+		height: 100px;
+		margin: -50px;
+		border: 2px solid rgba(0, 240, 255, 0.9);
+		border-radius: 50%;
+		opacity: 0;
+		transform: scale(0.3);
+	}
+
+	.orbits.orbitron-warp::before {
+		animation: warp-burst 1.4s ease-out 0.4s forwards;
+	}
+
+	.orbits.orbitron-warp ~ .wrap .wordmark {
+		animation: warp-shine 0.8s ease-out;
+	}
+
+	@keyframes warp-sweep-a {
+		0%   { transform: rotate(-14deg) scale(1); }
+		50%  { transform: rotate(166deg) scale(1.12); }
+		100% { transform: rotate(346deg) scale(1); }
+	}
+
+	@keyframes warp-sweep-b {
+		0%   { transform: rotate(8deg) scale(1); }
+		50%  { transform: rotate(-172deg) scale(1.16); }
+		100% { transform: rotate(8deg) scale(1); }
+	}
+
+	@keyframes warp-sweep-c {
+		0%   { transform: rotate(2deg) scale(1); }
+		50%  { transform: rotate(182deg) scale(1.08); }
+		100% { transform: rotate(362deg) scale(1); }
+	}
+
+	@keyframes warp-burst {
+		0%   { opacity: 0.9; transform: scale(0.3); }
+		100% { opacity: 0; transform: scale(6); }
+	}
+
+	@keyframes warp-shine {
+		0%   { filter: drop-shadow(0 18px 60px rgba(0, 240, 255, 0.16)) brightness(1); }
+		50%  { filter: drop-shadow(0 0 40px rgba(0, 240, 255, 0.8)) brightness(1.35); }
+		100% { filter: drop-shadow(0 18px 60px rgba(0, 240, 255, 0.16)) brightness(1); }
 	}
 </style>

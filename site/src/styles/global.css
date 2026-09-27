@@ -88,25 +88,6 @@ body::before {
 		var(--bg);
 }
 
-body::after {
-	content: '';
-	position: fixed;
-	inset: 0;
-	z-index: -1;
-	pointer-events: none;
-	background-image:
-		radial-gradient(1px 1px at 12% 22%, rgba(255, 255, 255, 0.5), transparent),
-		radial-gradient(1px 1px at 32% 8%, rgba(255, 255, 255, 0.35), transparent),
-		radial-gradient(1.5px 1.5px at 55% 15%, rgba(252, 238, 10, 0.5), transparent),
-		radial-gradient(1px 1px at 72% 5%, rgba(255, 255, 255, 0.4), transparent),
-		radial-gradient(1px 1px at 88% 20%, rgba(255, 255, 255, 0.3), transparent),
-		radial-gradient(1px 1px at 7% 48%, rgba(255, 255, 255, 0.35), transparent),
-		radial-gradient(1.5px 1.5px at 94% 42%, rgba(0, 240, 255, 0.45), transparent),
-		radial-gradient(1px 1px at 42% 90%, rgba(255, 255, 255, 0.3), transparent),
-		radial-gradient(1px 1px at 64% 78%, rgba(165, 180, 252, 0.45), transparent);
-	background-size: 180px 160px;
-}
-
 .wrap {
 	width: min(1120px, 100% - 40px);
 	margin-inline: auto;
