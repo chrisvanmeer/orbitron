@@ -61,9 +61,24 @@ const resources = [
 
 		<div class="bottom">
 			<p>© 2026 Chris van Meer</p>
-			<p>
+			<p class="bottom-right">
 				<a href="mailto:chris@getorbitron.app">chris@getorbitron.app</a> ·
 				<a href="https://github.com/chrisvanmeer/orbitron/blob/main/LICENSE" target="_blank" rel="noopener">GNU GPL v3.0</a>
+				<span class="chips">
+					<button class="chip" type="button" data-shell-open aria-label="Open the orbitron console">
+						&gt;_
+					</button>
+					<button class="chip" type="button" data-egg-badge hidden aria-label="Open the codex of easter eggs" />
+					<button
+						class="chip"
+						type="button"
+						data-obs-toggle
+						aria-pressed="false"
+						title="Observatory mode: red light for the dark hours (shift+n)"
+					>
+						observatory
+					</button>
+				</span>
 			</p>
 		</div>
 	</div>
@@ -154,6 +169,48 @@ const resources = [
 
 	.bottom a:hover {
 		color: var(--pink);
+	}
+
+	.bottom-right {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.7rem;
+		flex-wrap: wrap;
+	}
+
+	.chips {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		min-height: 28px;
+		padding: 0.2rem 0.6rem;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: rgba(13, 14, 22, 0.6);
+		color: var(--text-dim);
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		line-height: 1.4;
+		cursor: pointer;
+		transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+	}
+
+	.chip:hover {
+		color: var(--cyan);
+		border-color: rgba(0, 240, 255, 0.5);
+		box-shadow: 0 0 18px -6px rgba(0, 240, 255, 0.7);
+	}
+
+	.chip[aria-pressed='true'] {
+		color: var(--pink);
+		border-color: rgba(255, 0, 122, 0.5);
+		background: rgba(255, 0, 122, 0.07);
 	}
 
 	@media (max-width: 760px) {

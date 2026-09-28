@@ -1,0 +1,865 @@
+/* Sputnik: a fully visible dark blue Earth with a train of satellites
+   passing over its upper limb. */
+#sputnik {
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 9995;
+	opacity: 0;
+	transition: opacity 0.6s ease;
+}
+
+body.sputnik-on #sputnik {
+	opacity: 1;
+}
+
+#sputnik.out {
+	opacity: 0;
+	transition: opacity 2.2s ease;
+}
+
+.s-earth {
+	position: absolute;
+	left: 50%;
+	top: 32vmin;
+	width: min(120vmin, 58vh);
+	height: min(120vmin, 58vh);
+	margin-left: calc(min(120vmin, 58vh) / -2);
+	border-radius: 50%;
+	overflow: hidden;
+	z-index: 2;
+	background: radial-gradient(circle at 50% 38%,
+		#24496f 0%,
+		#13294a 30%,
+		#0a1a33 58%,
+		#04070f 100%);
+	box-shadow:
+		0 0 120px 30px rgba(70, 150, 255, 0.18),
+		inset -8vmin -14vmin 30vmin rgba(2, 5, 14, 0.85),
+		inset 5vmin 5vmin 16vmin rgba(90, 160, 255, 0.14);
+}
+
+.s-map {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+}
+
+body.sputnik-on .s-earth {
+	animation: earth-rise 2.2s cubic-bezier(0.35, 0.1, 0.35, 1) forwards;
+}
+
+@keyframes earth-rise {
+	0% { transform: translateY(34%); opacity: 0; }
+	100% { transform: translateY(0); opacity: 1; }
+}
+
+.sat {
+	position: absolute;
+	width: 4px;
+	height: 4px;
+	margin-left: -2px;
+	margin-top: -2px;
+	border-radius: 50%;
+	background: #fff;
+	z-index: 1;
+	will-change: transform;
+	transition: opacity 0.55s ease;
+	box-shadow:
+		0 0 8px 2px rgba(0, 240, 255, 0.95),
+		0 0 18px 4px rgba(0, 240, 255, 0.4);
+}
+
+.sat::before {
+	content: '';
+	position: absolute;
+	top: 1.5px;
+	right: 4px;
+	width: 16px;
+	height: 1px;
+	background: linear-gradient(270deg,
+		rgba(0, 240, 255, 0) 0%,
+		rgba(0, 240, 255, 0.8) 100%);
+}
+
+#cosmos {
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+}
+
+#star-shower {
+	position: fixed;
+	inset: 0;
+	overflow: hidden;
+	pointer-events: none;
+	z-index: 9997;
+}
+
+/* Eclipse: a view-filling dark moon on the right ~3/4, with the sun's
+   corona and Baily's beads burning along its left limb. */
+#eclipse {
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 9996;
+	opacity: 0;
+	transition: opacity 0.45s ease;
+}
+
+#eclipse.on {
+	opacity: 1;
+}
+
+/* Overall dim, darkest toward the right behind the moon. */
+#eclipse::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(90deg,
+		rgba(0, 0, 0, 0) 0%,
+		rgba(0, 0, 0, 0.18) 26%,
+		rgba(0, 0, 0, 0.55) 58%,
+		rgba(0, 0, 0, 0.8) 100%);
+	opacity: 0;
+	animation: sky-dim 6.6s ease-in-out forwards;
+}
+
+@keyframes sky-dim {
+	0%, 18% { opacity: 0; }
+	40% { opacity: 0.85; }
+	78% { opacity: 0.85; }
+	95%, 100% { opacity: 0; }
+}
+
+/* Corona hugging the moon's outer (left) limb. */
+.e-moon::before {
+	content: '';
+	position: absolute;
+	inset: -1.2vmin;
+	border-radius: 50%;
+	border: 1.6vmin solid rgba(255, 240, 210, 0.8);
+	box-shadow:
+		0 0 30px 6px rgba(255, 210, 160, 0.35),
+		inset 0 0 24px 6px rgba(255, 240, 210, 0.18);
+	mask: linear-gradient(90deg, #000 0%, #000 50%, transparent 52%);
+	-webkit-mask: linear-gradient(90deg, #000 0%, #000 50%, transparent 52%);
+}
+
+/* Soft outer glare beyond the ring. */
+.e-moon::after {
+	content: '';
+	position: absolute;
+	inset: -6vmin;
+	border-radius: 50%;
+	box-shadow:
+		0 0 80px 30px rgba(255, 200, 150, 0.24),
+		0 0 200px 60px rgba(120, 200, 255, 0.16);
+	mask: linear-gradient(90deg, #000 0%, #000 36%, transparent 62%);
+	-webkit-mask: linear-gradient(90deg, #000 0%, #000 36%, transparent 62%);
+}
+
+/* Baily's beads: jewels of light gracing the limb (placed by JS). */
+.e-beads {
+	position: absolute;
+	inset: 0;
+}
+
+.e-bead {
+	position: absolute;
+	border-radius: 50%;
+	background: radial-gradient(circle,
+		#fff 0%,
+		rgba(255, 244, 214, 0.95) 40%,
+		rgba(255, 224, 178, 0.4) 62%,
+		rgba(255, 224, 178, 0.12) 80%,
+		rgba(255, 224, 178, 0) 100%);
+	box-shadow:
+		0 0 8px 2px rgba(255, 240, 200, 0.8),
+		0 0 22px 6px rgba(255, 220, 170, 0.4),
+		0 0 60px 20px rgba(255, 215, 160, 0.22);
+	filter: blur(1.2px);
+	animation: bead-flicker 1.8s ease-in-out infinite;
+}
+
+@keyframes bead-flicker {
+	0%, 100% { opacity: 0.55; transform: scale(0.9); filter: brightness(0.9); }
+	50% { opacity: 1; transform: scale(1.12); filter: brightness(1.45); }
+}
+
+/* The giant dark moon filling the right ~3/4 of the view. */
+.e-moon {
+	position: absolute;
+	left: 88vw;
+	top: 50%;
+	width: 214vmin;
+	height: 214vmin;
+	margin-top: -107vmin;
+	margin-left: -107vmin;
+	border-radius: 50%;
+	background: radial-gradient(circle at 32% 30%,
+		#0b0f1a 0%,
+		#070a12 36%,
+		#04060d 66%,
+		#02030a 85%,
+		#010208 100%);
+	box-shadow: 0 0 90px 24px rgba(120, 200, 255, 0.12);
+	opacity: 0;
+}
+
+#eclipse.on .e-moon {
+	animation: moon-in 6.6s ease-out forwards;
+}
+
+@keyframes moon-in {
+	0% { opacity: 0; transform: scale(0.94); }
+	20% { opacity: 1; transform: scale(1); }
+	80% { opacity: 1; transform: scale(1); }
+	100% { opacity: 0; transform: scale(1.02); }
+}
+
+/* Fallback warp pulse for pages without hero rings (nav logo). */
+body.orbitron-warp .brand svg {
+	animation: nav-warp 0.7s ease-out;
+}
+
+@keyframes nav-warp {
+	50% { filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.9)); }
+}
+
+.falling-star {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 8px;
+	height: 8px;
+	margin: -4px 0 0 -4px;
+	border-radius: 50%;
+	background: radial-gradient(circle, #fff 0%, rgba(190, 252, 255, 0.98) 42%, rgba(0, 240, 255, 0) 74%);
+	box-shadow: 0 0 12px 3px rgba(0, 240, 255, 0.85), 0 0 26px 6px rgba(120, 220, 255, 0.35);
+	will-change: transform, opacity;
+}
+
+.falling-star::before {
+	content: '';
+	position: absolute;
+	right: 4px;
+	top: 50%;
+	height: 3px;
+	width: var(--tl, 170px);
+	margin-top: -1.5px;
+	transform-origin: right center;
+	background: linear-gradient(90deg, rgba(120, 235, 255, 0) 0%, rgba(120, 235, 255, 0.55) 55%, rgba(230, 255, 255, 1) 100%);
+	border-radius: 3px;
+	clip-path: polygon(0% 35%, 100% 0%, 100% 100%, 0% 65%);
+	filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.5));
+}
+
+.falling-star::after {
+	content: '';
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 300px;
+	height: 300px;
+	margin: -150px;
+	border-radius: 50%;
+	pointer-events: none;
+	background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(160, 240, 255, 0.4) 28%, rgba(0, 240, 255, 0) 62%);
+	opacity: 0;
+	transform: scale(0.1);
+	animation: atmos-flash 0.55s ease-out var(--flash-delay, 0s) forwards;
+}
+
+@keyframes atmos-flash {
+	0% { opacity: 0; transform: scale(0.1); }
+	15% { opacity: 1; }
+	100% { opacity: 0; transform: scale(1.7); }
+}
+
+/* ---------------------------------------------------------------- shell --- */
+.shell {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 10000;
+	height: min(56vh, 520px);
+	display: flex;
+	flex-direction: column;
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	background: linear-gradient(180deg, rgba(4, 4, 8, 0.97), rgba(2, 2, 4, 0.99));
+	border-top: 1px solid rgba(0, 240, 255, 0.32);
+	box-shadow: 0 -30px 90px -24px rgba(0, 0, 0, 0.92), 0 0 46px -20px rgba(0, 240, 255, 0.55);
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	transform: translateY(101%);
+	transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.shell-open .shell {
+	transform: translateY(0);
+}
+
+.shell-head {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.6rem 1rem;
+	border-bottom: 1px solid rgba(139, 148, 158, 0.16);
+	background: rgba(9, 9, 15, 0.6);
+}
+
+.shell-dots {
+	display: inline-flex;
+	gap: 0.3rem;
+}
+
+.shell-dots i {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #2a3038;
+}
+
+.shell-dots i:nth-child(1) { background: var(--red); }
+.shell-dots i:nth-child(2) { background: var(--yellow); }
+.shell-dots i:nth-child(3) { background: var(--cyan); }
+
+.shell-title {
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-mid);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.shell-count {
+	margin-left: auto;
+	font-size: 0.66rem;
+	letter-spacing: 0.1em;
+	color: var(--text-faint);
+	white-space: nowrap;
+}
+
+.shell-x {
+	padding: 0.2rem 0.5rem;
+	border-radius: 6px;
+	border: 1px solid var(--border-strong);
+	background: transparent;
+	color: var(--text-faint);
+	font-family: var(--font-mono);
+	font-size: 0.64rem;
+	cursor: pointer;
+	transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.shell-x:hover {
+	color: var(--pink);
+	border-color: var(--pink);
+}
+
+/* macOS rounds the bottom window corners and masks fixed layers with them, so
+   the leftmost characters of the bottom line would be clipped. Keep the
+   content clear of that arc. */
+.shell-out {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 0.9rem 1.15rem 1.4rem;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(0, 240, 255, 0.3) transparent;
+}
+
+.shell-out::-webkit-scrollbar { width: 8px; }
+.shell-out::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.25); border-radius: 8px; }
+
+.shell-row {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	/* Bottom padding clears the rounded macOS window corner, left padding keeps
+	   the prompt clear of it too. */
+	padding: 0.7rem 1.15rem calc(0.7rem + env(safe-area-inset-bottom, 0px) + 8px);
+	border-top: 1px solid rgba(139, 148, 158, 0.12);
+	background: linear-gradient(180deg, rgba(9, 10, 18, 0.5), rgba(6, 6, 12, 0.88));
+	transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.shell-row:focus-within {
+	background: linear-gradient(180deg, rgba(12, 16, 26, 0.7), rgba(7, 8, 15, 0.96));
+	box-shadow: inset 2px 0 0 var(--cyan);
+}
+
+.shell-prompt {
+	flex: none;
+	color: var(--cyan);
+	font-size: 0.8rem;
+	white-space: nowrap;
+	text-shadow: 0 0 14px rgba(0, 240, 255, 0.5);
+}
+
+.shell-in {
+	flex: 1;
+	min-width: 0;
+	-webkit-appearance: none;
+	appearance: none;
+	margin: 0;
+	padding: 0.2rem 0;
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	line-height: 1.6;
+	letter-spacing: 0.01em;
+	caret-color: var(--cyan);
+	outline: none;
+}
+
+.shell-in::placeholder {
+	color: var(--text-faint);
+	opacity: 0.7;
+}
+
+.sh-line {
+	white-space: pre-wrap;
+	word-break: break-word;
+	line-height: 1.55;
+	color: var(--text-mid);
+}
+
+.sh-line:empty { height: 0.7rem; }
+.sh-dim { color: var(--text-faint); }
+.sh-head { color: var(--text); }
+.sh-cyan { color: var(--cyan); }
+.sh-pink { color: var(--pink); }
+.sh-yellow { color: var(--yellow); }
+.sh-red { color: var(--red); }
+
+.sh-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.55rem 1rem 0.85rem;
+	border-top: 1px solid rgba(139, 148, 158, 0.12);
+}
+
+.sh-prompt {
+	color: var(--cyan);
+	font-size: 0.8rem;
+	white-space: nowrap;
+}
+
+.sh-in {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	caret-color: var(--cyan);
+	outline: none;
+}
+
+/* ---------------------------------------------------------------- codex --- */
+.codex {
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+	width: min(420px, 92vw);
+	padding: 1.7rem 1.5rem 2.5rem;
+	overflow-y: auto;
+	background: linear-gradient(200deg, rgba(9, 9, 15, 0.97), rgba(4, 4, 8, 0.99));
+	border-left: 1px solid rgba(0, 240, 255, 0.26);
+	box-shadow: -30px 0 90px -34px rgba(0, 0, 0, 0.95);
+	backdrop-filter: blur(18px);
+	-webkit-backdrop-filter: blur(18px);
+	transform: translateX(102%);
+	transition: transform 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.codex-open .codex {
+	transform: translateX(0);
+}
+
+.codex-head {
+	position: relative;
+	padding-bottom: 1rem;
+	border-bottom: 1px solid var(--border);
+}
+
+.codex-title {
+	margin-top: 0.6rem;
+	font-size: 1.35rem;
+	background: linear-gradient(90deg, #fff 10%, var(--indigo));
+	-webkit-background-clip: text;
+	background-clip: text;
+	-webkit-text-fill-color: transparent;
+}
+
+.codex-sub {
+	margin-top: 0.5rem;
+	font-family: var(--font-mono);
+	font-size: 0.72rem;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--cyan);
+}
+
+.codex-x {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 30px;
+	height: 30px;
+	border-radius: 8px;
+	border: 1px solid var(--border-strong);
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 1.05rem;
+	line-height: 1;
+	cursor: pointer;
+	transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.codex-x:hover {
+	color: var(--pink);
+	border-color: var(--pink);
+}
+
+.codex-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.codex-item {
+	display: grid;
+	grid-template-columns: 12px minmax(0, 1fr);
+	gap: 0.8rem;
+	padding: 0.95rem 0.2rem;
+	border-bottom: 1px solid var(--border);
+}
+
+.codex-dot {
+	width: 8px;
+	height: 8px;
+	margin-top: 0.45rem;
+	border-radius: 50%;
+	border: 1px solid var(--text-faint);
+}
+
+.codex-item.got .codex-dot {
+	background: var(--cyan);
+	border-color: var(--cyan);
+	box-shadow: 0 0 12px rgba(0, 240, 255, 0.8);
+}
+
+.codex-name {
+	font-size: 0.95rem;
+	color: var(--text-dim);
+}
+
+.codex-item.got .codex-name {
+	color: var(--text);
+}
+
+.codex-hint {
+	display: block;
+	margin-top: 0.3rem;
+	font-family: var(--font-mono);
+	font-size: 0.74rem;
+	/* --text-faint fails AA at 3.7:1 on the panel background. */
+	color: #7d8b99;
+}
+
+.codex-item.got .codex-hint {
+	color: var(--cyan);
+}
+
+.codex-note {
+	margin-top: 0.35rem;
+	font-size: 0.8rem;
+	line-height: 1.5;
+	color: var(--text-faint);
+}
+
+.codex-item.got .codex-note {
+	color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------- toast --- */
+.toast {
+	position: fixed;
+	left: 50%;
+	bottom: 28px;
+	z-index: 10001;
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.5rem 0.95rem;
+	border-radius: 999px;
+	background: rgba(9, 9, 15, 0.94);
+	border: 1px solid rgba(0, 240, 255, 0.4);
+	box-shadow: 0 0 34px -8px rgba(0, 240, 255, 0.5);
+	font-family: var(--font-mono);
+	font-size: 0.74rem;
+	white-space: nowrap;
+	pointer-events: none;
+	opacity: 0;
+	transform: translate(-50%, 14px);
+	transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast.show {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}
+
+body.shell-open .toast {
+	bottom: calc(min(56vh, 520px) + 16px);
+}
+
+.toast-star {
+	color: var(--cyan);
+}
+
+.toast-label {
+	color: var(--text);
+}
+
+.toast-count {
+	color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------ night hint --- */
+.night-hint {
+	position: fixed;
+	left: 20px;
+	bottom: 20px;
+	z-index: 10002;
+	display: flex;
+	align-items: center;
+	gap: 0.7rem;
+	max-width: min(440px, calc(100vw - 40px));
+	padding: 0.7rem 0.85rem;
+	border-radius: var(--radius-sm);
+	background: rgba(9, 9, 15, 0.95);
+	border: 1px solid var(--border-strong);
+	box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.95);
+	font-size: 0.82rem;
+	color: var(--text-mid);
+	opacity: 0;
+	transform: translateY(12px);
+	transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.night-hint.in {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.night-hint.gone {
+	opacity: 0;
+	transform: translateY(12px);
+}
+
+.night-go {
+	flex: none;
+	padding: 0.25rem 0.6rem;
+	border-radius: 999px;
+	border: 1px solid rgba(0, 240, 255, 0.4);
+	background: rgba(0, 240, 255, 0.07);
+	color: var(--cyan);
+	font-family: var(--font-mono);
+	font-size: 0.68rem;
+	cursor: pointer;
+	transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.night-go:hover {
+	background: rgba(0, 240, 255, 0.16);
+	box-shadow: 0 0 18px -6px rgba(0, 240, 255, 0.8);
+}
+
+/* The console nudge shares the night hint's shape; only the accent differs. */
+.console-nudge {
+	position: fixed;
+	right: 20px;
+	bottom: 20px;
+	z-index: 10002;
+	display: flex;
+	align-items: center;
+	gap: 0.7rem;
+	max-width: min(460px, calc(100vw - 40px));
+	padding: 0.7rem 0.85rem;
+	border-radius: var(--radius-sm);
+	background: rgba(9, 9, 15, 0.95);
+	border: 1px solid rgba(0, 240, 255, 0.28);
+	box-shadow: 0 20px 60px -24px rgba(0, 0, 0, 0.95), 0 0 40px -20px rgba(0, 240, 255, 0.45);
+	font-size: 0.82rem;
+	color: var(--text-mid);
+	opacity: 0;
+	transform: translateY(12px);
+	transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.console-nudge.in {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.console-nudge.gone {
+	opacity: 0;
+	transform: translateY(12px);
+}
+
+.nudge-go {
+	flex: none;
+	padding: 0.25rem 0.6rem;
+	border-radius: 999px;
+	border: 1px solid rgba(0, 240, 255, 0.4);
+	background: rgba(0, 240, 255, 0.07);
+	color: var(--cyan);
+	font-family: var(--font-mono);
+	font-size: 0.68rem;
+	cursor: pointer;
+}
+
+.nudge-go:hover {
+	background: rgba(0, 240, 255, 0.16);
+	box-shadow: 0 0 18px -6px rgba(0, 240, 255, 0.8);
+}
+
+.night-x {
+	flex: none;
+	width: 24px;
+	height: 24px;
+	border: 0;
+	background: transparent;
+	color: var(--text-faint);
+	font-size: 1.1rem;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.night-x:hover {
+	color: var(--pink);
+}
+
+/* ------------------------------------------------------- hyperjump hint --- */
+[data-hyperjump] {
+	position: relative;
+	user-select: none;
+	-webkit-user-select: none;
+	cursor: default;
+}
+
+.hj-hint {
+	position: absolute;
+	right: 0.1em;
+	bottom: 0.06em;
+	font-family: var(--font-mono);
+	font-size: 0.075em;
+	letter-spacing: 0.5em;
+	line-height: 1;
+	color: var(--cyan);
+	-webkit-text-fill-color: currentColor;
+	text-shadow: 0 0 14px rgba(0, 240, 255, 0.7);
+	pointer-events: none;
+}
+
+/* ----------------------------------------------------------- hyperspace --- */
+#star-shower::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: radial-gradient(circle at 50% 45%,
+		rgba(235, 255, 255, 0.55),
+		rgba(0, 240, 255, 0.14) 45%,
+		transparent 70%);
+	opacity: 0;
+}
+
+body.hyperspace #star-shower::after {
+	animation: hs-flash 0.9s ease-out;
+}
+
+@keyframes hs-flash {
+	0% { opacity: 0; }
+	12% { opacity: 0.55; }
+	100% { opacity: 0; }
+}
+
+body.hyperspace .hero .wordmark {
+	transform: scaleX(1.12);
+	filter: drop-shadow(-6px 0 14px rgba(255, 0, 122, 0.9))
+		drop-shadow(6px 0 14px rgba(0, 240, 255, 0.9))
+		brightness(1.3);
+	transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.22s ease;
+}
+
+body:not(.hyperspace) .hero .wordmark {
+	transition: transform 1.1s cubic-bezier(0.2, 0.8, 0.2, 1), filter 1.1s ease;
+}
+
+/* ----------------------------------------------------- observatory mode --- */
+body.obs {
+	--bg: #070404;
+	--bg-deep: #040101;
+	--bg-panel: #0e0606;
+	--bg-card: #140909;
+	--bg-card-hover: #1c0d0d;
+	--border: rgba(255, 120, 96, 0.16);
+	--border-strong: rgba(255, 120, 96, 0.32);
+
+	--cyan: #ff6a55;
+	--pink: #ff2d2d;
+	--red: #ff5533;
+	--yellow: #ffb057;
+	--violet: #c46a5a;
+	--indigo: #ffa08c;
+
+	--text: #ffd9cf;
+	--text-mid: #e8a596;
+	--text-dim: #b57a6c;
+	--text-faint: #7d4f45;
+
+	background: #070404;
+}
+
+/* Red-light veil: scanlines plus a soft vignette over the page body. */
+body.obs::after {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	background: repeating-linear-gradient(0deg,
+			rgba(0, 0, 0, 0.28) 0 1px,
+			transparent 1px 3px),
+		radial-gradient(120% 90% at 50% 50%, transparent 42%, rgba(20, 0, 0, 0.6));
+}
+
+body.obs #cosmos,
+body.obs #star-shower {
+	filter: sepia(1) saturate(5) hue-rotate(-35deg) opacity(0.85);
+}
+
+body.obs .brand svg,
+body.obs .footer-brand svg {
+	filter: sepia(1) saturate(6) hue-rotate(-35deg);
+}
+
+body.obs .nav {
+	background: rgba(14, 3, 3, 0.78);
+	border-bottom-color: rgba(255, 120, 96, 0.22);
+}

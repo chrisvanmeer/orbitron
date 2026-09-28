@@ -270,5 +270,20 @@ const highlights = [
 		.grafa-list {
 			grid-template-columns: 1fr;
 		}
+
+		/* On a phone there is no room for the address pill: keep the three
+		   dots on the left and the zoom arrow on the right, drop the rest. */
+		.addr {
+			display: none;
+		}
+
+		.browser-bar {
+			gap: 0.5rem;
+			padding: 0.6rem 0.75rem;
+		}
+
+		.zoom-hint {
+			margin-inline-start: auto;
+		}
 	}
 </style>

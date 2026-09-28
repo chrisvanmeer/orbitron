@@ -87,7 +87,31 @@ for (const needle of ['Content-Security-Policy', 'Strict-Transport-Security', 'P
 }
 ok('_headers security directives');
 
-// 5. Internal link/asset integrity across every built HTML page.
+// 5. Easter egg overlays are mounted, and the catalog is intact in the bundle.
+for (const id of ['id="shell"', 'id="codex"', 'data-toast', 'data-shell-open', 'data-obs-toggle']) {
+	if (!indexHtml.includes(id)) fail(`index.html missing ${id}`);
+}
+const bundles = readdirSync(join(dist, '_astro')).filter((f) => f.endsWith('.js'));
+const bundleText = bundles.map((f) => readFileSync(join(dist, '_astro', f), 'utf8')).join('\n');
+const EGGS = [
+	'star',
+	'stars',
+	'eclipse',
+	'sputnik',
+	'warp',
+	'shell',
+	'codex',
+	'konami',
+	'idle',
+	'observatory',
+	'hyperjump'
+];
+for (const egg of EGGS) {
+	if (!bundleText.includes(egg)) fail(`easter egg catalog missing "${egg}" in ${bundles.length} bundle(s)`);
+}
+ok(`easter egg catalog (${EGGS.length} eggs, ${bundles.length} bundles)`);
+
+// 6. Internal link/asset integrity across every built HTML page.
 const htmlFiles = [];
 const walk = (dir) => {
 	for (const entry of readdirSync(join(dist, dir), { withFileTypes: true })) {
