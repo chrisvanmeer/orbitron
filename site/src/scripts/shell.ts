@@ -214,14 +214,14 @@ export function initShell(): void {
 		inventory: {
 			about: 'storage matrix',
 			run: () => [
-				{ text: 'NAMESPACE              KIND         ITEMS   VERSIONS      ON DISK' },
-				{ text: 'geerlingguy            role            14         38     2.1 GiB' },
-				{ text: 'geerlingguy.docker     role             9         21       1.4 GiB' },
-				{ text: 'geerlingguy.kubernetes role            22         71     5.8 GiB' },
-				{ text: 'ansible.posix          collection       3          9     412 MiB' },
-				{ text: 'community.general      collection       1          4      96 MiB' },
-				{ text: '-------------------------------------------------------------' },
-				{ text: 'total                                 40        122     8.4 GiB', cls: 'cyan' },
+				{ text: pad('NAMESPACE', 24) + pad('KIND', 12) + padL('ITEMS', 6) + padL('VERSIONS', 10) + padL('ON DISK', 10) },
+				{ text: pad('geerlingguy', 24) + pad('role', 12) + padL('14', 6) + padL('38', 10) + padL('2.1 GiB', 10) },
+				{ text: pad('geerlingguy.docker', 24) + pad('role', 12) + padL('9', 6) + padL('21', 10) + padL('1.4 GiB', 10) },
+				{ text: pad('geerlingguy.kubernetes', 24) + pad('role', 12) + padL('22', 6) + padL('71', 10) + padL('5.8 GiB', 10) },
+				{ text: pad('ansible.posix', 24) + pad('collection', 12) + padL('3', 6) + padL('9', 10) + padL('412 MiB', 10) },
+				{ text: pad('community.general', 24) + pad('collection', 12) + padL('1', 6) + padL('4', 10) + padL('96 MiB', 10) },
+				{ text: '-'.repeat(65) },
+				{ text: pad('total', 24) + pad('', 12) + padL('40', 6) + padL('122', 10) + padL('8.4 GiB', 10), cls: 'cyan' },
 				{ text: 'never-accessed versions are never pruned.', cls: 'dim' }
 			]
 		},
