@@ -789,19 +789,19 @@ curl -H "Authorization: Bearer $ORBITRON_TOKEN" \
   -o orbitron-backup.tar.gz
 ```
 
-**What is in the archive**
+#### What is in the archive
 
 Every entry is rooted at `orbitron/`, so untarring into a fresh storage directory is safe:
 
-| Path | Contents |
-| --- | --- |
-| `orbitron/roles/…` | Every cached role directory, all versions |
-| `orbitron/collections/…` | Every cached collection `.tar.gz` |
-| `orbitron/collections/git/…` | Checkouts of git-sourced collections |
-| `orbitron/manifests/…` | Stored requirements manifests (`.access.json` included) |
-| `orbitron/dump.json` | The manifest, always the **last** entry |
+| Path                         | Contents                                                |
+| ---------------------------- | ------------------------------------------------------- |
+| `orbitron/roles/…`           | Every cached role directory, all versions               |
+| `orbitron/collections/…`     | Every cached collection `.tar.gz`                       |
+| `orbitron/collections/git/…` | Checkouts of git-sourced collections                    |
+| `orbitron/manifests/…`       | Stored requirements manifests (`.access.json` included) |
+| `orbitron/dump.json`         | The manifest, always the **last** entry                 |
 
-**What is never in the archive**
+#### What is never in the archive
 
 The token store is excluded unconditionally — both the configured `tokens_file`
 when it lives inside the storage path and `<storage>/tokens.json`. So are
@@ -810,7 +810,7 @@ directory, such as sockets or FIFOs. A content backup therefore never carries
 administrative credentials into an offline vault; keep your token backup
 separate.
 
-**`orbitron/dump.json`**
+#### `orbitron/dump.json`
 
 ```json
 {
@@ -837,22 +837,22 @@ stream, with a SHA-256 per file, so a receiver can verify exactly what it got.
 Because the manifest is written last, its *absence* is itself the signal that a
 transfer was cut short.
 
-**Response headers**
+#### Response headers
 
-| Header | Meaning |
-| --- | --- |
-| `Content-Type` | `application/gzip` |
-| `Content-Disposition` | `attachment; filename="orbitron-dump-<RFC3339>.tar.gz"` |
-| `X-Orbitron-Dump-Sync` | `running` or `idle` at request time |
-| `X-Orbitron-Dump-Bytes` | Uncompressed total size of the storage path |
-| `X-Orbitron-Dump-Created` | RFC 3339 timestamp of the dump |
-| `X-Orbitron-Dump-Format` | Archive manifest format version (currently `1`) |
+| Header                    | Meaning                                                 |
+| ------------------------- | ------------------------------------------------------- |
+| `Content-Type`            | `application/gzip`                                      |
+| `Content-Disposition`     | `attachment; filename="orbitron-dump-<RFC3339>.tar.gz"` |
+| `X-Orbitron-Dump-Sync`    | `running` or `idle` at request time                     |
+| `X-Orbitron-Dump-Bytes`   | Uncompressed total size of the storage path             |
+| `X-Orbitron-Dump-Created` | RFC 3339 timestamp of the dump                          |
+| `X-Orbitron-Dump-Format`  | Archive manifest format version (currently `1`)         |
 
 There is no `Content-Length`: the size is only known once the walk has finished,
 and a full mirror can be large. A backup job cannot resume a half-finished
 download — verify the `dump.json` entry and retry instead.
 
-**Consistency and security notes**
+#### Consistency and security notes
 
 * No snapshot lock is taken, so dumping while a background sync runs yields a
   consistent *set* of files but not a globally consistent one. The server tells
@@ -865,7 +865,7 @@ download — verify the `dump.json` entry and retry instead.
 * The dashboard's `DUMP .TAR.GZ` button downloads exactly this endpoint with the
   browser's session cookie.
 
-**Restoring**
+#### Restoring
 
 ```bash
 mkdir -p /var/lib/orbitron/storage
@@ -873,7 +873,7 @@ tar -xzf orbitron-backup.tar.gz -C /var/lib/orbitron/storage --strip-components=
 systemctl restart orbitron
 ```
 
-**Doing it from Ansible**
+#### Doing it from Ansible
 
 The collection ships an `orbitron_dump` module that streams the archive to the
 controller:
@@ -1229,7 +1229,7 @@ Orbitron exposes daemon and storage metrics at `/metrics` using standard Prometh
 | Metric                                             | Type    | Description                                                              |
 | :------------------------------------------------- | :------ | :----------------------------------------------------------------------- |
 | `orbitron_uptime_seconds`                          | Counter | Total daemon uptime in seconds.                                          |
-| `orbitron_start_time_seconds`                       | Gauge   | Unix timestamp of the daemon process start.                              |
+| `orbitron_start_time_seconds`                      | Gauge   | Unix timestamp of the daemon process start.                              |
 | `orbitron_roles_total`                             | Gauge   | Number of distinct cached role names (as listed in the dashboard).       |
 | `orbitron_collections_total`                       | Gauge   | Number of distinct cached collection names (as listed in the dashboard). |
 | `orbitron_role_versions_total`                     | Gauge   | Number of cached role versions across all roles.                         |
