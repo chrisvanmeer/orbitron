@@ -43,12 +43,16 @@ const modules = [
 		name: 'orbitron_prune',
 		desc: 'Access-based prune with a retention window — dry-run preview by default.',
 	},
+	{
+		name: 'orbitron_dump',
+		desc: 'Download the whole cache as a .tar.gz backup — streams to the controller, reports size + SHA-256.',
+	},
 ];
 ---
 
 <DocsLayout
 	title="Ansible collection — Orbitron Docs"
-	description="Install and manage Orbitron with the official chrisvanmeer.orbitron Ansible collection: two roles, six HTTP modules, fully idempotent."
+	description="Install and manage Orbitron with the official chrisvanmeer.orbitron Ansible collection: two roles, seven HTTP modules, fully idempotent."
 	section="ansible"
 >
 	<h2>Ansible collection</h2>
@@ -160,7 +164,7 @@ $ ansible-galaxy collection install chrisvanmeer.orbitron:${bundledVersion}`}</C
 	</p>
 
 	<h3>Modules</h3>
-	<p>Six HTTP modules wrap the <a href="/docs/api">management API</a> 1:1:</p>
+	<p>Seven HTTP modules wrap the <a href="/docs/api">management API</a> 1:1:</p>
 	<ul class="mod-list">
 		{
 			modules.map((m) => (
@@ -173,7 +177,9 @@ $ ansible-galaxy collection install chrisvanmeer.orbitron:${bundledVersion}`}</C
 	<p>
 		Every module accepts <code>url</code> (default <code>http://127.0.0.1:8080</code>),
 		<code>token</code> (also available via the <code>ORBITRON_TOKEN</code> environment variable),
-		<code>validate_certs</code> and <code>timeout</code>.
+		<code>validate_certs</code> and <code>timeout</code>. <code>orbitron_dump</code> adds
+		<code>dest</code>, <code>compress</code> and a dedicated <code>read_timeout</code>, because a
+		full-cache dump regularly pauses longer than a normal API call.
 	</p>
 
 	<h3>Day-two operations</h3>
@@ -200,7 +206,24 @@ $ ansible-galaxy collection install chrisvanmeer.orbitron:${bundledVersion}`}</C
     token: "{{ orbitron_admin_token }}"
     kind: role
     name: geerlingguy.nginx
-    version: 3.3.0`}</CodeBlock>
+    version: 3.3.0
+
+- name: Back up the whole cache
+  chrisvanmeer.orbitron.orbitron_dump:
+    token: "{{ orbitron_admin_token }}"
+    dest: /var/backups/orbitron/nightly.tar.gz
+    read_timeout: 1800
+  register: dump`}</CodeBlock>
+
+	<Note>
+		<p>
+			<code>orbitron_dump</code> writes to <code>&lt;dest&gt;.part</code> and moves it into place
+			only after the transfer completed, so an interrupted download never leaves a partial archive
+			for a backup job to pick up. It fails the task when the archive has no readable
+			<code>orbitron/dump.json</code> entry — that is what a truncated transfer looks like — and
+			the token store is never part of the dump.
+		</p>
+	</Note>
 
 	<h3>Token lifecycle</h3>
 	<CodeBlock label="TASKS" filename="tokens.yml" lang="yaml">{`- name: Create (or reuse) a short-lived CI token

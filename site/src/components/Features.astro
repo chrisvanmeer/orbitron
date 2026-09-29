@@ -36,9 +36,9 @@ import BentoCard from './BentoCard.astro';
 					<path d="M14 2v6h6" />
 					<path d="m9 15 2 2 4-4" />
 				</svg>
-				Manage the daemon purely with Ansible: <code>chrisvanmeer.orbitron</code> ships six HTTP
+				Manage the daemon purely with Ansible: <code>chrisvanmeer.orbitron</code> ships seven HTTP
 				modules (<code>info</code>, <code>token</code>, <code>manifest</code>, <code>sync</code>,
-				<code>purge</code>, <code>prune</code>) and two roles — <code>orbitron</code> for install &amp;
+				<code>purge</code>, <code>prune</code>, <code>dump</code>) and two roles — <code>orbitron</code> for install &amp;
 				lifecycle, <code>orbitron_mirror</code> for declarative mirroring. One playbook run, from
 				empty host to serving cache.
 				<br />
@@ -114,14 +114,29 @@ import BentoCard from './BentoCard.astro';
 				<code>require_auth_pull</code> or keep them open.
 			</BentoCard>
 
-			<BentoCard span="full" accent="cyan" title="Observability out of the box">
+			<BentoCard span="half" accent="cyan" title="One-command cache backup">
+				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<path d="M7 10l5 5 5-5" />
+					<path d="M12 15V3" />
+				</svg>
+				<code>GET /api/v1/dump</code> streams the entire mirror as one gzip tar archive — every
+				role, collection artifact, git-sourced checkout, stored manifest and the access index —
+				rooted at <code>orbitron/</code> and closed by a <code>dump.json</code> manifest with a
+				SHA-256 per file. Grab it from the dashboard's metrics drawer or with the
+				<code>orbitron_dump</code> Ansible module. The token store is never included, so a
+				content backup can't leak admin credentials into an offline vault.
+			</BentoCard>
+
+			<BentoCard span="half" accent="cyan" title="Observability out of the box">
 				<svg slot="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M4 20v-6M10 20V8M16 20v-10M22 20V4" />
 				</svg>
 				Prometheus metrics on <code>/metrics</code> — uptime, cache counts, version totals,
 				namespaces, and real block-allocated byte usage at item and version granularity — paired with
 				a ready-made Grafana dashboard (<code>orbitron_v13_current.json</code>) that tracks multiple
-				daemons behind one Prometheus via an <code>Orbitron instance</code> template variable.
+				daemons behind one Prometheus via an <code>Orbitron instance</code> template variable. Uptime
+				panels are based on a process start-time gauge, so a config reload never resets them.
 			</BentoCard>
 		</div>
 	</div>

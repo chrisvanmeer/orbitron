@@ -43,8 +43,13 @@ enterprise environments to cache, store, and serve Ansible roles and collections
   support and `token_ttl_days` configuration.
 * **Content Inventory APIs**: `GET /api/v1/manifests` lists the stored requirement manifests (with content
   hashes) and `GET /api/v1/storage` exposes the precise cached-version inventory of roles and collections.
+* **One-Command Cache Backup (`GET /api/v1/dump`)**: streams the *entire* mirror — roles, collection archives,
+  git-sourced collection checkouts, stored manifests and the access index — as a single gzip-compressed tar
+  archive with a machine-readable `orbitron/dump.json` manifest carrying a SHA-256 per file. The token store is
+  never part of a dump, so a content backup can never leak administrative credentials into an offline vault.
+  Downloadable from the dashboard's System Metrics drawer or the `orbitron_dump` Ansible module.
 * **Official Ansible Collection (`chrisvanmeer.orbitron`)**: install, configure, and operate the daemon purely
-  with Ansible – six purpose-built HTTP modules plus declarative install/mirror roles.
+  with Ansible – seven purpose-built HTTP modules plus declarative install/mirror roles.
 
 ---
 
@@ -83,11 +88,12 @@ through an external identity provider such as Keycloak (see
 * **Collapsible System Metrics Drawer**: Right sliding sidebar (`◄ SYS METRICS`, auto-refreshing every 10 seconds)
   displaying uplink status, last cache activity (access-index based), cache disk usage, mount free space, normalized
   OS distribution/version, system architecture (e.g., `AMD64`, `ARM64`), last boot time — plus a 14-day access
-  activity sparkline.
+  activity sparkline and a `DUMP .TAR.GZ` button that downloads the whole cache as a backup archive.
 * **Live Sync Status**: Header indicator that reflects the background mirror jobs — cyan dot when idle,
   spinning `⟳ SYNCING done/total` while a job runs (kept visible briefly after a fast job), and red
   `◉ LAST SYNC FAILED` when the most recent sync had failures. A `⟳ SYNC` button next to it triggers a full
-  re-sync on demand.
+  re-sync on demand. The cache matrix refreshes itself as soon as a background sync finishes, including while
+  the 10-second auto-refresh is switched off.
 * **Air-Gapped / Island-Mode Ready**: Embedded HTMX served directly from memory, eliminating external CDN calls
   or outbound network dependencies.
 * **Hidden Feature**: Something happens when you type the mirror's name into the dashboard. Try it.
@@ -505,11 +511,12 @@ declarative mirroring, and day-two operations such as purging cached versions.
 
 ### What it provides
 
-* **Six HTTP modules** – `orbitron_info` (facts: health, storage inventory,
+* **Seven HTTP modules** – `orbitron_info` (facts: health, storage inventory,
   manifests, sync status, tokens), `orbitron_token` (create/rotate/revoke),
   `orbitron_manifest` (store role/collection requirements), `orbitron_sync`
   (trigger a full sync, optionally wait), `orbitron_purge` (remove one cached
-  version), `orbitron_prune` (invoke the gated prune API). All modules accept
+  version), `orbitron_prune` (invoke the gated prune API), and `orbitron_dump`
+  (stream a full-cache `.tar.gz` backup to the controller). All modules accept
   `url`, `token` (or `ORBITRON_TOKEN`), `validate_certs`, and `timeout`.
 * **`chrisvanmeer.orbitron.orbitron` role** – end-to-end daemon install:
   resolves and downloads the release binary, runs `orbitron --install` to
@@ -764,6 +771,128 @@ curl -X POST http://127.0.0.1:8080/api/v1/prune \
   "executed": false
 }
 ```
+
+### 7. Full Cache Dump (`GET /api/v1/dump`)
+
+Streams the **entire** mirror as a single gzip-compressed tar archive — the whole storage directory, roles, collection
+archives, git-sourced collection checkouts under `collections/git/`, the stored requirements manifests and the access
+index. It is the one call you want for an offline backup of a mirror that will be rebuilt from scratch somewhere else.
+
+```bash
+curl -H "Authorization: Bearer $ORBITRON_TOKEN" \
+  http://127.0.0.1:8080/api/v1/dump \
+  -o orbitron-backup.tar.gz
+
+# Large mirror on a tight schedule: trade compression ratio for CPU time
+curl -H "Authorization: Bearer $ORBITRON_TOKEN" \
+  "http://127.0.0.1:8080/api/v1/dump?compress=fast" \
+  -o orbitron-backup.tar.gz
+```
+
+**What is in the archive**
+
+Every entry is rooted at `orbitron/`, so untarring into a fresh storage directory is safe:
+
+| Path | Contents |
+| --- | --- |
+| `orbitron/roles/…` | Every cached role directory, all versions |
+| `orbitron/collections/…` | Every cached collection `.tar.gz` |
+| `orbitron/collections/git/…` | Checkouts of git-sourced collections |
+| `orbitron/manifests/…` | Stored requirements manifests (`.access.json` included) |
+| `orbitron/dump.json` | The manifest, always the **last** entry |
+
+**What is never in the archive**
+
+The token store is excluded unconditionally — both the configured `tokens_file`
+when it lives inside the storage path and `<storage>/tokens.json`. So are
+temporary files (`.access.json.tmp`) and anything that is not a regular file or
+directory, such as sockets or FIFOs. A content backup therefore never carries
+administrative credentials into an offline vault; keep your token backup
+separate.
+
+**`orbitron/dump.json`**
+
+```json
+{
+  "format": "orbitron-dump",
+  "version": 1,
+  "created_at": "2026-09-29T10:15:00Z",
+  "orbitron_version": "v13.1.0",
+  "storage_path": "/var/lib/orbitron/storage",
+  "sync_running": false,
+  "excluded": ["tokens.json", ".access.json.tmp"],
+  "roles": 12,
+  "role_versions": 30,
+  "collections": 5,
+  "collection_versions": 9,
+  "bytes": 78341,
+  "files": [
+    {"path": "orbitron/roles/geerlingguy.nginx/2.0.1/main.yml", "size": 1024, "sha256": "5f2b…"}
+  ]
+}
+```
+
+The `files` array names each archived entry exactly as it appears in the tar
+stream, with a SHA-256 per file, so a receiver can verify exactly what it got.
+Because the manifest is written last, its *absence* is itself the signal that a
+transfer was cut short.
+
+**Response headers**
+
+| Header | Meaning |
+| --- | --- |
+| `Content-Type` | `application/gzip` |
+| `Content-Disposition` | `attachment; filename="orbitron-dump-<RFC3339>.tar.gz"` |
+| `X-Orbitron-Dump-Sync` | `running` or `idle` at request time |
+| `X-Orbitron-Dump-Bytes` | Uncompressed total size of the storage path |
+| `X-Orbitron-Dump-Created` | RFC 3339 timestamp of the dump |
+| `X-Orbitron-Dump-Format` | Archive manifest format version (currently `1`) |
+
+There is no `Content-Length`: the size is only known once the walk has finished,
+and a full mirror can be large. A backup job cannot resume a half-finished
+download — verify the `dump.json` entry and retry instead.
+
+**Consistency and security notes**
+
+* No snapshot lock is taken, so dumping while a background sync runs yields a
+  consistent *set* of files but not a globally consistent one. The server tells
+  you this through `X-Orbitron-Dump-Sync: running` and the manifest's
+  `sync_running` field, and the per-file checksums make a torn dump detectable.
+  Prefer dumping when no sync is in flight.
+* The endpoint is available to **every** valid token, with no additional
+  authorization. Treat a token as equivalent to read access to the whole cache
+  and keep dumps as sensitive as the cache itself.
+* The dashboard's `DUMP .TAR.GZ` button downloads exactly this endpoint with the
+  browser's session cookie.
+
+**Restoring**
+
+```bash
+mkdir -p /var/lib/orbitron/storage
+tar -xzf orbitron-backup.tar.gz -C /var/lib/orbitron/storage --strip-components=1
+systemctl restart orbitron
+```
+
+**Doing it from Ansible**
+
+The collection ships an `orbitron_dump` module that streams the archive to the
+controller:
+
+```yaml
+- name: Back up the Orbitron cache
+  chrisvanmeer.orbitron.orbitron_dump:
+    url: http://127.0.0.1:8080
+    token: "{{ vault_orbitron_admin_token }}"
+    dest: /var/backups/orbitron/nightly.tar.gz
+    read_timeout: 1800
+  register: dump
+```
+
+It writes to `<dest>.part` and moves it into place only after the transfer
+completed, so an interrupted download never leaves a partial archive for a
+backup job to pick up, and it fails the task when `dump.json` is missing. See
+[`examples/dump_backup.yml`](ansible_collections/chrisvanmeer/orbitron/examples/dump_backup.yml)
+for a full nightly-backup playbook.
 
 ---
 
@@ -1100,6 +1229,7 @@ Orbitron exposes daemon and storage metrics at `/metrics` using standard Prometh
 | Metric                                             | Type    | Description                                                              |
 | :------------------------------------------------- | :------ | :----------------------------------------------------------------------- |
 | `orbitron_uptime_seconds`                          | Counter | Total daemon uptime in seconds.                                          |
+| `orbitron_start_time_seconds`                       | Gauge   | Unix timestamp of the daemon process start.                              |
 | `orbitron_roles_total`                             | Gauge   | Number of distinct cached role names (as listed in the dashboard).       |
 | `orbitron_collections_total`                       | Gauge   | Number of distinct cached collection names (as listed in the dashboard). |
 | `orbitron_role_versions_total`                     | Gauge   | Number of cached role versions across all roles.                         |
@@ -1118,6 +1248,13 @@ Byte values follow the dashboard's DISK USAGE column: block-allocated size
 without block accounting. Counts follow the cache matrix exactly — a role only
 counts once it holds at least one cached version, and collection archives are
 parsed from `<namespace>-<name>-<version>.tar.gz` filenames.
+
+Both uptime series are derived from a process start time that is captured once and
+carried through a configuration reload, so neither of them resets when
+`config.yml` is reloaded. Prefer `orbitron_start_time_seconds` for panels anyway:
+`time() - orbitron_start_time_seconds` is the conventional uptime idiom and stays
+correct across a scrape gap or a Prometheus restart, where a counter-based
+uptime would show a nonsensical value.
 
 ### Scraping Metrics
 
@@ -1166,6 +1303,9 @@ cleanly into recent Grafana versions.
 * **Contents:** overview stats (uptime, disk usage, roles, collections, cached
   versions, namespaces, tokens), storage and version growth over time, plus
   top-item bar gauge and item/version size tables.
+* **Uptime:** the *Daemon uptime* panel is derived from
+  `time() - max by (instance) (orbitron_start_time_seconds)` so a configuration
+  reload no longer resets the counter.
 * Remember the `/metrics` endpoint requires token auth — see the scrape
   configuration above.
 

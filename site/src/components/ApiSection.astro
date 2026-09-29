@@ -32,6 +32,11 @@ const endpoints = [
 	},
 	{
 		methods: ['GET'],
+		path: '/api/v1/dump',
+		desc: 'Stream the whole cache as a .tar.gz backup, with a per-file SHA-256 manifest. The token store is never included.',
+	},
+	{
+		methods: ['GET'],
 		path: '/metrics',
 		desc: 'Prometheus exposition — uptime, cache counts, version totals and block-level storage bytes.',
 	},

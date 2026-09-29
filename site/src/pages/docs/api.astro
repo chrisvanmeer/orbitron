@@ -41,6 +41,11 @@ const management = [
 	},
 	{
 		methods: ['GET'],
+		path: '/api/v1/dump',
+		desc: 'Streams the entire cache as a gzip tar archive, with a per-file SHA-256 manifest. Never includes the token store.',
+	},
+	{
+		methods: ['GET'],
 		path: '/metrics',
 		desc: 'Prometheus exposition — uptime, cache counts, version totals and storage bytes.',
 	},
@@ -148,6 +153,63 @@ HTTP/1.1 200 OK`}</CodeBlock>
   "freed_bytes": 40960,
   "executed": false
 }`}</CodeBlock>
+	<CodeBlock label="DUMP" filename="curl" lang="bash">{`curl http://127.0.0.1:8080/api/v1/dump \\
+  -H "Authorization: Bearer $ORBITRON_TOKEN" \\
+  -o orbitron-backup.tar.gz
+
+# ?compress=fast trades compression ratio for CPU time
+tar -xzf orbitron-backup.tar.gz -C /var/lib/orbitron/storage --strip-components=1`}</CodeBlock>
+
+	<h3>Backing up a whole mirror</h3>
+	<p>
+		<code>/api/v1/dump</code> is the one call for an offline backup. It walks the whole storage
+		directory and streams a gzip tar archive rooted at <code>orbitron/</code> — every role
+		directory, every collection <code>.tar.gz</code>, git-sourced collection checkouts, the stored
+		requirements manifests and the access index.
+	</p>
+	<div class="api-card card">
+		<ul class="eps">
+			<li class="ep">
+				<div class="ep-meta"><span class="path">orbitron/dump.json</span></div>
+				<p class="desc">
+					Written as the <strong>last</strong> entry. Carries the daemon version, a UTC
+					timestamp, the cache inventory, the excluded paths and a SHA-256 per file. Its
+					absence is the signal that a transfer was cut short.
+				</p>
+			</li>
+			<li class="ep">
+				<div class="ep-meta"><span class="path">never included</span></div>
+				<p class="desc">
+					The token store — both the configured <code>tokens_file</code> when it lives inside
+					the storage path and <code>&lt;storage&gt;/tokens.json</code> — plus temp files
+					and anything that is not a regular file. A content backup never carries
+					credentials into an offline vault.
+				</p>
+			</li>
+			<li class="ep">
+				<div class="ep-meta"><span class="path">X-Orbitron-Dump-Sync</span></div>
+				<p class="desc">
+					<code>running</code> or <code>idle</code> at request time. No snapshot lock is taken,
+					so dumping during a sync yields a consistent set of files but not a globally
+					consistent one; the per-file checksums make a torn dump detectable.
+				</p>
+			</li>
+		</ul>
+		<p class="api-note">
+			There is no <code>Content-Length</code> — a backup job cannot resume a half-finished
+			download. Every valid token may dump: treat a token as read access to the whole cache.
+		</p>
+	</div>
+	<p>
+		The same thing from Ansible, where the archive is streamed to the controller and verified:
+	</p>
+	<CodeBlock label="ANSIBLE" filename="backup.yml" lang="yaml">{`- name: Back up the Orbitron cache
+  chrisvanmeer.orbitron.orbitron_dump:
+    url: http://127.0.0.1:8080
+    token: "{{ vault_orbitron_admin_token }}"
+    dest: /var/backups/orbitron/nightly.tar.gz
+    read_timeout: 1800
+  register: dump`}</CodeBlock>
 	<Note>
 		<p>
 			Full request/response contracts, error codes and the deterministic requirements hash live in
