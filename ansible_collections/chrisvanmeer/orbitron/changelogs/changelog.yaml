@@ -1,5 +1,59 @@
 ---
 releases:
+  2.1.0:
+    changes:
+      release_summary: |
+        Orbitron 2.1.0 adds full-cache backup. The new ``GET /api/v1/dump``
+        endpoint streams the entire mirror - roles, collection archives,
+        git-sourced collection checkouts, stored requirements manifests and
+        the access index - as a single gzip-compressed tar archive, with a
+        machine-readable ``orbitron/dump.json`` manifest carrying a SHA-256 per
+        file. The token store is deliberately never part of a dump, so a
+        content backup can never leak administrative credentials into an
+        offline vault. The archive is downloadable straight from the System
+        Metrics drawer and through the new ``orbitron_dump`` module, which
+        streams it to the controller and reports the size and digest. Daemon
+        uptime in Grafana no longer resets on a configuration reload, and the
+        cache matrix now refreshes itself when a sync finishes while
+        auto-refresh is switched off.
+      minor_features:
+        - >-
+          New ``GET /api/v1/dump`` endpoint (authentication required, no
+          additional RBAC). It streams a ``.tar.gz`` whose entries are rooted at
+          ``orbitron/`` and whose last entry is ``orbitron/dump.json`` with the
+          daemon version, a UTC timestamp, the cache inventory and a SHA-256 per
+          file. The response carries the ``X-Orbitron-Dump-Sync``,
+          ``X-Orbitron-Dump-Files`` and ``X-Orbitron-Dump-Bytes`` headers.
+          ``?compress=fast`` trades compression ratio for CPU time.
+        - >-
+          New ``orbitron_dump`` module downloads that archive to the controller
+          with ``dest``, and supports ``compress`` and a dedicated
+          ``read_timeout`` (a full-cache dump regularly pauses longer than a
+          normal API call). The transfer lands in a ``.part`` file that is only
+          moved into place on success, so an interrupted download never leaves
+          a half-written archive for a backup job to pick up. The task reports
+          ``size_bytes``, ``sha256`` and a summary of the archive's
+          ``dump.json``.
+        - >-
+          The System Metrics drawer gains a ``DUMP .TAR.GZ`` button that
+          downloads the whole cache through the browser.
+        - >-
+          The cache matrix now refreshes itself after a background sync
+          completes while auto-refresh is switched off, swapping just the
+          matrix fragment instead of reloading the page.
+      bugfixes:
+        - >-
+          Daemon uptime no longer resets on a configuration reload. The process
+          start time is captured once and carried through ``Reload`` into the
+          new metrics registry, and is exposed as the
+          ``orbitron_start_time_seconds`` gauge so the Grafana "Daemon uptime"
+          panel can be based on a monotonic start timestamp instead of the
+          scrape-derived process start time.
+        - >-
+          The session cookie is now issued with ``Path=/`` for both token and
+          OIDC logins. Scoped to ``/ui`` the browser never sent it to
+          ``/api/*``, so authenticated API calls made straight from the
+          dashboard (including the dump download) failed with a 401.
   2.0.0:
     changes:
       release_summary: |

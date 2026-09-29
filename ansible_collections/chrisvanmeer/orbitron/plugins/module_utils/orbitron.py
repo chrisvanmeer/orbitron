@@ -11,10 +11,16 @@ server stores (no PyYAML dependency).
 import hashlib
 import json
 import os
+import shutil
 
 from urllib.error import HTTPError
 
 from ansible.module_utils.urls import open_url
+
+
+# Read size for binary downloads. Big enough to keep syscalls low on a large
+# archive, small enough that memory stays flat.
+DOWNLOAD_CHUNK_SIZE = 256 * 1024
 
 
 class OrbitronError(Exception):
@@ -128,6 +134,67 @@ class OrbitronClient(object):
 
     def delete(self, path):
         return self.request("DELETE", path)
+
+    def download(self, path, dest, timeout=None):
+        """Stream a binary response to ``dest`` and return ``(size, sha256)``.
+
+        The payload is written to a sibling ``.part`` file and only moved into
+        place once the transfer finished, so an interrupted or failed download
+        never leaves a half-written archive that a backup job could later pick
+        up. The SHA-256 is computed while streaming, which lets the caller log
+        a digest to compare against the server-side one.
+        """
+        url = self.base_url + path
+        headers = self._headers()
+        headers["Accept"] = "application/gzip, application/octet-stream"
+        # Compression is negotiated per response; the dump is already gzip so
+        # asking for it again would only risk a double-decompressed stream.
+        headers["Accept-Encoding"] = "identity"
+
+        part = dest + ".part"
+        parent = os.path.dirname(os.path.abspath(dest))
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent, exist_ok=True)
+
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            response = open_url(
+                url,
+                method="GET",
+                headers=headers,
+                validate_certs=self.validate_certs,
+                timeout=timeout or self.timeout,
+            )
+        except HTTPError as e:
+            body = e.read().decode("utf-8", "replace") if hasattr(e, "read") else ""
+            raise OrbitronError(
+                "HTTP GET %s returned %s %s" % (path, e.code, e.reason),
+                status=e.code,
+                body=body,
+            )
+        except Exception as e:  # network / transport level failures
+            raise OrbitronError("Failed to reach %s: %s" % (url, e))
+
+        try:
+            with open(part, "wb") as handle:
+                while True:
+                    chunk = response.read(DOWNLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    digest.update(chunk)
+                    size += len(chunk)
+            shutil.move(part, dest)
+        except Exception as e:
+            if os.path.exists(part):
+                try:
+                    os.remove(part)
+                except OSError:
+                    pass
+            raise OrbitronError("Failed to write %s: %s" % (dest, e))
+
+        return size, digest.hexdigest()
 
 
 def sha256_text(text):

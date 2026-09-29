@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
+import hashlib
 import json
+import os
 import urllib.error
 
 import pytest
@@ -192,3 +194,88 @@ def test_client_allows_missing_token_for_healthz():
     module = _FakeModule({"url": "http://mirror.example", "token": None, "validate_certs": False, "timeout": 5})
     client = orbitron_utils.OrbitronClient(module, token_required=False)
     assert client.token is None
+
+
+class _ChunkedResponse(object):
+    """Response that yields the payload in bounded chunks, like a real stream."""
+
+    def __init__(self, payload, chunk=16):
+        self._payload = payload
+        self._chunk = chunk
+        self._pos = 0
+
+    def getcode(self):
+        return 200
+
+    def read(self, size=-1):
+        if size is None or size < 0:
+            size = len(self._payload)
+        size = min(size, self._chunk)
+        chunk = self._payload[self._pos:self._pos + size]
+        self._pos += len(chunk)
+        return chunk
+
+
+def test_client_download_writes_file_and_digest(monkeypatch, tmp_path):
+    calls = {}
+    payload = b"orbitron-dump-bytes" * 100
+
+    def fake_open_url(url, method="GET", headers=None, data=None, validate_certs=None, timeout=None):
+        calls.update(url=url, method=method, headers=headers, timeout=timeout)
+        return _ChunkedResponse(payload)
+
+    monkeypatch.setattr(orbitron_utils, "open_url", fake_open_url)
+    module = _FakeModule({"url": "http://mirror.example", "token": "sekrit", "validate_certs": False, "timeout": 5})
+    client = orbitron_utils.OrbitronClient(module)
+
+    dest = str(tmp_path / "nested" / "dump.tar.gz")
+    size, digest = client.download("/api/v1/dump", dest, timeout=300)
+
+    assert calls["url"] == "http://mirror.example/api/v1/dump"
+    assert calls["method"] == "GET"
+    assert calls["timeout"] == 300
+    # The dump is already gzip; negotiating another encoding would corrupt it.
+    assert calls["headers"]["Accept-Encoding"] == "identity"
+    assert calls["headers"]["Authorization"] == "Bearer sekrit"
+
+    assert size == len(payload)
+    assert digest == hashlib.sha256(payload).hexdigest()
+    assert open(dest, "rb").read() == payload
+    # The scratch file must not survive a successful transfer.
+    assert not os.path.exists(dest + ".part")
+
+
+def test_client_download_cleans_up_part_on_failure(monkeypatch, tmp_path):
+    class Exploding(object):
+        def read(self, size=-1):
+            raise IOError("connection reset")
+
+    def fake_open_url(url, method="GET", headers=None, data=None, validate_certs=None, timeout=None):
+        return Exploding()
+
+    monkeypatch.setattr(orbitron_utils, "open_url", fake_open_url)
+    module = _FakeModule({"url": "http://mirror.example", "token": "sekrit", "validate_certs": False, "timeout": 5})
+    client = orbitron_utils.OrbitronClient(module)
+
+    dest = str(tmp_path / "dump.tar.gz")
+    with pytest.raises(orbitron_utils.OrbitronError):
+        client.download("/api/v1/dump", dest)
+
+    # A half-written archive at the real destination is exactly what a backup
+    # job must never pick up.
+    assert not os.path.exists(dest)
+    assert not os.path.exists(dest + ".part")
+
+
+def test_client_download_maps_http_errors(monkeypatch, tmp_path):
+    def fake_open_url(url, method="GET", headers=None, data=None, validate_certs=None, timeout=None):
+        raise urllib.error.HTTPError(url, 401, "Unauthorized", None, None)
+
+    monkeypatch.setattr(orbitron_utils, "open_url", fake_open_url)
+    module = _FakeModule({"url": "http://mirror.example", "token": "sekrit", "validate_certs": False, "timeout": 5})
+    client = orbitron_utils.OrbitronClient(module)
+
+    with pytest.raises(orbitron_utils.OrbitronError) as excinfo:
+        client.download("/api/v1/dump", str(tmp_path / "dump.tar.gz"))
+    assert excinfo.value.status == 401
+    assert not os.path.exists(str(tmp_path / "dump.tar.gz.part"))

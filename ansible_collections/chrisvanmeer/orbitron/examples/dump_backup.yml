@@ -1,0 +1,72 @@
+---
+# Take an offline backup of an Orbitron mirror.
+#
+# The dump contains the whole cache (roles, collection archives, git-sourced
+# collection checkouts, stored requirements manifests and the access index) but
+# never the token store, so it is safe to move to an offline vault. The archive
+# carries its own orbitron/dump.json manifest with a SHA-256 per file.
+- name: Back up the Orbitron cache
+  hosts: mirrors
+  become: true
+  vars:
+    orbitron_url: http://127.0.0.1:8080
+    orbitron_bootstrap_token: "{{ vault_orbitron_admin_token }}"
+    orbitron_backup_dir: /var/backups/orbitron
+
+  tasks:
+    - name: Create a short-lived backup token
+      chrisvanmeer.orbitron.orbitron_token:
+        url: "{{ orbitron_url }}"
+        token: "{{ orbitron_bootstrap_token }}"
+        label: nightly-backup
+        ttl_days: 1
+      register: backup_token
+      no_log: true
+
+    - name: Ensure the backup directory exists
+      ansible.builtin.file:
+        path: "{{ orbitron_backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Dump the whole cache
+      chrisvanmeer.orbitron.orbitron_dump:
+        url: "{{ orbitron_url }}"
+        token: "{{ backup_token.orbitron.token }}"
+        dest: "{{ orbitron_backup_dir }}/orbitron-{{ ansible_date_time.date }}.tar.gz"
+        # A large mirror on a slow uplink regularly pauses longer than the
+        # default API timeout.
+        read_timeout: 1800
+      register: dump
+
+    - name: Show what ended up in the archive
+      ansible.builtin.debug:
+        msg: >-
+          {{ dump.dest }} ({{ dump.size_bytes }} bytes,
+          sha256 {{ dump.sha256 }}) holds
+          {{ dump.dump.role_versions }} role versions across
+          {{ dump.dump.roles }} roles and
+          {{ dump.dump.collection_versions }} collection versions across
+          {{ dump.dump.collections }} collections.
+      when: dump.dump is defined
+
+    - name: Record the digest next to the archive
+      ansible.builtin.copy:
+        content: |
+          {{ dump.sha256 }}  {{ dump.dest | basename }}
+        dest: "{{ dump.dest }}.sha256"
+        owner: root
+        group: root
+        mode: "0400"
+
+    - name: Ship the archive to the offline vault
+      ansible.builtin.copy:
+        src: "{{ dump.dest }}"
+        dest: "{{ vault_host }}:{{ dump.dest | basename }}"
+        mode: "0400"
+      delegate_to: vault
+      # The dump is already gzip-compressed; compressing it again on the wire
+      # only costs CPU. Swap compress for "fast" when dumping a very large
+      # mirror on a tight schedule and archive size does not matter.

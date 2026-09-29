@@ -33,6 +33,7 @@ ansible-galaxy collection install chrisvanmeer.orbitron:1.3.0
 | `orbitron_sync` | Trigger a full sync and optionally wait for completion |
 | `orbitron_purge` | Remove one cached role/collection version |
 | `orbitron_prune` | Prune unserved cached versions via the access-based prune API (`days` retention window, dry-run by default) |
+| `orbitron_dump` | Download the whole cache as a `.tar.gz` backup archive (streams to the controller, reports size + SHA-256) |
 
 All HTTP modules accept `url` (default `http://127.0.0.1:8080`), `token`
 (also via `ORBITRON_TOKEN`), `validate_certs`, and `timeout`.
@@ -157,6 +158,45 @@ expression-style versions always warrant a re-check.
 
 - `examples/install.yml` – full install, then mirror a couple of collections.
 - `examples/manage_tokens.yml` – token lifecycle with an existing daemon.
+- `examples/dump_backup.yml` – nightly full-cache backup, shipped to a vault.
+
+## Backups
+
+`orbitron_dump` calls `GET /api/v1/dump`, which streams the entire mirror as a
+single gzip-compressed tar archive rooted at `orbitron/`: roles, collection
+archives, git-sourced collection checkouts, stored requirements manifests and
+the access index. The last entry is `orbitron/dump.json`, carrying the daemon
+version, a UTC timestamp, the inventory and a SHA-256 per file.
+
+```yaml
+- name: Back up the cache
+  chrisvanmeer.orbitron.orbitron_dump:
+    url: http://127.0.0.1:8080
+    token: "{{ vault_orbitron_admin_token }}"
+    dest: /var/backups/orbitron/nightly.tar.gz
+    read_timeout: 1800
+  register: dump
+```
+
+The module writes to `<dest>.part` and moves it into place only after the
+transfer completed, so a failed download never leaves a partial archive behind.
+It fails the task when the archive has no readable `dump.json`, which is what a
+truncated transfer looks like. The response has no `Content-Length`, so a
+backup job cannot resume a half-finished download; retry instead.
+
+`compress: default` favours archive size, `compress: fast` trades ratio for CPU.
+
+The dump deliberately never contains the token store, so a content backup
+cannot carry administrative credentials into an offline vault. Dumping while a
+background sync runs yields a consistent but not globally consistent set of
+files; `dump.sync_running` in the returned manifest and the per-file checksums
+make a torn dump detectable.
+
+Restoring is a plain untar into a fresh storage directory:
+
+```bash
+tar -xzf nightly.tar.gz -C /var/lib/orbitron/storage --strip-components=1
+```
 
 ## Security notes
 
@@ -166,3 +206,6 @@ expression-style versions always warrant a re-check.
   `validate_certs: true` is recommended for `https` URLs.
 - The `orbitron` role runs `--install` and service commands, so it must run
   with `become: true` on the target.
+- `GET /api/v1/dump` is available to every valid token: treat a token as
+  equivalent to read access to the whole cache, and keep dumps as sensitive as
+  the cache itself.
