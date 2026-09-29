@@ -45,6 +45,11 @@ type Server struct {
 	shaCache map[string]shaEntry
 	oidc     *oidc.Client
 	sessions *auth.SessionManager
+	// startedAt is when this daemon process came up. It is deliberately owned
+	// by the Server and carried across Reload: a SIGHUP configuration reload
+	// rebuilds the Server and calls Start() again, but the process never
+	// restarted, so uptime must keep counting from the original start.
+	startedAt time.Time
 }
 
 func NewServer(cfg *config.Config) (srv *Server, err error) {
@@ -55,9 +60,10 @@ func NewServer(cfg *config.Config) (srv *Server, err error) {
 			HTTPSProxy: cfg.HTTPSProxy,
 			NoProxy:    cfg.NoProxy,
 		}, cfg.TLS),
-		rec:      access.New(cfg.StoragePath),
-		shaCache: make(map[string]shaEntry),
-		sessions: auth.NewSessionManager(cfg.OIDC.SessionTTL()),
+		rec:       access.New(cfg.StoragePath),
+		shaCache:  make(map[string]shaEntry),
+		sessions:  auth.NewSessionManager(cfg.OIDC.SessionTTL()),
+		startedAt: time.Now(),
 	}
 
 	if cfg.OIDC.Enabled && !cfg.OIDC.EnabledAndConfigured() {
@@ -758,8 +764,10 @@ func (s *Server) Start() error {
 		logger.Info("Seeded bundled %s.%s %s into cache (%d bytes)", seed.Namespace, seed.Name, res.Version, len(seed.CollectionTarGz))
 	}
 
-	// Prometheus Telemetry Endpoint (Protected with token auth via AuthMiddleware)
-	metrics := telemetry.NewMetrics()
+	// Prometheus Telemetry Endpoint (Protected with token auth via AuthMiddleware).
+	// The start time comes from the Server, not from this call, so the reported
+	// uptime survives the SIGHUP reload that lands here again.
+	metrics := telemetry.NewMetrics(s.startedAt)
 	mux.HandleFunc("/metrics", s.AuthMiddleware(metrics.Handler(s.cfg)))
 
 	// Web UI Dashboard & HTMX Assets (Uses its own cookie auth)
@@ -834,6 +842,10 @@ func (s *Server) Start() error {
 // error is returned. Callers shutting the old server down before starting the
 // returned one should expect a brief bind gap, since both share the listen
 // address.
+//
+// The returned Server inherits the original process start time: a reload
+// changes configuration, not the lifetime of the daemon, so uptime keeps
+// counting where it left off.
 func (s *Server) Reload(configPath string) (*Server, error) {
 	if _, err := os.Stat(configPath); err != nil {
 		return nil, fmt.Errorf("reload: cannot read config file %s: %w", configPath, err)
@@ -846,6 +858,7 @@ func (s *Server) Reload(configPath string) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reload: failed to initialize new server: %w", err)
 	}
+	newSrv.startedAt = s.startedAt
 	if err := logger.Reopen(newCfg.LogPath); err != nil {
 		logger.Warn("Reload: could not switch log output to %q, continuing on stdout: %v", newCfg.LogPath, err)
 	}

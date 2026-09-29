@@ -2,12 +2,14 @@ package telemetry
 
 import (
 	"fmt"
+	"math"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"orbitron/internal/config"
 )
@@ -52,7 +54,7 @@ func TestMetricsHandler(t *testing.T) {
 	writeFile(t, filepath.Join(root, "collections", "gluster", "gluster-gluster-1.0.2.tar.gz"), []byte("coll"))
 
 	cfg := testConfig(t, root)
-	handler := NewMetrics().Handler(cfg)
+	handler := NewMetrics(time.Now()).Handler(cfg)
 
 	rec := httptest.NewRecorder()
 	handler(rec, httptest.NewRequest("GET", "/metrics", nil))
@@ -120,11 +122,47 @@ func TestMetricsHandlerActiveTokens(t *testing.T) {
 	}
 	cfg.TokensFile = tokens
 
-	handler := NewMetrics().Handler(cfg)
+	handler := NewMetrics(time.Now()).Handler(cfg)
 	rec := httptest.NewRecorder()
 	handler(rec, httptest.NewRequest("GET", "/metrics", nil))
 
 	if got := metricValue(t, rec.Body.String(), "orbitron_active_tokens_total"); got != 1 {
 		t.Errorf("orbitron_active_tokens_total = %d, want 1", got)
+	}
+}
+
+func metricFloat(t *testing.T, body, name string) float64 {
+	t.Helper()
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + ` (-?\d+(?:\.\d+)?)$`)
+	m := re.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("metric %q not found in:\n%s", name, body)
+	}
+	var v float64
+	if _, err := fmt.Sscanf(m[1], "%g", &v); err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+	return v
+}
+
+func TestMetricsUptimeUsesSuppliedStartTime(t *testing.T) {
+	// The daemon calls Start() again on every SIGHUP configuration reload (the
+	// nightly logrotate postrotate sends one), so the metrics handler must be
+	// handed the process start time. A self-stamped clock would report a fresh
+	// uptime after every reload while the process itself keeps running.
+	cfg := testConfig(t, t.TempDir())
+	start := time.Now().Add(-6 * time.Hour)
+	handler := NewMetrics(start).Handler(cfg)
+
+	rec := httptest.NewRecorder()
+	handler(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+
+	if got := metricFloat(t, body, "orbitron_uptime_seconds"); got < 6*3600 || got > 6*3600+60 {
+		t.Errorf("orbitron_uptime_seconds = %.2f, want ~%.0f (6h since the supplied start time)", got, 6*3600.0)
+	}
+	wantStart := float64(start.UnixNano()) / 1e9
+	if got := metricFloat(t, body, "orbitron_start_time_seconds"); math.Abs(got-wantStart) > 1 {
+		t.Errorf("orbitron_start_time_seconds = %.2f, want %.2f", got, wantStart)
 	}
 }

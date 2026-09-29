@@ -95,7 +95,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (instance) (orbitron_uptime_seconds)",
+          "expr": "time() - max by (instance) (orbitron_start_time_seconds)",
           "instant": true,
           "legendFormat": "{{instance}}",
           "refId": "A"

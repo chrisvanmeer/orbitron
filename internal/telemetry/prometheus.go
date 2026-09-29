@@ -14,10 +14,13 @@ type Metrics struct {
 	startTime time.Time
 }
 
-func NewMetrics() *Metrics {
-	return &Metrics{
-		startTime: time.Now(),
-	}
+// NewMetrics builds the metrics handler set around an explicit process start
+// time. The caller owns that value on purpose: the daemon re-runs Start() after
+// a SIGHUP configuration reload, and stamping the clock here would reset the
+// reported uptime to zero on every reload while the process itself keeps
+// running (the nightly logrotate postrotate triggers exactly that SIGHUP).
+func NewMetrics(startTime time.Time) *Metrics {
+	return &Metrics{startTime: startTime}
 }
 
 // Handler returns an http.HandlerFunc serving Prometheus exposition metrics.
@@ -37,6 +40,13 @@ func (m *Metrics) Handler(cfg *config.Config) http.HandlerFunc {
 		_, _ = fmt.Fprintf(w, "# HELP orbitron_uptime_seconds Total daemon uptime in seconds.\n")
 		_, _ = fmt.Fprintf(w, "# TYPE orbitron_uptime_seconds counter\n")
 		_, _ = fmt.Fprintf(w, "orbitron_uptime_seconds %.2f\n\n", time.Since(m.startTime).Seconds())
+
+		// The absolute start time of the process. Unlike the counter above this
+		// gauge is immune to a scrape gap and lets dashboards compute uptime
+		// across a genuine restart, where the counter legitimately resets.
+		_, _ = fmt.Fprintf(w, "# HELP orbitron_start_time_seconds Start time of the daemon since the unix epoch in seconds.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE orbitron_start_time_seconds gauge\n")
+		_, _ = fmt.Fprintf(w, "orbitron_start_time_seconds %.2f\n\n", float64(m.startTime.UnixNano())/1e9)
 
 		_, _ = fmt.Fprintf(w, "# HELP orbitron_roles_total Number of distinct cached role names.\n")
 		_, _ = fmt.Fprintf(w, "# TYPE orbitron_roles_total gauge\n")

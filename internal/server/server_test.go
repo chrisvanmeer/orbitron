@@ -86,6 +86,29 @@ func TestReloadKeepsCurrentServerOnBrokenConfig(t *testing.T) {
 	}
 }
 
+func TestReloadKeepsProcessStartTime(t *testing.T) {
+	// A SIGHUP reload rebuilds the Server and calls Start() again, but the
+	// process never restarted. NewServer stamps a fresh start time, so Reload
+	// has to carry the original one over or the reported daemon uptime (and
+	// orbitron_start_time_seconds) would reset on every reload.
+	s, _ := newTestServer(t)
+	s.startedAt = time.Now().Add(-21 * time.Hour)
+
+	cfgPath := filepath.Join(t.TempDir(), "config.yml")
+	cfgYAML := fmt.Sprintf("storage_path: %s\nlog_path: \"\"\n", t.TempDir())
+	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	next, err := s.Reload(cfgPath)
+	if err != nil {
+		t.Fatalf("Reload on a valid config failed: %v", err)
+	}
+	if !next.startedAt.Equal(s.startedAt) {
+		t.Errorf("reloaded server start time = %s, want the original %s", next.startedAt, s.startedAt)
+	}
+}
+
 func TestReloadFailsOnMissingConfigFile(t *testing.T) {
 	s, _ := newTestServer(t)
 	if _, err := s.Reload(filepath.Join(t.TempDir(), "does-not-exist.yml")); err == nil {
