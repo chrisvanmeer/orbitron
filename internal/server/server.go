@@ -793,6 +793,11 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/manifests", s.AuthMiddleware(s.HandleManifests))
 	mux.HandleFunc("GET /api/v1/storage", s.AuthMiddleware(s.HandleStorageInventory))
 
+	// Full-content backup export. Streams the whole cache as a .tar.gz for a
+	// backup host / offline vault. Always authenticated (never gated by
+	// require_auth_pull) and always excludes the token store.
+	mux.HandleFunc("GET /api/v1/dump", s.AuthMiddleware(s.HandleDump))
+
 	// Authorized admin-only storage deletion endpoints (one version per call).
 	// Registered with method-specific patterns so they take precedence over the
 	// broader pull-auth /api/ and galaxy routers. Always require a valid token.
