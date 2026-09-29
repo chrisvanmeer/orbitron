@@ -119,6 +119,88 @@ func renderLoginBody(cfg *config.Config) string {
 	return rec.Body.String()
 }
 
+// TestLoginCookieCoversAPIPaths pins the cookie Path at "/". The token cookie
+// doubles as the credential the server's AuthMiddleware accepts on /api/*, and
+// the dashboard links the browser straight to /api/v1/dump; scoped to /ui the
+// browser would never send it there and the backup download would 401.
+func TestLoginCookieCoversAPIPaths(t *testing.T) {
+	tokens := filepath.Join(t.TempDir(), "tokens.json")
+	if err := os.WriteFile(tokens, []byte(`{"tokens":{"good-token":{"created_at":1,"expires_at":0}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := NewDashboard(&config.Config{StoragePath: t.TempDir(), TokensFile: tokens}, nil, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/ui/login", strings.NewReader("token=good-token"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	d.handleLogin(rec, req)
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatalf("no session cookie set on a valid login (status %d)", rec.Code)
+	}
+	if got := cookies[0].Path; got != "/" {
+		t.Errorf("orbitron_token cookie Path = %q, want / so the dump download authenticates", got)
+	}
+}
+
+// TestSyncTimeDrawsDumpLink verifies the SYS METRICS drawer exposes the
+// whole-cache backup download.
+func TestSyncTimeDrawsDumpLink(t *testing.T) {
+	d := NewDashboard(&config.Config{StoragePath: t.TempDir()}, nil, nil)
+	rec := httptest.NewRecorder()
+	d.handleSyncTime(rec, httptest.NewRequest("GET", "/ui/sync", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `href="/api/v1/dump"`) {
+		t.Errorf("drawer has no link to /api/v1/dump\n%s", body)
+	}
+	if !strings.Contains(body, "download") {
+		t.Errorf("dump link is missing the download attribute\n%s", body)
+	}
+}
+
+// TestStorageInstallsRefreshHook verifies the matrix fragment exposes the hook
+// the header's sync poller calls once a sync finishes, and that the hook is
+// only a no-op gate around a matrix swap (it must not reload the whole page).
+func TestStorageInstallsRefreshHook(t *testing.T) {
+	storage := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(storage, "roles", "r", "1.0.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := NewDashboard(&config.Config{StoragePath: storage}, nil, nil)
+	rec := httptest.NewRecorder()
+	d.handleStorage(rec, httptest.NewRequest("GET", "/ui/storage", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "window.__orbitronRefreshMatrix") {
+		t.Errorf("storage fragment does not install the __orbitronRefreshMatrix hook\n%s", body)
+	}
+	if !strings.Contains(body, "if (autoOn) return;") {
+		t.Errorf("refresh hook is not gated on auto-refresh being off\n%s", body)
+	}
+	if strings.Contains(body, "location.reload()") {
+		t.Errorf("refresh hook must swap the matrix, not reload the page\n%s", body)
+	}
+}
+
+// TestIndexWiresSyncCompletionRefresh verifies the header poller detects a
+// completed sync from the history's finished_at and asks the matrix to refresh,
+// while ignoring the history snapshot present on first load.
+func TestIndexWiresSyncCompletionRefresh(t *testing.T) {
+	d := NewDashboard(&config.Config{StoragePath: t.TempDir()}, nil, nil)
+	rec := httptest.NewRecorder()
+	d.handleIndex(rec, httptest.NewRequest("GET", "/ui", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "finished_at") {
+		t.Errorf("sync poller does not read finished_at from the history\n%s", body)
+	}
+	if !strings.Contains(body, "window.__orbitronRefreshMatrix") {
+		t.Errorf("sync poller does not call the matrix refresh hook\n%s", body)
+	}
+}
+
 // TestLoginPageWithoutOIDC verifies the login page keeps the classic single
 // "Establish Link" token button and no SSO affordance when OIDC is disabled.
 func TestLoginPageWithoutOIDC(t *testing.T) {

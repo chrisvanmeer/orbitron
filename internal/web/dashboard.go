@@ -152,10 +152,14 @@ func (d *Dashboard) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if valid {
 		logger.Info("Web UI session established (from %s)", clientIP(r))
+		// Path "/" rather than "/ui": this cookie is also the credential the
+		// server's AuthMiddleware accepts on /api/*, and the dashboard links the
+		// browser to /api/v1/dump to start a backup download. Scoped to /ui the
+		// browser would never send it there and that download would 401.
 		http.SetCookie(w, &http.Cookie{
 			Name:     "orbitron_token",
 			Value:    token,
-			Path:     "/ui",
+			Path:     "/",
 			MaxAge:   8 * 3600,
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
@@ -262,10 +266,13 @@ func (d *Dashboard) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Same "/"-scoped reasoning as the token login cookie: this session is the
+	// credential the server's AuthMiddleware accepts, and the dashboard links
+	// the browser to /api/v1/dump to start a backup download.
 	http.SetCookie(w, &http.Cookie{
 		Name:     OIDCSessionCookie,
 		Value:    session,
-		Path:     "/ui",
+		Path:     "/",
 		MaxAge:   int(d.cfg.OIDC.SessionTTL().Seconds()),
 		HttpOnly: true,
 		Secure:   r.URL.Scheme == "https" || r.Header.Get("X-Forwarded-Proto") == "https",
@@ -1215,12 +1222,24 @@ const htmlTemplate = `
         // The busy look is held briefly after a job so even a fast background
         // sync stays perceivable in the header. The "SYNC" button next to it
         // kicks off a full resync on demand.
+        //
+        // This poller also notices when a sync *completes* and asks the cache
+        // matrix to re-render. Completion is detected from the sync history's
+        // finished_at rather than from the current job being cleared: a short
+        // job that starts and finishes between two 10s polls is never seen
+        // running, whereas the history entry persists. That also covers syncs
+        // started from outside the browser (an Ansible playbook, a cron job) and
+        // syncs that completed while the tab was in the background.
         (function () {
             const el = document.getElementById('sync-indicator');
             const btn = document.getElementById('sync-trigger');
             if (!el) return;
             const HOLD_MS = 9000;
             let busyUntil = 0;
+            // Set from the first poll without triggering a refresh: the matrix
+            // is already fresh from its own hx-trigger="load", so refreshing on
+            // page load would just be a redundant round trip.
+            let seenFinishedAt = null;
             function render(cur, last) {
                 if (cur) {
                     busyUntil = Date.now() + HOLD_MS;
@@ -1238,13 +1257,29 @@ const htmlTemplate = `
                     el.textContent = failed ? '◉ LAST SYNC FAILED' : '◍ MIRROR IDLE';
                 }
             }
+            function onSyncCompleted() {
+                // Installed by the /ui/storage fragment, which owns the
+                // auto-refresh state and decides whether a re-render is needed.
+                if (window.__orbitronRefreshMatrix) window.__orbitronRefreshMatrix();
+            }
             function tick() {
                 fetch('/ui/sync-status', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
                     .then(function (res) { return res.ok ? res.json() : null; })
                     .then(function (data) {
                         if (!data) return;
                         const hist = data.history || [];
-                        render(data.current, hist.length ? hist[hist.length - 1] : null);
+                        const last = hist.length ? hist[hist.length - 1] : null;
+                        render(data.current, last);
+
+                        const finishedAt = (last && last.finished_at) || null;
+                        if (seenFinishedAt === null) {
+                            seenFinishedAt = finishedAt;
+                            return;
+                        }
+                        if (finishedAt && finishedAt !== seenFinishedAt) {
+                            seenFinishedAt = finishedAt;
+                            onSyncCompleted();
+                        }
                     })
                     .catch(function () {});
             }
@@ -2050,6 +2085,21 @@ tr.storage-empty td .empty-stars { color: var(--yellow); letter-spacing: 0.4em; 
 	}
 	scheduleAutoRefresh();
 
+	// The header's sync poller calls this once a background sync completes. With
+	// AUTO REFRESH off nothing else would ever re-render the matrix, so the
+	// freshly mirrored content would stay invisible until a manual reload. The
+	// gate lives here because autoOn is already in this closure and is restored
+	// from localStorage on every render, so it is always current; when the timer
+	// is running it picks the change up on its own and a second swap would only
+	// make the table flicker. Re-installed on each render (htmx evaluates the
+	// script) so it never holds on to a stale closure.
+	window.__orbitronRefreshMatrix = function () {
+		if (autoOn) return;
+		if (window.htmx && window.htmx.ajax) {
+			window.htmx.ajax('GET', '/ui/storage', { target: '#main-workspace', swap: 'innerHTML' });
+		}
+	};
+
 	// Empty-state row shown when search or type filters match nothing.
 	var emptyRow = document.createElement('tr');
 	emptyRow.className = 'storage-empty';
@@ -2224,7 +2274,13 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 
 		<div class="stat-label">Cache Access Activity (14 days)</div>
 		<div class="stat-value">%s</div>
-	`, build.Version, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime, activity)
+
+		<hr style="border-color: var(--border); margin-top:20px;">
+
+		<div class="stat-label">Offline Backup Archive</div>
+		<div class="stat-value" style="color:var(--text-dim); font-size:0.9em;">~%s uncompressed, gzipped on the fly</div>
+		<a class="log-download" href="/api/v1/dump" download title="Download the entire cache as a .tar.gz" aria-label="Download the entire cache as a .tar.gz" style="display:inline-flex; align-items:center; gap:6px; margin-top:8px; text-decoration:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></svg> DUMP .TAR.GZ</a>
+	`, build.Version, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime, activity, formatSize(cacheUsedSpace))
 
 	w.Header().Set("Content-Type", "text/html")
 	_, _ = w.Write([]byte(html))
