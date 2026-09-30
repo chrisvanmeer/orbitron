@@ -116,7 +116,7 @@ export function initShell(): void {
 
 	function greet() {
 		emit([
-			{ text: 'orbitron v2.0.2 — internal Ansible Galaxy mirror daemon', cls: 'cyan' },
+			{ text: `orbitron v${__ORBITRON_VERSION__} — internal Ansible Galaxy mirror daemon`, cls: 'cyan' },
 			{ text: '=======================================================', cls: 'dim' },
 			{ text: '' },
 			{ text: 'type ', cls: 'dim' },
@@ -194,7 +194,7 @@ export function initShell(): void {
 		info: {
 			about: 'daemon, build and runtime facts',
 			run: () => [
-				{ text: 'orbitron            v2.0.2 · one static binary · CGO_ENABLED=0' },
+				{ text: `orbitron            v${__ORBITRON_VERSION__} · one static binary · CGO_ENABLED=0` },
 				{ text: 'build               linux/amd64, linux/arm64 · ~11.5 MiB' },
 				{ text: 'galaxy api          V1 + V3, served natively' },
 				{ text: 'git sources         github, gitlab' },
@@ -209,7 +209,7 @@ export function initShell(): void {
 		},
 		version: {
 			about: 'the release stamp',
-			run: () => [{ text: 'orbitron 2.0.2 (go, cgo disabled, no runtime deps)', cls: 'cyan' }]
+			run: () => [{ text: `orbitron ${__ORBITRON_VERSION__} (go, cgo disabled, no runtime deps)`, cls: 'cyan' }]
 		},
 		inventory: {
 			about: 'storage matrix',
