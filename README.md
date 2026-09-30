@@ -1313,7 +1313,7 @@ cleanly into recent Grafana versions.
 
 ## Author
 
-Chris van Meer - <chris@atcomputing.nl>
+Chris van Meer - <chris@van-meer.net>
 
 ---
 
