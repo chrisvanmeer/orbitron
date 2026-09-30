@@ -597,7 +597,13 @@ function drawSolid(lon0r) {
 
 		let lastT = 0;
 		function draw(t) {
-			const dt = lastT ? t - lastT : 16;
+			// A backgrounded tab stops requestAnimationFrame, so the first frame
+			// after switching back can carry minutes of elapsed time. Integrating
+			// that raw delta moved every star past the left edge at once, and the
+			// wrap check then stacked them all on the same x — one vertical line
+			// of streaks at the right edge. Clamp to a 20fps floor so a stalled
+			// or slept tab resumes instead of teleporting the field.
+			const dt = Math.min(lastT ? t - lastT : 16, 50);
 			lastT = t;
 			const time = t / 1000;
 			ctx.clearRect(0, 0, w, h);
