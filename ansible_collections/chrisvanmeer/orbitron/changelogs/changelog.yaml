@@ -1,5 +1,22 @@
 ---
 releases:
+  2.1.1:
+    changes:
+      release_summary: |
+        Orbitron 2.1.1 is a maintenance release for the Ansible collection. The
+        daemon binaries are unchanged from 2.1.0; the release exists so the
+        collection can be republished with an install role that is no longer
+        tied to GitHub as its release source.
+      minor_features:
+        - >-
+          The ``orbitron`` install role no longer hardcodes GitHub. The release
+          lookup and the asset download are configured through
+          ``orbitron_release_api``, ``orbitron_release_download`` and
+          ``orbitron_release_repo``, so a Forgejo, Gitea or GitLab mirror of
+          the project can serve as the release source. GitHub serves the
+          release API and the release assets from different hosts, which is why
+          the first two are separate variables. The defaults still point at
+          GitHub, so existing playbooks behave exactly as before.
   2.1.0:
     changes:
       release_summary: |

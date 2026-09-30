@@ -80,15 +80,19 @@ jobs:
       - name: Install ansible-core
         run: pip install ansible-core
 
-      - name: Verify collection version matches the tag
+      - name: Verify release versions match the tag
         run: |
           COLLECTION_VERSION="$(python3 -c "import yaml; print(yaml.safe_load(open('ansible_collections/chrisvanmeer/orbitron/galaxy.yml'))['version'])")"
+          SITE_VERSION="$(tr -d '[:space:]' <VERSION)"
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           if [[ "$COLLECTION_VERSION" != "$TAG_VERSION" ]]; then
             echo "::warning::galaxy.yml version ($COLLECTION_VERSION) does not match tag ($GITHUB_REF_NAME); skipping collection publish."
             echo "SKIP_PUBLISH=true" >>"$GITHUB_ENV"
+          elif [[ "$SITE_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::warning::VERSION ($SITE_VERSION) does not match tag ($GITHUB_REF_NAME); skipping collection publish."
+            echo "SKIP_PUBLISH=true" >>"$GITHUB_ENV"
           else
-            echo "::notice::Version verified: $COLLECTION_VERSION"
+            echo "::notice::Versions verified: collection=$COLLECTION_VERSION site=$SITE_VERSION"
             echo "SKIP_PUBLISH=false" >>"$GITHUB_ENV"
           fi
 

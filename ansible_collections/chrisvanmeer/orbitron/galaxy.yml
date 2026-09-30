@@ -1,6 +1,6 @@
 namespace: chrisvanmeer
 name: orbitron
-version: 2.1.0
+version: 2.1.1
 readme: README.md
 authors:
   - Chris van Meer
