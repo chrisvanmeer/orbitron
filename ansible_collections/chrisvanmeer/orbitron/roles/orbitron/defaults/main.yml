@@ -1,5 +1,16 @@
 ---
 # --- Installation -----------------------------------------------------------
+# Base URL of the git forge that hosts the orbitron repository and its release
+# assets. GitHub serves the release API from a different host than the release
+# downloads, so those are two separate values; other forges (GitLab, Forgejo,
+# Gitea) use one host for both.
+orbitron_release_api: https://api.github.com
+orbitron_release_download: https://github.com
+
+# owner/repository of the orbitron repository on that host. Point this at a
+# mirror to install from somewhere other than the canonical GitHub project.
+orbitron_release_repo: chrisvanmeer/orbitron
+
 # Which orbitron release to install: "latest", or an exact tag such as v1.3.2.
 orbitron_version: latest
 

@@ -25,15 +25,15 @@
     - ansible_facts.packages is not defined or 'git' not in ansible_facts.packages
   tags: orbitron-install
 
-- name: Resolve the latest GitHub release tag
+- name: Resolve the latest release tag
   when:
     - orbitron_state == "present"
     - orbitron_binary_src == ""
     - orbitron_version == "latest"
   block:
-    - name: Query the GitHub release API
+    - name: Query the release API
       ansible.builtin.uri:
-        url: https://api.github.com/repos/chrisvanmeer/orbitron/releases/latest
+        url: "{{ orbitron_release_api }}/repos/{{ orbitron_release_repo }}/releases/latest"
         return_content: true
       register: _orbitron_release
 
@@ -99,7 +99,7 @@
     - name: Fetch the orbitron release binary to staging
       ansible.builtin.get_url:
         url: >-
-          https://github.com/chrisvanmeer/orbitron/releases/download/{{ _orbitron_resolved_version }}/orbitron-linux-{{ _orbitron_arch }}
+          {{ orbitron_release_download }}/{{ orbitron_release_repo }}/releases/download/{{ _orbitron_resolved_version }}/orbitron-linux-{{ _orbitron_arch }}
         dest: "{{ orbitron_stage_dir }}/orbitron"
         mode: "0755"
         checksum: "{{ orbitron_checksum | default(omit) }}"

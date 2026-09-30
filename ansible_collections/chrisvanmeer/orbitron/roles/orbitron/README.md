@@ -7,13 +7,16 @@ Galaxy mirror daemon on a Linux host with `systemd`.
 
 - Linux on `x86_64` or `aarch64` with `systemd`
 - Root access (`become: true`)
-- Outbound HTTPS to GitHub releases (unless `orbitron_binary_src` is used)
+- Outbound HTTPS to the release forge (unless `orbitron_binary_src` is used)
 
 ## Role variables
 
 | Variable                     | Default                          | Description                                              |
 | :--------------------------- | :------------------------------- | :------------------------------------------------------- |
 | `orbitron_state`             | `present`                        | `present` installs, `absent` uninstalls.                 |
+| `orbitron_release_api`       | `https://api.github.com`         | Base URL of the forge's release API.                     |
+| `orbitron_release_download`  | `https://github.com`             | Base URL for release asset downloads.                    |
+| `orbitron_release_repo`      | `chrisvanmeer/orbitron`          | `owner/repository` on that host.                         |
 | `orbitron_version`           | `latest`                         | Exact release tag to install, e.g. `v1.2.0`.             |
 | `orbitron_binary_src`        | `""`                             | Local binary path for air-gapped installs.               |
 | `orbitron_checksum`          | `""`                             | SHA-256 checksum for downloaded binaries.                |
