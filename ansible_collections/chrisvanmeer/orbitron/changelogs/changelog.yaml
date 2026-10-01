@@ -1,5 +1,84 @@
 ---
 releases:
+  2.1.2:
+    changes:
+      release_summary: |
+        Orbitron 2.1.2 fixes a cache dump that could produce a truncated archive
+        which looked like a successful download, and repairs the installer
+        defect that caused it. The dump is the only code path that reads the
+        whole storage tree, so it was the only place a file the daemon account
+        cannot read was ever noticed: ``orbitron --install`` runs as root and
+        seeded the bundled collection's requirements manifest without taking
+        ownership of it, leaving it root-owned and ``0640`` next to everything
+        else being ``orbitron:orbitron``. The artifact was chowned, the manifest
+        was not. A dump then died part-way with ``permission denied`` and shipped
+        a gzip stream without a footer, which unpacks as a corrupt archive with
+        no error and no manifest. Seeding now takes ownership of everything it
+        writes or adopts - artifact, manifest and the whole directory chain - and
+        a failed ownership change is reported instead of being swallowed, so the
+        condition cannot pass unnoticed again. The dump itself now refuses with
+        ``403`` and a machine-readable list of unreadable paths before writing a
+        single byte, so the operator learns which files to fix instead of
+        collecting a corrupt archive, and files that become unreadable
+        mid-stream are skipped and listed in the manifest rather than truncating
+        it. Two authentication fixes come along: logging out expired the session
+        cookies at the wrong path, so a valid admin token survived in the
+        browser, and a stale path-scoped cookie could shadow a valid one and
+        cause intermittent 401s.
+      bugfixes:
+        - >-
+          ``SeedCache`` now applies an explicit owner to the bundled collection
+          artifact, its requirements manifest and the storage directory chain.
+          Previously ``--install`` chowned only the tar.gz artifact, so the
+          manifest written moments earlier stayed root-owned, unreadable for the
+          unprivileged daemon, and a cache dump failed part-way through the
+          collections. Ownership failures are now returned rather than ignored.
+        - >-
+          The seeded requirements manifest is re-declared whenever the bundled
+          version is present in the cache, repairing a seed that was interrupted
+          between writing the artifact and writing the manifest. Previously the
+          presence of the artifact is what suppressed the seed, so such a cache
+          stayed undeclared forever and a later prune could remove the bundled
+          collection.
+        - >-
+          ``GET /api/v1/dump`` now verifies that every regular file in the
+          storage tree can be opened before streaming anything, and answers
+          ``403 Forbidden`` with the unreadable paths, their errors and a
+          remediation hint if any cannot. Previously the first unreadable file
+          aborted the stream mid-archive, leaving a truncated gzip stream that
+          unpacked as a corrupt file and looked to the browser like a
+          successful download.
+        - >-
+          A file that becomes unreadable or changes size while a dump is
+          streaming is now skipped and recorded under ``skipped`` in
+          ``orbitron/dump.json``, keeping the archive valid and the gap explicit.
+          The manifest also gained a ``complete`` field, and the response gained
+          the ``X-Orbitron-Dump-Files``, ``X-Orbitron-Dump-Skipped`` and
+          ``X-Orbitron-Dump-Unreadable`` headers; ``X-Orbitron-Dump-Files`` was
+          already documented in the 2.1.0 changelog but never sent.
+        - >-
+          Logging out of the dashboard now expires the session cookies at
+          ``Path: "/"``, matching how they are issued, and also at the legacy
+          ``/ui`` scope left behind by versions before 2.1.0. Previously the
+          ``Max-Age: -1`` cookie used the ``/ui`` path and never matched the
+          stored cookie, so a valid admin token remained in the browser: the UI
+          rendered as logged out while every ``/api/*`` request kept
+          authenticating.
+        - >-
+          Authentication now validates every same-named cookie instead of only
+          the first match. A browser holding both a legacy ``/ui``-scoped
+          session cookie and a current ``/``-scoped one sends the more specific
+          path first, which let a stale value shadow a valid session and produce
+          intermittent ``401`` responses on the dashboard.
+      minor_features:
+        - >-
+          The dashboard's ``DUMP .TAR.GZ`` button now fetches the archive and
+          saves it from the response body instead of following a plain link, so a
+          ``403`` refusal is reported in the drawer with the offending paths
+          rather than being downloaded as a corrupt file.
+        - >-
+          ``--install`` now warns when ``storage_path`` points outside the
+          standard subtree, since the recursive ownership pass does not cover it.
   2.1.1:
     changes:
       release_summary: |

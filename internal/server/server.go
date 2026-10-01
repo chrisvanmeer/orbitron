@@ -143,19 +143,21 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 		return false
 	}
 
-	// 1. Check Cookie (For Browser/UI sessions leaking into API)
-	if cookie, err := r.Cookie("orbitron_token"); err == nil {
-		if store.Valid(cookie.Value) {
-			return true
-		}
+	// 1. Check Cookie (For Browser/UI sessions leaking into API).
+	//
+	// Every same-named cookie is tried, not just the first. A browser that once
+	// held a session scoped to /ui and later logged in again on / holds both,
+	// and it sends the more specific one first — so validating only that one let
+	// a stale token shadow a valid one and produce intermittent 401s on /ui
+	// while /api/* kept working.
+	if validCookie(r, "orbitron_token", store.Valid) {
+		return true
 	}
 
 	// 1b. Check OIDC dashboard session (browser/UI sessions established via SSO)
 	if s.sessions != nil {
-		if cookie, err := r.Cookie(web.OIDCSessionCookie); err == nil {
-			if s.sessions.Valid(cookie.Value) {
-				return true
-			}
+		if validCookie(r, web.OIDCSessionCookie, s.sessions.Valid) {
+			return true
 		}
 	}
 
@@ -179,6 +181,20 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 		}
 	}
 
+	return false
+}
+
+// validCookie reports whether any cookie named name carries a value accepted by
+// valid. It deliberately does not stop at the first one: cookies are matched on
+// name, domain and path, so an upgrade or a path-scope change can leave several
+// cookies with the same name in one browser, and the most specific path is sent
+// first. Accepting the first match only would let a stale value decide.
+func validCookie(r *http.Request, name string, valid func(string) bool) bool {
+	for _, c := range r.CookiesNamed(name) {
+		if c.Value != "" && valid(c.Value) {
+			return true
+		}
+	}
 	return false
 }
 
@@ -756,12 +772,15 @@ func (s *Server) Start() error {
 	// Seed the bundled Ansible collection into the cache on every daemon start.
 	// For bare-metal "swap the binary and restart" upgrades this is the one-shot
 	// seeding step; a plain daemon restart is a no-op (a same-or-newer version is
-	// already cached). Failures are non-fatal so a unwritable read-only storage
-	// never blocks booting.
-	if res, err := seed.SeedCache(s.cfg.StoragePath); err != nil {
+	// already cached). No Owner is passed because the daemon already runs as the
+	// service user, so files it creates are owned correctly by definition. Failures
+	// are non-fatal so a unwritable read-only storage never blocks booting.
+	if res, err := seed.SeedCache(s.cfg.StoragePath, nil); err != nil {
 		logger.Warn("Could not seed bundled Ansible collection into cache: %v", err)
 	} else if res.Seeded {
 		logger.Info("Seeded bundled %s.%s %s into cache (%d bytes)", seed.Namespace, seed.Name, res.Version, len(seed.CollectionTarGz))
+	} else if res.ManifestAdopted {
+		logger.Info("Bundled %s.%s %s is cached and declared in %s", seed.Namespace, seed.Name, res.Version, res.ManifestPath)
 	}
 
 	// Prometheus Telemetry Endpoint (Protected with token auth via AuthMiddleware).

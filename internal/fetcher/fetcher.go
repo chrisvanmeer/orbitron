@@ -312,15 +312,23 @@ func ParseRequirements(data []byte) (*RequirementsYML, error) {
 	return &reqs, err
 }
 
+// ManifestName returns the content-addressed file name SaveManifest uses for a
+// manifest. It is a pure function of the manifest type and content, so a caller
+// can derive the path a manifest will get without writing it. The seed uses
+// this to adopt an already stored manifest (and repair its ownership) instead
+// of rewriting it on every daemon start.
+func ManifestName(manifestType string, data []byte) string {
+	// Store manifests under a content hash so multiple distinct manifests
+	// can coexist (and re-sync) without re-appending identical ones.
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%s_%x_requirements.yml", manifestType, sum[:6])
+}
+
 func (f *Fetcher) SaveManifest(manifestType string, data []byte) error {
 	if err := os.MkdirAll(f.manifestPath, 0750); err != nil {
 		return err
 	}
-	// Store manifests under a content hash so multiple distinct manifests
-	// can coexist (and re-sync) without re-appending identical ones.
-	sum := sha256.Sum256(data)
-	name := fmt.Sprintf("%s_%x_requirements.yml", manifestType, sum[:6])
-	return os.WriteFile(filepath.Join(f.manifestPath, name), data, 0640)
+	return os.WriteFile(filepath.Join(f.manifestPath, ManifestName(manifestType, data)), data, 0640)
 }
 
 // SaveManifestReplacing stores a requirements manifest, first removing any

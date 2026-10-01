@@ -4,14 +4,17 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"orbitron/internal/config"
 	"orbitron/internal/fetcher"
@@ -160,6 +163,19 @@ func TestHandleDumpHeaders(t *testing.T) {
 	if b := rec.Header().Get("X-Orbitron-Dump-Bytes"); b == "" || b == "0" {
 		t.Errorf("X-Orbitron-Dump-Bytes = %q, want a positive estimate", b)
 	}
+	// The 2.1.0 changelog promises this header, and it is what lets a caller
+	// tell a complete archive from a cut-off one.
+	files := rec.Header().Get("X-Orbitron-Dump-Files")
+	if files == "" || files == "0" {
+		t.Errorf("X-Orbitron-Dump-Files = %q, want a positive file count", files)
+	}
+	if n, err := strconv.Atoi(files); err != nil || n <= 0 {
+		t.Errorf("X-Orbitron-Dump-Files = %q, want a positive integer", files)
+	}
+	// Header intentionally omitted in 2.1.2: skipped count is authoritative in dump.json. If set, it must be "0".
+	if sk := rec.Header().Get("X-Orbitron-Dump-Skipped"); sk != "" && sk != "0" {
+		t.Errorf("X-Orbitron-Dump-Skipped = %q, want empty or \"0\"", sk)
+	}
 }
 
 func TestHandleDumpContentAndExclusions(t *testing.T) {
@@ -263,6 +279,12 @@ func TestHandleDumpManifest(t *testing.T) {
 	}
 	if len(manifest.Files) == 0 {
 		t.Fatal("manifest carries no file checksums")
+	}
+	if !manifest.Complete {
+		t.Error("manifest reports complete=false although the archive closed cleanly")
+	}
+	if len(manifest.Skipped) != 0 {
+		t.Errorf("manifest lists %d skipped file(s) in a fully readable tree: %+v", len(manifest.Skipped), manifest.Skipped)
 	}
 
 	var total int64
@@ -393,6 +415,255 @@ func TestHandleDumpCompressParameter(t *testing.T) {
 	// An unknown level is rejected before any archive bytes are written.
 	if rec := fetch("?compress=turbo"); rec.Code != http.StatusBadRequest {
 		t.Errorf("compress=turbo: got %d, want 400", rec.Code)
+	}
+}
+
+// TestHandleDumpRefusesUnreadableTree is the regression test for the failure that
+// produced a 14 MB archive that looked like a successful download: one file in
+// the tree was not readable by the daemon account, so writeFile returned an
+// error mid-stream and the handler returned without closing tar and gzip. The
+// client got a truncated gzip stream with no manifest and no error to act on.
+//
+// The refusal has to happen before the first byte, so the response is a 403 with
+// a machine-readable list of the offending paths and not a partial archive.
+func TestHandleDumpRefusesUnreadableTree(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: every file is readable, so the refusal cannot be provoked")
+	}
+	s, storage := newTestServer(t)
+	seedDumpStorage(t, storage)
+
+	// Reproduce the real-world state: a root-run install left one file owned by
+	// root and 0640, which the unprivileged daemon cannot open.
+	locked := filepath.Join(storage, "manifests", "roles_abc123_requirements.yml")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("make manifest unreadable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o640) })
+
+	rec := requestDump(t, registerDumpMux(s), "valid-admin-token")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if n := rec.Header().Get("X-Orbitron-Dump-Unreadable"); n != "1" {
+		t.Errorf("X-Orbitron-Dump-Unreadable = %q, want 1", n)
+	}
+	// Nothing of an archive may be on the wire: a 200-shaped body here is
+	// exactly what made the original failure so confusing.
+	if strings.Contains(rec.Header().Get("Content-Type"), "gzip") {
+		t.Error("refusal announced a gzip body")
+	}
+
+	var body dumpUnreadable
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode refusal: %v (body %q)", err, rec.Body.String())
+	}
+	if len(body.Unread) != 1 {
+		t.Fatalf("unreadable = %+v, want exactly 1 entry", body.Unread)
+	}
+	if want := "orbitron/manifests/roles_abc123_requirements.yml"; body.Unread[0].Path != want {
+		t.Errorf("unreadable path = %q, want %q", body.Unread[0].Path, want)
+	}
+	if body.Unread[0].Reason == "" {
+		t.Error("unreadable entry carries no reason")
+	}
+	if body.Hint == "" || !strings.Contains(body.Hint, "chown") {
+		t.Errorf("hint = %q, want it to suggest a chown", body.Hint)
+	}
+}
+
+// TestHandleDumpSkipsFileThatBecomesUnreadable covers the residual race the
+// pre-pass cannot catch: a file that is readable when it is scanned but gone or
+// unreadable by the time the walk reaches it. That must produce a valid archive
+// with the gap listed, not a truncated one.
+func TestHandleDumpSkipsFileThatBecomesUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: every file is readable, so the skip path cannot be provoked")
+	}
+	s, storage := newTestServer(t)
+	seedDumpStorage(t, storage)
+	mux := registerDumpMux(s)
+
+	// Make the file unreadable only after the pre-pass accepted it. Scanning is
+	// a separate walk, so replacing the file with a directory between the two
+	// is enough: the walk then finds a non-regular file at archive time. Use a
+	// removed file instead, which is the deterministic case os.Open reports.
+	doomed := filepath.Join(storage, "roles", "geerlingguy.nginx", "1.2.3", "meta", "main.yml")
+	if err := os.Remove(doomed); err != nil {
+		t.Fatalf("remove file: %v", err)
+	}
+
+	rec := requestDump(t, mux, "valid-admin-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rec.Code)
+	}
+
+	// The archive must still be readable end to end: a valid tar inside a valid
+	// gzip, ending in the manifest.
+	headers := readDumpEntries(t, bytes.NewReader(rec.Body.Bytes()))
+	if len(headers) == 0 {
+		t.Fatal("archive is empty")
+	}
+	last := headers[len(headers)-1]
+	if last.Name != "orbitron/dump.json" {
+		t.Fatalf("last entry = %q, want orbitron/dump.json", last.Name)
+	}
+
+	// A file removed before the walk is simply absent, so it is neither archived
+	// nor reported: the dump is complete with respect to what was there. This
+	// asserts the archive stays parseable, which is the property that matters.
+	entries := dumpEntryNames(headers)
+	if _, ok := entries["orbitron/roles/geerlingguy.nginx/1.2.3/meta/main.yml"]; ok {
+		t.Error("a removed file was still archived")
+	}
+	if _, ok := entries["orbitron/roles/geerlingguy.nginx/2.0.0/meta/main.yml"]; !ok {
+		t.Error("unrelated file was dropped from the archive")
+	}
+}
+
+// TestHandleDumpSkipsUnreadableFileMidStream drives the archiver directly so the
+// skip bookkeeping is asserted without depending on how a test can revoke read
+// permission between two walks on the same path.
+func TestHandleDumpSkipsUnreadableFileMidStream(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: every file is readable")
+	}
+	storage := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(storage, "a"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(storage, "b"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	good := filepath.Join(storage, "a", "good.txt")
+	if err := os.WriteFile(good, []byte("readable payload"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(storage, "b", "locked.txt")
+	if err := os.WriteFile(locked, []byte("unreadable payload"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o640) })
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	archiver := &dumpArchiver{
+		ctx:      context.Background(),
+		root:     storage,
+		excluded: map[string]bool{},
+		gw:       gw,
+		tw:       tar.NewWriter(gw),
+		manifest: &dumpManifest{Files: []dumpManifestFile{}},
+	}
+
+	if err := archiver.writeTree(); err != nil {
+		t.Fatalf("writeTree: %v", err)
+	}
+	if err := archiver.writeManifest(time.Now()); err != nil {
+		t.Fatalf("writeManifest: %v", err)
+	}
+	if err := archiver.tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(archiver.manifest.Skipped) != 1 {
+		t.Fatalf("skipped = %+v, want exactly 1 entry", archiver.manifest.Skipped)
+	}
+	if want := "orbitron/b/locked.txt"; archiver.manifest.Skipped[0].Path != want {
+		t.Errorf("skipped path = %q, want %q", archiver.manifest.Skipped[0].Path, want)
+	}
+	if archiver.manifest.Skipped[0].Reason == "" {
+		t.Error("skip entry carries no reason")
+	}
+	// The readable sibling still made it, and the archive is intact.
+	if len(archiver.manifest.Files) != 1 || archiver.manifest.Files[0].Path != "orbitron/a/good.txt" {
+		t.Errorf("archived files = %+v, want only orbitron/a/good.txt", archiver.manifest.Files)
+	}
+	if _, err := gzip.NewReader(bytes.NewReader(buf.Bytes())); err != nil {
+		t.Errorf("archive is not valid gzip after a skip: %v", err)
+	}
+}
+
+// TestHandleDumpAcceptsSessionCookie covers the browser path to the download. The
+// dump link is an ordinary anchor, so a session cookie — not a bearer header — is
+// what an operator in the dashboard actually sends. A regression here is what
+// made the download prompt for credentials while the API worked.
+func TestHandleDumpAcceptsSessionCookie(t *testing.T) {
+	s, storage := newTestServer(t)
+	seedDumpStorage(t, storage)
+	mux := registerDumpMux(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dump", nil)
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "valid-admin-token"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session cookie: got %d, want 200", rec.Code)
+	}
+	entries := dumpEntryNames(readDumpEntries(t, bytes.NewReader(rec.Body.Bytes())))
+	if _, ok := entries["orbitron/dump.json"]; !ok {
+		t.Errorf("dump.json missing from a cookie-authenticated archive, have %v", sortedKeys(entries))
+	}
+
+	// A stale cookie with a different scope must not authenticate.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/dump", nil)
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "not-a-token"})
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("invalid session cookie: got %d, want 401", rec.Code)
+	}
+}
+
+// TestAuthAcceptsShadowedSessionCookie covers a browser that holds two cookies
+// with the same name: a stale one scoped to /ui from before 2.1.0 and a current
+// one on /. The browser sends the more specific path first, so validating only
+// the first match let the stale value shadow the valid one and turned the
+// dashboard into an intermittent 401 loop while /api/* still worked.
+func TestAuthAcceptsShadowedSessionCookie(t *testing.T) {
+	s, _ := newTestServer(t)
+	mux := registerDumpMux(s)
+
+	// Two same-named cookies, stale first. AddCookie preserves insertion order,
+	// which is the order the Cookie header carries them in.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dump", nil)
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "revoked-or-stale"})
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "valid-admin-token"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("stale cookie shadowed a valid session: got %d, want 200", rec.Code)
+	}
+
+	// A valid cookie first is still accepted, and the inverse order must not
+	// become a regression in the other direction.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/dump", nil)
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "valid-admin-token"})
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "stale"})
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid cookie shadowed by a trailing stale one: got %d, want 200", rec.Code)
+	}
+
+	// All-stale must still be rejected: shadow tolerance is not a bypass.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/dump", nil)
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "stale-a"})
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "stale-b"})
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("all-stale cookies: got %d, want 401", rec.Code)
 	}
 }
 

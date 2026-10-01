@@ -1,8 +1,11 @@
 package seed
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+
+	"strings"
 	"testing"
 )
 
@@ -108,7 +111,7 @@ func TestSeedCache(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	res, err := SeedCache(storage)
+	res, err := SeedCache(storage, nil)
 	if err != nil {
 		t.Fatalf("SeedCache (first): %v", err)
 	}
@@ -130,7 +133,7 @@ func TestSeedCache(t *testing.T) {
 	}
 
 	// Re-seeding the same version must be a no-op: no new/copied artifact.
-	again, err := SeedCache(storage)
+	again, err := SeedCache(storage, nil)
 	if err != nil {
 		t.Fatalf("SeedCache (second): %v", err)
 	}
@@ -153,6 +156,204 @@ func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0640); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// TestSeedCacheAppliesOwner is the regression test for the defect that made every
+// cache dump fail on a freshly installed host: the installer runs as root and
+// seeded the requirements manifest, so os.WriteFile handed it to root, and only
+// the tar.gz artifact was chowned to the service user afterwards. The manifest
+// stayed root-owned and 0640, so the daemon could not open it — and the dump,
+// the only code path that reads the whole tree, died halfway with "permission
+// denied" and shipped a truncated archive.
+//
+// The assertion is on which paths the seed claims, not on the resulting uid:
+// that is the actual defect (the manifest was missing from the chown set), and
+// it is observable without the privileges to change a file's owner.
+func TestSeedCacheAppliesOwner(t *testing.T) {
+	storage := t.TempDir()
+	claimed := chownRecorder(t, nil)
+
+	first, err := SeedCache(storage, &Owner{UID: 4242, GID: 4242})
+	if err != nil {
+		t.Fatalf("SeedCache: %v", err)
+	}
+	if len(*claimed) == 0 {
+		t.Fatal("seed claimed ownership of nothing")
+	}
+	// The manifest is the file the regression is about.
+	if !wasClaimed(*claimed, first.ManifestPath) {
+		t.Errorf("requirements manifest %s was not claimed by the seed; claimed: %v", first.ManifestPath, *claimed)
+	}
+	if !wasClaimed(*claimed, first.Path) {
+		t.Errorf("artifact %s was not claimed by the seed; claimed: %v", first.Path, *claimed)
+	}
+	// The directory chain must be traversable, or a 0750 root-owned parent
+	// blocks the service user from reaching any of it.
+	for _, dir := range []string{
+		storage,
+		filepath.Join(storage, "collections"),
+		filepath.Join(storage, "collections", "chrisvanmeer"),
+		filepath.Join(storage, "manifests"),
+	} {
+		if !wasClaimed(*claimed, dir) {
+			t.Errorf("directory %s was not claimed by the seed; claimed: %v", dir, *claimed)
+		}
+	}
+	for path, ids := range *claimed {
+		if ids != [2]int{4242, 4242} {
+			t.Errorf("seed claimed %s with uid/gid %v, want 4242/4242", path, ids)
+		}
+	}
+
+	// Re-seeding adopts the existing manifest and claims it again, so an
+	// installer run on an already damaged cache repairs the ownership.
+	repaired := chownRecorder(t, nil)
+	second, err := SeedCache(storage, &Owner{UID: 7777, GID: 7777})
+	if err != nil {
+		t.Fatalf("SeedCache (second): %v", err)
+	}
+	if second.Seeded {
+		t.Errorf("adopting seed re-seeded the artifact: %+v", second)
+	}
+	if !second.ManifestAdopted {
+		t.Errorf("expected the existing manifest to be adopted, got %+v", second)
+	}
+	if !wasClaimed(*repaired, second.ManifestPath) {
+		t.Errorf("adopting seed did not claim the existing manifest %s; claimed: %v", second.ManifestPath, *repaired)
+	}
+	if ids := (*repaired)[second.ManifestPath]; ids != [2]int{7777, 7777} {
+		t.Errorf("manifest claimed with %v, want 7777/7777", ids)
+	}
+}
+
+// TestSeedCacheNilOwnerLeavesOwnership verifies the daemon's startup seed, which
+// already runs as the service user and passes no Owner, does not try to chown
+// anything: doing so would fail on a tree it does not own.
+func TestSeedCacheNilOwnerLeavesOwnership(t *testing.T) {
+	storage := t.TempDir()
+	claimed := chownRecorder(t, nil)
+
+	if _, err := SeedCache(storage, nil); err != nil {
+		t.Fatalf("SeedCache: %v", err)
+	}
+	if len(*claimed) != 0 {
+		t.Errorf("seed without an owner claimed %v, want nothing", *claimed)
+	}
+}
+
+// TestSeedCacheReportsChownFailure verifies a failed ownership change is surfaced
+// instead of being silently swallowed, which is how a root-owned manifest could
+// go unnoticed for an entire release cycle.
+func TestSeedCacheReportsChownFailure(t *testing.T) {
+	storage := t.TempDir()
+	chownRecorder(t, func(string, int, int) error { return os.ErrPermission })
+
+	_, err := SeedCache(storage, &Owner{UID: 1, GID: 1})
+	if err == nil {
+		t.Fatal("SeedCache reported success although setting ownership failed")
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Errorf("error = %v, want it to wrap os.ErrPermission", err)
+	}
+	if !strings.Contains(err.Error(), storage) {
+		t.Errorf("error %q should name the path whose ownership failed", err)
+	}
+}
+
+// chownRecorder replaces the ownership change for the duration of the test,
+// recording every path the seed asks to claim. delegate may be nil to skip the
+// real chown, which would need privileges a test runner may not have.
+func chownRecorder(t *testing.T, delegate func(string, int, int) error) *map[string][2]int {
+	t.Helper()
+	recorded := map[string][2]int{}
+	prev := chown
+	chown = func(path string, uid, gid int) error {
+		recorded[path] = [2]int{uid, gid}
+		if delegate != nil {
+			return delegate(path, uid, gid)
+		}
+		return nil
+	}
+	t.Cleanup(func() { chown = prev })
+	return &recorded
+}
+
+// wasClaimed reports whether path was passed to chown.
+func wasClaimed(recorded map[string][2]int, path string) bool {
+	_, ok := recorded[path]
+	return ok
+}
+
+// TestSeedCacheRepairsMissingManifest covers the interrupted seed: the artifact
+// is present, so shouldSeed skips, but the manifest never made it. Without the
+// declare step the bundled collection would stay undeclared and a later prune
+// could remove it, with no retry ever scheduled.
+func TestSeedCacheRepairsMissingManifest(t *testing.T) {
+	storage := t.TempDir()
+
+	first, err := SeedCache(storage, nil)
+	if err != nil {
+		t.Fatalf("SeedCache (first): %v", err)
+	}
+	if !first.Seeded {
+		t.Fatalf("first SeedCache did not seed; %+v", first)
+	}
+	if err := os.Remove(first.ManifestPath); err != nil {
+		t.Fatalf("remove manifest to simulate an interrupted seed: %v", err)
+	}
+
+	second, err := SeedCache(storage, nil)
+	if err != nil {
+		t.Fatalf("SeedCache (repair): %v", err)
+	}
+	if second.Seeded {
+		t.Errorf("repair re-seeded the artifact: %+v", second)
+	}
+	if second.ManifestAdopted {
+		t.Errorf("manifest was reported as adopted although it had been removed: %+v", second)
+	}
+	if _, err := os.Stat(second.ManifestPath); err != nil {
+		t.Fatalf("manifest was not restored: %v", err)
+	}
+}
+
+// TestSeedCacheLeavesNewerCacheAlone verifies the downgrade guard still holds
+// once the manifest declaration became unconditional for a cached bundled
+// version: a cache holding only a newer version must not gain a manifest
+// declaring a collection that is not in it.
+func TestSeedCacheLeavesNewerCacheAlone(t *testing.T) {
+	storage := t.TempDir()
+
+	meta, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	colsDir := filepath.Join(storage, "collections", "chrisvanmeer")
+	if err := os.MkdirAll(colsDir, 0750); err != nil {
+		t.Fatalf("create collections dir: %v", err)
+	}
+	newer := "99.0.0"
+	futurePath := filepath.Join(colsDir, ArtifactName(meta.Namespace, meta.Name, newer))
+	if err := os.WriteFile(futurePath, []byte("newer"), 0640); err != nil {
+		t.Fatalf("write newer artifact: %v", err)
+	}
+
+	res, err := SeedCache(storage, nil)
+	if err != nil {
+		t.Fatalf("SeedCache: %v", err)
+	}
+	if res.Seeded {
+		t.Errorf("downgraded a newer cache: %+v", res)
+	}
+	if !res.Skipped {
+		t.Errorf("expected Skipped, got %+v", res)
+	}
+	if res.ManifestPath != "" {
+		t.Errorf("declared a manifest for a version that is not cached: %q", res.ManifestPath)
+	}
+	if _, err := os.Stat(filepath.Join(storage, "manifests")); err == nil {
+		t.Error("a manifests dir was created for a cache that holds no bundled version")
 	}
 }
 

@@ -144,6 +144,39 @@ func TestLoginCookieCoversAPIPaths(t *testing.T) {
 	}
 }
 
+// TestLogoutClearsSessionCookies pins the logout cookies onto the same Path the
+// login uses. Cookies are only removed by a Set-Cookie matching name, domain and
+// path, so expiring the "/" session at Path "/ui" left a valid admin token in the
+// browser: the dashboard rendered as logged out while /api/* kept
+// authenticating. The legacy pre-2.1.0 "/ui" scope is cleared too, because an
+// upgrade can still have left one behind.
+func TestLogoutClearsSessionCookies(t *testing.T) {
+	tokens := filepath.Join(t.TempDir(), "tokens.json")
+	if err := os.WriteFile(tokens, []byte(`{"tokens":{"good-token":{"created_at":1,"expires_at":0}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := NewDashboard(&config.Config{StoragePath: t.TempDir(), TokensFile: tokens}, nil, nil)
+
+	req := httptest.NewRequest("GET", "/ui/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "orbitron_token", Value: "good-token"})
+	rec := httptest.NewRecorder()
+	d.handleLogout(rec, req)
+
+	cleared := map[string]bool{}
+	for _, c := range rec.Result().Cookies() {
+		if c.MaxAge < 0 && c.Value == "" {
+			cleared[c.Name+"|"+c.Path] = true
+		}
+	}
+	for _, name := range []string{"orbitron_token", OIDCSessionCookie} {
+		for _, path := range []string{"/", "/ui"} {
+			if !cleared[name+"|"+path] {
+				t.Errorf("logout did not clear %s at Path %q; cleared: %v", name, path, cleared)
+			}
+		}
+	}
+}
+
 // TestSyncTimeDrawsDumpLink verifies the SYS METRICS drawer exposes the
 // whole-cache backup download.
 func TestSyncTimeDrawsDumpLink(t *testing.T) {
@@ -157,6 +190,17 @@ func TestSyncTimeDrawsDumpLink(t *testing.T) {
 	}
 	if !strings.Contains(body, "download") {
 		t.Errorf("dump link is missing the download attribute\n%s", body)
+	}
+	// The dump must be fetched rather than followed, so a 403 refusal can be
+	// shown instead of being saved as a corrupt archive.
+	if !strings.Contains(body, `id="btn-dump"`) {
+		t.Error("dump link has no id to attach the download handler to")
+	}
+	if !strings.Contains(body, `id="dump-status"`) {
+		t.Error("drawer has no status element to report a refused dump in")
+	}
+	if !strings.Contains(body, "credentials: 'same-origin'") {
+		t.Error("dump fetch does not send the session cookie")
 	}
 }
 

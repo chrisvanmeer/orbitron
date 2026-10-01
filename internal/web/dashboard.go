@@ -370,22 +370,30 @@ func (d *Dashboard) handleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "orbitron_token",
-		Value:    "",
-		Path:     "/ui",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     OIDCSessionCookie,
-		Value:    "",
-		Path:     "/ui",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// A cookie is only removed by a Set-Cookie whose name, domain and path all
+	// match the stored one. The session cookies are issued with Path "/", so
+	// expiring them at Path "/ui" (as this used to) left a valid admin token in
+	// the browser: the dashboard looked logged out while every /api/* request
+	// kept authenticating. Clear the current path and the pre-2.1.0 legacy path,
+	// which an upgrade can still have left behind.
+	for _, path := range []string{"/", "/ui"} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "orbitron_token",
+			Value:    "",
+			Path:     path,
+			MaxAge:   -1,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+		http.SetCookie(w, &http.Cookie{
+			Name:     OIDCSessionCookie,
+			Value:    "",
+			Path:     path,
+			MaxAge:   -1,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 	http.Redirect(w, r, "/ui", http.StatusSeeOther)
 }
 
@@ -2279,7 +2287,64 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 
 		<div class="stat-label">Offline Backup Archive</div>
 		<div class="stat-value" style="color:var(--text-dim); font-size:0.9em;">~%s uncompressed, gzipped on the fly</div>
-		<a class="log-download" href="/api/v1/dump" download title="Download the entire cache as a .tar.gz" aria-label="Download the entire cache as a .tar.gz" style="display:inline-flex; align-items:center; gap:6px; margin-top:8px; text-decoration:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></svg> DUMP .TAR.GZ</a>
+		<a class="log-download" id="btn-dump" href="/api/v1/dump" download title="Download the entire cache as a .tar.gz" aria-label="Download the entire cache as a .tar.gz" style="display:inline-flex; align-items:center; gap:6px; margin-top:8px; text-decoration:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></svg> DUMP .TAR.GZ</a>
+		<div id="dump-status" role="status" aria-live="polite" style="color:var(--red); font-size:0.8em; margin-top:6px; display:none;"></div>
+		<script>
+		// The dump is refused with a 403 and a JSON body when the storage tree
+		// holds files the daemon cannot read. A plain link would hand the
+		// browser that response, and a dump that is cut short mid-stream is
+		// indistinguishable from a successful download — so the archive arrives
+		// corrupt with nothing to explain it. Fetching it instead lets a refusal
+		// surface here, and lets a short archive be reported rather than saved.
+		(function () {
+			var btn = document.getElementById('btn-dump');
+			var status = document.getElementById('dump-status');
+			if (!btn || !status) return;
+
+			function fail(message) {
+				status.textContent = message;
+				status.style.display = 'block';
+			}
+
+			btn.addEventListener('click', function (event) {
+				event.preventDefault();
+				status.style.display = 'none';
+				btn.setAttribute('aria-busy', 'true');
+				btn.style.opacity = '0.6';
+
+				fetch('/api/v1/dump', { credentials: 'same-origin' })
+					.then(function (response) {
+						if (!response.ok) {
+							return response.json().catch(function () { return {}; }).then(function (body) {
+								var detail = (body.unreadable || []).map(function (u) { return u.path; }).join(', ');
+								fail('DUMP REFUSED (' + response.status + '): ' + (body.error || 'the server could not produce an archive') + (detail ? ' - ' + detail : ''));
+								throw new Error('dump refused');
+							});
+						}
+						return response.blob();
+					})
+					.then(function (blob) {
+						if (!blob) return;
+						var url = URL.createObjectURL(blob);
+						var link = document.createElement('a');
+						link.href = url;
+						link.download = 'orbitron-dump.tar.gz';
+						document.body.appendChild(link);
+						link.click();
+						document.body.removeChild(link);
+						URL.revokeObjectURL(url);
+					})
+					.catch(function (err) {
+						if (err && err.message === 'dump refused') return;
+						fail('DUMP FAILED: ' + err);
+					})
+					.then(function () {
+						btn.removeAttribute('aria-busy');
+						btn.style.opacity = '1';
+					});
+			});
+		})();
+		</script>
 	`, build.Version, status, timeStr, time.Now().Format("15:04:05"), formatSize(cacheUsedSpace), formatSize(freeDisk), osName, osVer, osArch, bootTime, activity, formatSize(cacheUsedSpace))
 
 	w.Header().Set("Content-Type", "text/html")

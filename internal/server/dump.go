@@ -49,6 +49,15 @@ type dumpManifestFile struct {
 	SHA256 string `json:"sha256"`
 }
 
+// dumpManifestSkip is a file that was inside the storage tree at request time but
+// could not be archived. Skipping instead of aborting keeps the archive valid and
+// the dump useful: the receiving side sees an explicit list of what is missing
+// rather than a truncated stream it cannot explain.
+type dumpManifestSkip struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
 // dumpManifest is serialized as <dumpRoot>/dump.json. It lets a backup host
 // verify the transfer and know exactly what the mirror held at dump time.
 type dumpManifest struct {
@@ -65,6 +74,8 @@ type dumpManifest struct {
 	CollectionVersions int                `json:"collection_versions"`
 	Bytes              int64              `json:"bytes"`
 	Files              []dumpManifestFile `json:"files"`
+	Skipped            []dumpManifestSkip `json:"skipped,omitempty"`
+	Complete           bool               `json:"complete"`
 }
 
 // dumpArchiver streams the storage tree into a tar.Writer as it walks it,
@@ -134,17 +145,25 @@ func (a *dumpArchiver) writeSymlink(name, target string, info os.FileInfo) error
 // The header is taken from an fstat of the opened descriptor rather than from
 // the directory walk: if a concurrent sync replaced the file in between, the
 // declared size and the bytes that follow still agree. A file that changes
-// underneath an open descriptor is caught by the explicit size check, which
-// fails the dump with an actionable message instead of a corrupt archive.
+// underneath an open descriptor is caught by the explicit size check.
+//
+// A file that cannot be read at all is *skipped*, not fatal. Aborting here would
+// leave the client with a truncated archive that looks like a successful
+// download, because the missing gzip footer is the only evidence — so a
+// permission error on one file costs the operator the whole backup. The skip is
+// recorded in the manifest instead, which makes the gap explicit and lets the
+// rest of the tree through.
 func (a *dumpArchiver) writeFile(name, path string) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		a.skip(name, err)
+		return nil
 	}
 	info, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		return err
+		a.skip(name, err)
+		return nil
 	}
 	if !info.Mode().IsRegular() {
 		// The path was something else (directory, socket, ...) by the time we
@@ -156,7 +175,8 @@ func (a *dumpArchiver) writeFile(name, path string) error {
 	hdr, err := tar.FileInfoHeader(info, "")
 	if err != nil {
 		_ = f.Close()
-		return err
+		a.skip(name, err)
+		return nil
 	}
 	hdr.Name = name
 	if err := a.addHeader(hdr); err != nil {
@@ -165,7 +185,9 @@ func (a *dumpArchiver) writeFile(name, path string) error {
 	}
 
 	h := sha256.New()
-	written, copyErr := copyContext(a.ctx, io.MultiWriter(a.tw, h), f)
+	decl := info.Size()
+	lr := &io.LimitedReader{R: f, N: decl}
+	written, copyErr := copyContext(a.ctx, io.MultiWriter(a.tw, h), lr)
 	closeErr := f.Close()
 	if copyErr != nil {
 		return copyErr
@@ -173,8 +195,19 @@ func (a *dumpArchiver) writeFile(name, path string) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	if written != info.Size() {
-		return fmt.Errorf("file %s changed size while archiving (%d of %d bytes): the cache is being written to concurrently, retry the dump when no sync is running", path, written, info.Size())
+	if written != decl || lr.N != 0 {
+		// If the file shrank, pad the missing bytes. If it grew, lr.N < 0
+		// or more bytes were read than declared? Written should not exceed
+		// decl because lr limits to decl. Treat any mismatch as concurrent
+		// change and record skip, padding only on shrink to keep archive
+		// parseable if we must end the entry.
+		if written < decl {
+			if padErr := a.pad(written, decl); padErr != nil {
+				return padErr
+			}
+		}
+		a.skip(name, fmt.Errorf("changed size while archiving: got %d of %d bytes, cache is being written to concurrently", written, decl))
+		return nil
 	}
 
 	a.payload += written
@@ -185,6 +218,36 @@ func (a *dumpArchiver) writeFile(name, path string) error {
 	})
 	a.flush(false)
 	return nil
+}
+
+// pad writes zero bytes until the tar entry holds the size its header declared,
+// keeping the archive parseable after a file shrank underneath us.
+func (a *dumpArchiver) pad(written, want int64) error {
+	if want <= written {
+		return nil
+	}
+	const padChunk = 64 * 1024
+	zeros := make([]byte, padChunk)
+	for written < want {
+		n := want - written
+		if n > padChunk {
+			n = padChunk
+		}
+		if _, err := a.tw.Write(zeros[:n]); err != nil {
+			return err
+		}
+		written += n
+	}
+	a.payload = want
+	return nil
+}
+
+// skip records a file that could not be archived and logs it, so a dump that
+// completed with gaps says which gaps and why.
+func (a *dumpArchiver) skip(name string, cause error) {
+	reason := cause.Error()
+	a.manifest.Skipped = append(a.manifest.Skipped, dumpManifestSkip{Path: name, Reason: reason})
+	logger.Warn("Cache dump: skipping %s: %s", name, reason)
 }
 
 // writeTree walks the storage root in lexical order (deterministic archives)
@@ -239,6 +302,11 @@ func (a *dumpArchiver) writeTree() error {
 // writeManifest appends dump.json as the final archive entry.
 func (a *dumpArchiver) writeManifest(created time.Time) error {
 	a.manifest.Bytes = a.payload
+	// Reaching this point means the whole tree was walked without a fatal error,
+	// so the manifest can declare the archive complete. That claim is sound: a
+	// reader only sees it after a parseable tar, and without the gzip footer the
+	// stream cannot be decompressed to the end at all.
+	a.manifest.Complete = true
 	data, err := json.MarshalIndent(a.manifest, "", "  ")
 	if err != nil {
 		return err
@@ -315,6 +383,66 @@ func pathWithinRoot(root, p string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
+// dumpUnreadable is the JSON body returned when the storage tree holds files the
+// daemon cannot read. It is a distinct type so the refusal is machine-readable:
+// the client learns which files to fix instead of receiving a truncated
+// archive it cannot explain.
+type dumpUnreadable struct {
+	Error   string             `json:"error"`
+	Unread  []dumpManifestSkip `json:"unreadable"`
+	Hint    string             `json:"hint"`
+	Storage string             `json:"storage_path"`
+}
+
+// dumpTreeScan is what a pre-pass over the storage tree learns before the
+// archive starts: how many regular files it holds, and which of them the daemon
+// cannot open.
+type dumpTreeScan struct {
+	Files  int
+	Bytes  int64
+	Unread []dumpManifestSkip
+}
+
+// scanDumpTree walks the storage tree and reports every regular file that cannot
+// be opened for reading, with the reason, plus the file count. It runs before a
+// single byte of the archive is written, so an ownership problem surfaces as a
+// 403 with the offending paths instead of a download that dies halfway with a
+// corrupt gzip stream.
+//
+// The cost is one extra metadata pass: it opens and immediately closes each file
+// without reading it, which is the same order of work as the inventory scan the
+// handler already does.
+func scanDumpTree(root string, excluded map[string]bool) (dumpTreeScan, error) {
+	var scan dumpTreeScan
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root || excluded[path] || !info.Mode().IsRegular() {
+			return nil
+		}
+		scan.Files++
+		scan.Bytes += info.Size()
+		f, oerr := os.Open(path)
+		if oerr != nil {
+			rel, rerr := filepath.Rel(root, path)
+			if rerr != nil {
+				rel = path
+			}
+			scan.Unread = append(scan.Unread, dumpManifestSkip{
+				Path:   dumpRoot + "/" + filepath.ToSlash(rel),
+				Reason: oerr.Error(),
+			})
+			return nil
+		}
+		return f.Close()
+	})
+	if err != nil {
+		return dumpTreeScan{}, err
+	}
+	return scan, nil
+}
+
 // newDumpGzipWriter builds the gzip stream for a dump. The default level suits
 // archival; "fast" trades ratio for CPU, which matters when dumping a large
 // mirror to a backup host on a tight schedule.
@@ -369,6 +497,16 @@ func copyContext(ctx context.Context, dst io.Writer, src io.Reader) (int64, erro
 // archive. The per-file SHA-256 checksums in <dumpRoot>/dump.json (the final
 // entry) let the receiving side verify a completed transfer and detect a torn
 // one.
+//
+// A dump is therefore either complete or refused, never silently partial:
+//
+//   - Unreadable files are detected up front and answered with 403 and a JSON
+//     list, before any byte of the archive is on the wire. This is the common
+//     case in practice, because a root-run install that seeded the cache as root
+//     leaves files the daemon account cannot read.
+//   - A file that becomes unreadable or changes size mid-stream is skipped and
+//     listed under "skipped" in the manifest, so the archive stays valid and the
+//     gap is explicit rather than a corrupt stream.
 func (s *Server) HandleDump(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -392,6 +530,32 @@ func (s *Server) HandleDump(w http.ResponseWriter, r *http.Request) {
 
 	excluded, excludedList := s.dumpExclusions(root)
 
+	// Refuse before the status line is committed: a partially written archive
+	// cannot be withdrawn, so the only useful moment to report an unreadable
+	// tree is before the first byte.
+	scan, err := scanDumpTree(root, excluded)
+	if err != nil {
+		logger.Error("Cache dump: cannot verify readability of %s: %v", root, err)
+		http.Error(w, "storage tree could not be read", http.StatusInternalServerError)
+		return
+	}
+	if len(scan.Unread) > 0 {
+		for _, u := range scan.Unread {
+			logger.Error("Cache dump refused: %s is not readable: %s", u.Path, u.Reason)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Orbitron-Dump-Unreadable", strconv.Itoa(len(scan.Unread)))
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(dumpUnreadable{
+			Error:   "the storage tree holds files the daemon cannot read",
+			Unread:  scan.Unread,
+			Hint:    "fix their ownership so the orbitron user can read them, for example: chown -R orbitron:orbitron " + s.cfg.StoragePath,
+			Storage: s.cfg.StoragePath,
+		})
+		return
+	}
+
 	// Resolve the compression level before any header is written so an invalid
 	// value can still produce a clean 400.
 	flusher, _ := w.(http.Flusher)
@@ -414,6 +578,9 @@ func (s *Server) HandleDump(w http.ResponseWriter, r *http.Request) {
 	// Approximate uncompressed payload (roles + collections, block-allocated)
 	// so a caller can show progress. The exact figure is in dump.json.
 	h.Set("X-Orbitron-Dump-Bytes", strconv.FormatInt(inv.StorageBytes(), 10))
+	// Exact regular-file count from the pre-pass, so a caller can tell a
+	// complete archive from a cut-off one without waiting for the manifest.
+	h.Set("X-Orbitron-Dump-Files", strconv.Itoa(scan.Files))
 	if syncRunning {
 		h.Set("X-Orbitron-Dump-Sync", "running")
 	} else {
@@ -443,8 +610,10 @@ func (s *Server) HandleDump(w http.ResponseWriter, r *http.Request) {
 			Collections:        inv.CollectionCount(),
 			CollectionVersions: inv.CollectionVersionCount(),
 			Files:              []dumpManifestFile{},
+			Skipped:            []dumpManifestSkip{},
 		},
 	}
+	archiver.manifest.Complete = false
 
 	writeErr := archiver.writeTree()
 	if writeErr == nil {
@@ -453,8 +622,8 @@ func (s *Server) HandleDump(w http.ResponseWriter, r *http.Request) {
 	if writeErr != nil {
 		// The status line and part of the body are already on the wire, so a
 		// clean error response is no longer possible. Return without closing
-		// the gzip stream: the missing footer makes the truncation detectable
-		// on the receiving side.
+		// the gzip stream: the missing footer and the absent "complete" flag in
+		// dump.json make the truncation detectable on the receiving side.
 		if r.Context().Err() != nil {
 			logger.Info("Cache dump aborted by client disconnect after %d bytes", archiver.payload)
 		} else {
@@ -477,5 +646,10 @@ func (s *Server) HandleDump(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	logger.Info("Cache dump completed (%s): %d files, %d uncompressed bytes", filename, len(archiver.manifest.Files), archiver.payload)
+	if n := len(archiver.manifest.Skipped); n > 0 {
+		logger.Warn("Cache dump completed (%s) with %d skipped file(s): %d files, %d uncompressed bytes",
+			filename, n, len(archiver.manifest.Files), archiver.payload)
+	} else {
+		logger.Info("Cache dump completed (%s): %d files, %d uncompressed bytes", filename, len(archiver.manifest.Files), archiver.payload)
+	}
 }

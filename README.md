@@ -835,22 +835,57 @@ separate.
 The `files` array names each archived entry exactly as it appears in the tar
 stream, with a SHA-256 per file, so a receiver can verify exactly what it got.
 Because the manifest is written last, its *absence* is itself the signal that a
-transfer was cut short.
+transfer was cut short. A manifest that is present declares `complete: true`; the
+`skipped` array lists any file that was in the tree but could not be archived.
 
 #### Response headers
 
-| Header                    | Meaning                                                 |
-| ------------------------- | ------------------------------------------------------- |
-| `Content-Type`            | `application/gzip`                                      |
-| `Content-Disposition`     | `attachment; filename="orbitron-dump-<RFC3339>.tar.gz"` |
-| `X-Orbitron-Dump-Sync`    | `running` or `idle` at request time                     |
-| `X-Orbitron-Dump-Bytes`   | Uncompressed total size of the storage path             |
-| `X-Orbitron-Dump-Created` | RFC 3339 timestamp of the dump                          |
-| `X-Orbitron-Dump-Format`  | Archive manifest format version (currently `1`)         |
+| Header                       | Meaning                                                 |
+| ---------------------------- | ------------------------------------------------------- |
+| `Content-Type`               | `application/gzip`                                      |
+| `Content-Disposition`        | `attachment; filename="orbitron-dump-<RFC3339>.tar.gz"` |
+| `X-Orbitron-Dump-Sync`       | `running` or `idle` at request time                     |
+| `X-Orbitron-Dump-Bytes`      | Uncompressed total size of the storage path             |
+| `X-Orbitron-Dump-Files`      | Exact number of regular files in the storage path       |
+| `X-Orbitron-Dump-Skipped`    | Number of files skipped mid-stream (see below)          |
+| `X-Orbitron-Dump-Created`    | RFC 3339 timestamp of the dump                          |
+| `X-Orbitron-Dump-Format`     | Archive manifest format version (currently `1`)         |
+| `X-Orbitron-Dump-Unreadable` | Count of unreadable files; only on a `403` refusal      |
 
 There is no `Content-Length`: the size is only known once the walk has finished,
 and a full mirror can be large. A backup job cannot resume a half-finished
 download — verify the `dump.json` entry and retry instead.
+
+#### Refusals: 403 when the tree is unreadable
+
+Before a single byte of the archive is written, the handler walks the storage
+tree and checks that every regular file can actually be opened. If any cannot, the
+request is refused with `403` and a JSON body instead of a partial download:
+
+```json
+{
+  "error": "the storage tree holds files the daemon cannot read",
+  "unreadable": [
+    {
+      "path": "orbitron/manifests/collections_55b453fad576_requirements.yml",
+      "reason": "open /var/lib/orbitron/storage/manifests/collections_55b453fad576_requirements.yml: permission denied"
+    }
+  ],
+  "hint": "fix their ownership so the orbitron user can read them, for example: chown -R orbitron:orbitron /var/lib/orbitron/storage",
+  "storage_path": "/var/lib/orbitron/storage"
+}
+```
+
+This matters because the alternative is a download that looks successful and is
+not: the archive is streamed on the fly, so a failure halfway leaves a gzip
+stream without a footer, which unpacks as a truncated file with no error and no
+manifest. Check the status code and the presence of `dump.json` before trusting a
+dump.
+
+A file that becomes unreadable *after* the check is skipped rather than fatal, so
+the archive still closes properly. Such a dump reports `complete: true` with a
+non-empty `skipped` array — treat a non-empty `skipped` as a partial backup and
+resolve the listed paths.
 
 #### Consistency and security notes
 
@@ -862,8 +897,9 @@ download — verify the `dump.json` entry and retry instead.
 * The endpoint is available to **every** valid token, with no additional
   authorization. Treat a token as equivalent to read access to the whole cache
   and keep dumps as sensitive as the cache itself.
-* The dashboard's `DUMP .TAR.GZ` button downloads exactly this endpoint with the
-  browser's session cookie.
+* The dashboard's `DUMP .TAR.GZ` button fetches this endpoint with the browser's
+  session cookie and saves the result itself, so a `403` refusal is shown in the
+  drawer instead of arriving as a corrupt archive.
 
 #### Restoring
 

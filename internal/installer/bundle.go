@@ -2,8 +2,8 @@ package installer
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
+	"strings"
 
 	"orbitron/internal/config"
 	"orbitron/internal/logger"
@@ -26,8 +26,12 @@ func seedStoragePath() (string, error) {
 
 // seedBundledCollection places the embedded Ansible collection into the daemon
 // cache (following the configured storage_path) when the embedded version is
-// strictly newer than anything already present, fixes ownership so the
-// orbitron user can read what it seeded, and reports what happened.
+// strictly newer than anything already present, and reports what happened.
+//
+// Ownership is not fixed up here: the seed applies it to the artifact, the
+// manifest and the whole directory chain in one place, so every entry point
+// that seeds the cache (this installer and the daemon's own startup seed)
+// ends up with the same guarantee. This function only reports the outcome.
 func seedBundledCollection(uid, gid int) error {
 	meta, err := seed.Load()
 	if err != nil {
@@ -39,12 +43,24 @@ func seedBundledCollection(uid, gid int) error {
 		return err
 	}
 
-	res, err := seed.SeedCache(storagePath)
+	// A custom storage_path outside the standard subtree is not covered by the
+	// installer's recursive chown pass. SeedCache will still chown the directory
+	// chain and any entries it creates or adopts, but other existing content in
+	// that custom tree is not recursively corrected here. Warn if it lies outside
+	// the standard subtree.
+	if !withinStandardStorage(storagePath) {
+		fmt.Printf("  ! Custom storage_path %s lies outside %s: other existing content in that tree is not recursively corrected, so ensure the orbitron user can read and write it\n", storagePath, StorageDir)
+	}
+
+	res, err := seed.SeedCache(storagePath, &seed.Owner{UID: uid, GID: gid})
 	if err != nil {
 		return err
 	}
 	if res.Skipped {
 		fmt.Printf("  ℹ Bundled %s.%s %s already cached; keeping existing copy\n", meta.Namespace, meta.Name, meta.Version)
+		if res.ManifestAdopted {
+			fmt.Printf("  ✔ Ownership verified on the existing requirements manifest\n")
+		}
 		return nil
 	}
 	if !res.Seeded {
@@ -52,14 +68,16 @@ func seedBundledCollection(uid, gid int) error {
 		return nil
 	}
 
-	_ = os.Chown(res.Path, uid, gid)
-	// With a custom storage_path the daemon-owned directories may not exist
-	// yet; make sure the chain the seed created stays readable by the
-	// orbitron user (0750 root-owned parents would block traversal).
-	for _, dir := range []string{storagePath, filepath.Join(storagePath, "collections"), filepath.Join(storagePath, "collections", meta.Namespace), filepath.Join(storagePath, "manifests")} {
-		_ = os.Chown(dir, uid, gid)
-	}
 	fmt.Printf("  ✔ Seeded %s.%s %s into cache (%d bytes)\n", meta.Namespace, meta.Name, meta.Version, len(seed.CollectionTarGz))
 	fmt.Printf("  ✔ Declared %s.%s %s in a default requirements manifest\n", meta.Namespace, meta.Name, meta.Version)
 	return nil
+}
+
+// withinStandardStorage reports whether storagePath sits inside the directory
+// tree the installer creates and chowns recursively, in which case ownership is
+// already consistent before the seed runs.
+func withinStandardStorage(storagePath string) bool {
+	clean := filepath.Clean(storagePath)
+	base := filepath.Clean(StorageDir)
+	return clean == base || strings.HasPrefix(clean, base+string(filepath.Separator))
 }

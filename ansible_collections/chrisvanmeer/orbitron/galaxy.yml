@@ -1,6 +1,6 @@
 namespace: chrisvanmeer
 name: orbitron
-version: 2.1.1
+version: 2.1.2
 readme: README.md
 authors:
   - Chris van Meer
@@ -19,4 +19,14 @@ repository: https://github.com/chrisvanmeer/orbitron
 documentation: https://github.com/chrisvanmeer/orbitron
 homepage: https://github.com/chrisvanmeer/orbitron
 issues: https://github.com/chrisvanmeer/orbitron/issues
-build_ignore: []
+# ansible-galaxy build does not honour .gitignore, so test and tooling artefacts
+# left behind by a local test run would otherwise ship in the collection tarball
+# — and, through `make seed`, in the binary's embedded seed.
+build_ignore:
+  - .pytest_cache
+  - .coverage
+  - __pycache__
+  - "*.pyc"
+  - tests/output
+  - tests/unit/results
+  - /build
