@@ -2049,36 +2049,52 @@ tr.storage-empty td .empty-stars { color: var(--yellow); letter-spacing: 0.4em; 
 
 	// Density toggle (comfortable / compact).
 	//
-	// The class goes on <body> rather than on the table, and the button label is
-	// refreshed from an htmx:afterSwap hook. Both are needed because htmx runs
-	// this script against the outgoing fragment: by the time the script
-	// finishes, the table it captured has already been replaced by the fresh
-	// one. Toggling a class on that detached node is silently lost on every
-	// auto-refresh, which is exactly why the label said COMPACT while the rows
-	// rendered comfortable. <body> is never swapped, and re-reading the button
-	// after the swap reaches the button that is actually live.
-	var densityBtn = document.getElementById('density-toggle');
-	function applyDensity() {
-		document.body.classList.toggle('density-compact', compact);
+	// Two separate problems are solved here, and they need different mechanisms.
+	//
+	// 1. The class goes on <body>, not on the table. htmx evaluates this script
+	//    against the outgoing fragment, so a class set on the table it captured
+	//    lands on a node that is immediately replaced -- silently lost on every
+	//    auto-refresh, which is why the label read COMPACT while the rows
+	//    rendered comfortable. <body> is never swapped.
+	//
+	// 2. The afterSwap listener is bound exactly once per document. This script
+	//    runs on every fragment render (initial load, each auto-refresh tick,
+	//    each manual refresh), and <body> is not swapped, so an unguarded
+	//    addEventListener would accumulate one closure per render -- ~360/hour
+	//    with auto-refresh on -- and every later swap would then run all of
+	//    them. Hence the separate one-time guard.
+	//
+	// The applier itself is a reassigned window hook, like
+	// __orbitronRefreshMatrix below: re-reading the value from sessionStorage on
+	// every call means it can never close over a stale density flag, so no
+	// ordering assumptions are needed.
+	window.__orbitronApplyDensity = function () {
+		var c = false;
+		try { c = sessionStorage.getItem('orbitronStorageDensity') === 'compact'; } catch (e) {}
+		document.body.classList.toggle('density-compact', c);
 		var btn = document.getElementById('density-toggle');
 		if (!btn) return;
-		btn.classList.toggle('compact', compact);
-		btn.textContent = 'DENSITY: ' + (compact ? 'COMPACT' : 'COMFORTABLE');
+		btn.classList.toggle('compact', c);
+		btn.textContent = 'DENSITY: ' + (c ? 'COMPACT' : 'COMFORTABLE');
+	};
+	if (!window.__orbitronDensityHookBound) {
+		window.__orbitronDensityHookBound = true;
+		document.body.addEventListener('htmx:afterSwap', function (evt) {
+			var t = evt.target;
+			if (t && t.id === 'main-workspace') window.__orbitronApplyDensity();
+		});
 	}
-	applyDensity();
+	window.__orbitronApplyDensity();
+	var densityBtn = document.getElementById('density-toggle');
 	if (densityBtn) {
 		densityBtn.addEventListener('click', function () {
 			compact = !compact;
-			applyDensity();
+			// Persist before applying: the hook reads the value back out of
+			// sessionStorage rather than trusting the closure.
 			saveState();
+			window.__orbitronApplyDensity();
 		});
 	}
-	// Installed once per document; re-installed harmlessly on each fragment
-	// render, but the handler always re-reads the live button.
-	document.body.addEventListener('htmx:afterSwap', function (evt) {
-		var t = evt.target;
-		if (t && t.id === 'main-workspace') applyDensity();
-	});
 
 	// Auto-refresh: a checkbox (default off, persisted in localStorage) that
 	// polls only the table data. The interval is re-armed on every htmx
@@ -2303,6 +2319,7 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 
 		<div class="stat-label">Cache Access Activity (14 days)</div>
 		<div class="stat-value">%s</div>
+		<div class="stat-label" style="font-size:0.72em; letter-spacing:0.06em; margin-top:2px;">UNIQUE CACHED VERSION ITEMS TOUCHED / DAY &mdash; A REPEATED PULL OF THE SAME VERSION COUNTS ONCE</div>
 
 		<hr style="border-color: var(--border); margin-top:20px;">
 
@@ -2378,6 +2395,12 @@ func (d *Dashboard) handleSyncTime(w http.ResponseWriter, r *http.Request) {
 // and a baseline so sparse mirrors stay legible. Days with zero pulls stay at
 // the baseline; a mirror that never served anything renders a NO ACTIVITY plate
 // instead of pretending there was traffic.
+//
+// The caller passes one timestamp per cached item, taken from the last-access
+// index, so a bucket counts distinct version keys touched on that day rather
+// than request volume: repeatedly pulling the same version moves its single
+// timestamp and is therefore counted once. The on-screen legend says so, since
+// the two readings are easy to confuse.
 func accessActivitySparkline(timestamps []time.Time, days int) string {
 	if days < 2 {
 		days = 14
@@ -2418,7 +2441,7 @@ func accessActivitySparkline(timestamps []time.Time, days int) string {
 		ys = append(ys, h-pad-(buckets[d]*(h-2*pad))/max)
 	}
 
-	fmt.Fprintf(&b, `<svg width="280" height="44" viewBox="0 0 280 44" role="img" aria-label="Cache access activity over the last %d days" style="display:block; max-width:100%%;">`, days)
+	fmt.Fprintf(&b, `<svg width="280" height="44" viewBox="0 0 280 44" role="img" aria-label="Unique cached version items touched per day over the last %d days" style="display:block; max-width:100%%;">`, days)
 	// Gradient fill under the line (solid cyan fading to transparent).
 	b.WriteString(`<defs><linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(0,240,255,0.4)"/><stop offset="100%" stop-color="rgba(0,240,255,0)"/></linearGradient></defs>`)
 	b.WriteString(`<path d="M`)

@@ -228,6 +228,48 @@ func TestStorageInstallsRefreshHook(t *testing.T) {
 	}
 }
 
+// TestStorageDensitySurvivesHtmxSwap guards the two invariants that keep the
+// compact/comfortable toggle stable across an auto-refresh.
+//
+// This script runs on every fragment render (initial load, each auto-refresh
+// tick, each manual refresh). The density class must therefore live on <body>,
+// which htmx never swaps, and not on #storage-matrix, which it replaces -- a
+// class on the table is silently dropped, which is why the button once read
+// COMPACT while the rows rendered comfortable.
+//
+// The afterSwap listener must be bound behind a one-time guard, because
+// <body> persists: an unguarded addEventListener accumulates one closure per
+// render (~360/hour with auto-refresh on) and every later swap then runs all
+// of them.
+func TestStorageDensitySurvivesHtmxSwap(t *testing.T) {
+	storage := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(storage, "roles", "r", "1.0.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := NewDashboard(&config.Config{StoragePath: storage}, nil, nil)
+	rec := httptest.NewRecorder()
+	d.handleStorage(rec, httptest.NewRequest("GET", "/ui/storage", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `body.density-compact #storage-matrix`) {
+		t.Errorf("compact density is not scoped to <body>, so it cannot survive a swap\n%s", body)
+	}
+	if strings.Contains(body, `#storage-matrix.compact`) {
+		t.Errorf("compact density is still applied to the table element, which htmx replaces on every render\n%s", body)
+	}
+	if !strings.Contains(body, `window.__orbitronDensityHookBound`) {
+		t.Errorf("afterSwap listener is not behind a one-time binding guard\n%s", body)
+	}
+	if !strings.Contains(body, `window.__orbitronApplyDensity`) {
+		t.Errorf("density is not exposed as an idempotent window hook\n%s", body)
+	}
+	// Exactly one registration site: a second one would double-bind on every
+	// render even though the first is guarded.
+	if n := strings.Count(body, `document.body.addEventListener('htmx:afterSwap'`); n != 1 {
+		t.Errorf("expected exactly 1 afterSwap registration site, found %d\n%s", n, body)
+	}
+}
+
 // TestIndexWiresSyncCompletionRefresh verifies the header poller detects a
 // completed sync from the history's finished_at and asks the matrix to refresh,
 // while ignoring the history snapshot present on first load.
