@@ -477,8 +477,12 @@ function drawSolid(lon0r) {
 		const IDLE_DRIFT = 15000;
 		const IDLE_COMET = 30000;
 		const IDLE_SPEED = 30;
+		// Deep space eases in and out instead of snapping on and off.
+		const IDLE_FADE_IN = 3.4;
+		const IDLE_FADE_OUT = 1.6;
 		let idleSince = Date.now();
 		let idleDrift = false;
+		let idleProg = 0;
 		let cometFired = false;
 		let idleTicking = false;
 
@@ -613,10 +617,16 @@ function drawSolid(lon0r) {
 			const ramped = warpT > 0 ? Math.max(0, Math.min(1, (WARP_DUR - warpT) / 0.35, warpT / 0.9)) : 0;
 			const warp = reduced ? 0 : ramped;
 			if (warpT > 0) warpT = Math.max(0, warpT - dt / 1000);
-			const drift = (idleDrift && !reduced ? IDLE_SPEED : 0) + warp * 1500;
+			// Ease the idle drift in and out; reversing mid-ramp reverses the
+			// ramp smoothly, so a poke mid-fade never snaps the sky.
+			const wantIdle = idleDrift && !reduced;
+			if (wantIdle) idleProg = Math.min(1, idleProg + dt / (IDLE_FADE_IN * 1000));
+			else if (idleProg > 0) idleProg = Math.max(0, idleProg - dt / (IDLE_FADE_OUT * 1000));
+			const idleEase = idleProg * idleProg * (3 - 2 * idleProg);
+			const drift = idleEase * IDLE_SPEED + warp * 1500;
 			// The idle drift gets its own faint streak so "deep space" reads as
 			// flight rather than a slow crawl.
-			const streak = Math.max(warp, reduced ? 0 : idleDrift ? 0.14 : 0);
+			const streak = Math.max(warp, idleEase * 0.14);
 			if (drift > 0) {
 				const stepPx = (drift * dt) / 1000;
 				for (const s of stars) {
