@@ -1783,7 +1783,11 @@ table#storage-matrix { width: 100%; border-collapse: collapse; }
 }
 .type-chip:hover { color: var(--yellow); border-color: var(--yellow); }
 .type-chip.active { color: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.12); }
-#storage-matrix.compact td, #storage-matrix.compact th { padding: 3px 10px; font-size: 0.86em; }
+/* Density is carried on <body>, not on the table: htmx replaces the whole
+   storage fragment on every auto-refresh, so a class set on the table element
+   is applied to a node that is immediately thrown away. <body> is never
+   swapped, so the compact styling survives every re-render. */
+body.density-compact #storage-matrix td, body.density-compact #storage-matrix th { padding: 3px 10px; font-size: 0.86em; }
 .latest-pill {
     display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 999px;
     border: 1px solid rgba(0, 240, 255, 0.45); color: var(--cyan);
@@ -2044,20 +2048,37 @@ tr.storage-empty td .empty-stars { color: var(--yellow); letter-spacing: 0.4em; 
 	}
 
 	// Density toggle (comfortable / compact).
+	//
+	// The class goes on <body> rather than on the table, and the button label is
+	// refreshed from an htmx:afterSwap hook. Both are needed because htmx runs
+	// this script against the outgoing fragment: by the time the script
+	// finishes, the table it captured has already been replaced by the fresh
+	// one. Toggling a class on that detached node is silently lost on every
+	// auto-refresh, which is exactly why the label said COMPACT while the rows
+	// rendered comfortable. <body> is never swapped, and re-reading the button
+	// after the swap reaches the button that is actually live.
 	var densityBtn = document.getElementById('density-toggle');
+	function applyDensity() {
+		document.body.classList.toggle('density-compact', compact);
+		var btn = document.getElementById('density-toggle');
+		if (!btn) return;
+		btn.classList.toggle('compact', compact);
+		btn.textContent = 'DENSITY: ' + (compact ? 'COMPACT' : 'COMFORTABLE');
+	}
+	applyDensity();
 	if (densityBtn) {
-		function applyDensity() {
-			table.classList.toggle('compact', compact);
-			densityBtn.classList.toggle('compact', compact);
-			densityBtn.textContent = 'DENSITY: ' + (compact ? 'COMPACT' : 'COMFORTABLE');
-		}
-		applyDensity();
 		densityBtn.addEventListener('click', function () {
 			compact = !compact;
 			applyDensity();
 			saveState();
 		});
 	}
+	// Installed once per document; re-installed harmlessly on each fragment
+	// render, but the handler always re-reads the live button.
+	document.body.addEventListener('htmx:afterSwap', function (evt) {
+		var t = evt.target;
+		if (t && t.id === 'main-workspace') applyDensity();
+	});
 
 	// Auto-refresh: a checkbox (default off, persisted in localStorage) that
 	// polls only the table data. The interval is re-armed on every htmx
