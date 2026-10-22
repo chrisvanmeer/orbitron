@@ -1,0 +1,12 @@
+/var/log/orbitron/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 orbitron orbitron
+    postrotate
+        systemctl reload orbitron > /dev/null 2>&1 || true
+    endscript
+}

@@ -115,6 +115,15 @@ With each version increment, set of pre-compiled binaries are generated and avai
 
 Self contained binaries are provided for Linux AMD64 and Linux ARM64 architectures.
 
+Each release also includes `.deb` packages for Debian/Ubuntu and `.rpm` packages
+for RPM-based distributions, for both AMD64 and ARM64. Install the matching
+release asset with `sudo apt install ./orbitron_<version>_amd64.deb` or
+`sudo dnf install ./orbitron-<version>-1.x86_64.rpm`. Package installation
+creates and starts the systemd service. Upgrades preserve the configuration;
+removing the package retains the application data in `/var/lib/orbitron` and
+the `orbitron` system account so that the data remains owned correctly. Use
+either the package or the standalone `--install` flow on a host, not both.
+
 ### Installing Orbitron
 
 Executing `--install` as root automatically creates the `orbitron` system user/group, directories,
